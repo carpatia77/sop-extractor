@@ -11,13 +11,13 @@ A persistent failure is a strong signal that either the underlying source materi
 
 ## 2. Final Human QA Gate
 Before any set or skill is considered "published" (ready for consumption or merging), a human operator MUST:
-1. Confirm that `python scripts/validate_all.py --set <dir>` exits cleanly (green output).
+1. Confirm that `python scripts/validate_all.py <dir>` exits cleanly (green output).
 2. **Eyeball `<set>_current.md` (and the `sops.md` / `first_principles.md` files) for completeness.**
 - **Why:** The automated validation gates catch *fabrication* (via strict text matching) and *contradiction* (via coherence audits). However, no automated gate can reliably catch **omission** (the LLM silently skipping a crucial concept). Only a human familiar with the source domain can verify if a load-bearing concept was omitted.
 
 ## 3. Model & Prompt Record (Traceability)
 Never publish a set without stamping its provenance and run state.
-- Before considering the work done, you MUST run `python scripts/validate_all.py --set <dir> --write-run --model <model-used> --audit-model <audit-model-used>`.
+- Before considering the work done, you MUST run `python scripts/validate_all.py <dir> --write-run --model <model-used> --audit-model <audit-model-used>`.
 - This ensures a `run.json` is saved within the set directory, documenting the exact models and prompt version used, along with the hashes of the artifacts. This allows `detect_changes.py` to function later and guards against model drift.
 
 ## 4. Cross-Model Audits
