@@ -15,6 +15,7 @@ from determinism_score import score_skill
 from verify_concept_presence import verify_source
 from validate_coherence_audit import run_validation as run_coherence
 from validate_evolution_audit import run_validation as run_evolution
+from validate_manifest import validate_manifest
 
 def validate_skill(skill_dir: str) -> int:
     dir_path = Path(skill_dir)
@@ -22,7 +23,17 @@ def validate_skill(skill_dir: str) -> int:
         print(f"Error: Directory {skill_dir} not found.")
         return 1
 
-    print(f"=== Validating Skill: {skill_dir} ===")
+    print(f"=== Validating Set/Skill: {skill_dir} ===")
+    
+    # 0. Set Manifest Validation (Fail-Fast)
+    manifest_path = dir_path / "set_manifest.json"
+    if manifest_path.exists():
+        errs = validate_manifest(str(manifest_path))
+        if errs:
+            print("\n❌ Manifest validation failed. Aborting.")
+            for e in errs:
+                print(f"  - {e}")
+            return 1
     
     overall_status = 0
     

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://book-to-skill.com/set_manifest.schema.json",
+  "title": "SOP Extractor Set Manifest",
+  "description": "Manifest defining a set of source texts for the SOP Extractor.",
+  "type": "object",
+  "properties": {
+    "set_id": {
+      "type": "string",
+      "description": "Unique identifier for this set of sources."
+    },
+    "members": {
+      "type": "array",
+      "description": "The ordered list of sources that make up this set.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+            "description": "Unique identifier for the source. Used in provenance tags."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Publication or delivery date of the source in YYYY-MM-DD format."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["practitioner_book", "primary_theory", "live_training"],
+            "description": "The pedagogical role of the source."
+          },
+          "skill_path": {
+            "type": "string",
+            "description": "Path to the extracted skill directory relative to this manifest."
+          },
+          "sequence": {
+            "type": "integer",
+            "description": "Tie-breaker for chronological ordering when multiple sources share the exact same date."
+          }
+        },
+        "required": ["source_id", "date", "skill_path"],
+        "additionalProperties": false
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": ["set_id", "members"],
+  "additionalProperties": false
+}
