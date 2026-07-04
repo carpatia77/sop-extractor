@@ -17,12 +17,20 @@ from validate_coherence_audit import run_validation as run_coherence
 from validate_evolution_audit import run_validation as run_evolution
 from validate_manifest import validate_manifest
 
-def validate_skill(skill_dir: str, since_last: bool = False) -> int:
+def validate_skill(skill_dir: str, since_last: bool = False, domain: str = None) -> int:
     dir_path = Path(skill_dir)
     if not dir_path.is_dir():
         print(f"Error: Directory {skill_dir} not found.")
         return 1
         
+    synonym_map = None
+    if domain:
+        try:
+            from domain_synonyms import load_domain_synonyms
+            synonym_map = load_domain_synonyms(domain)
+        except Exception as e:
+            print(f"Warning: could not load domain synonyms: {e}")
+            
     if since_last:
         try:
             from detect_changes import detect_changes, print_changes
@@ -64,7 +72,7 @@ def validate_skill(skill_dir: str, since_last: bool = False) -> int:
     # 2. Concept Presence (Jaccard Triage)
     print("\n--- 2. Concept Presence Triage ---")
     try:
-        triage_res = verify_source(str(dir_path))
+        triage_res = verify_source(str(dir_path), synonym_map=synonym_map)
         if "error" in triage_res:
             print(f"Skipped: {triage_res['error']}")
         else:
@@ -85,7 +93,7 @@ def validate_skill(skill_dir: str, since_last: bool = False) -> int:
         fp_path = dir_path / "first_principles.md"
         sops_path = dir_path / "sops.md"
         try:
-            coherence_res = run_coherence(str(audit_path), str(fp_path), str(sops_path))
+            coherence_res = run_coherence(str(audit_path), str(fp_path), str(sops_path), synonym_map=synonym_map)
             if coherence_res == 0:
                 print("✅ Coherence validation passed.")
             else:
@@ -158,9 +166,10 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="unspecified", help="Model used, to stamp into run.json (e.g. claude-3-opus)")
     parser.add_argument("--audit-model", default="unspecified", help="Model used for isolated audit pass")
     parser.add_argument("--since-last", action="store_true", help="Print structural changes since last run")
+    parser.add_argument("--domain", default=None, help="Domain ID to load synonyms for (e.g. market-structure)")
     args = parser.parse_args()
     
-    status = validate_skill(args.skill_dir, since_last=args.since_last)
+    status = validate_skill(args.skill_dir, since_last=args.since_last, domain=args.domain)
     
     if status == 0 and args.write_run:
         from write_run_manifest import write_run_manifest

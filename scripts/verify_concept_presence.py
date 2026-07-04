@@ -28,8 +28,10 @@ import sys
 
 try:
     from scripts.validate_coherence_audit import STOPWORDS
+    from scripts.domain_synonyms import load_domain_synonyms, normalize_text
 except ImportError:
     from validate_coherence_audit import STOPWORDS
+    from domain_synonyms import load_domain_synonyms, normalize_text
 
 # Calibrated against 3 human-audited-faithful course extractions.
 # A score below this means
@@ -79,9 +81,12 @@ def build_corpus(source_dir: str) -> str:
     return re.sub(r'[-/]', ' ', text)
 
 
-def score_principle(claim: str, corpus: str) -> dict:
+def score_principle(claim: str, corpus: str, synonym_map: dict = None) -> dict:
     """Fraction of an assertion's salient terms present in the corpus, plus
     the list of absent terms for human triage."""
+    if synonym_map:
+        claim = normalize_text(claim, synonym_map)
+        
     terms = salient_terms(claim)
     if not terms:
         return {"score": 1.0, "present": [], "absent": [], "n_terms": 0}
@@ -102,7 +107,7 @@ def extract_principles(first_principles_path: str) -> list:
     return re.findall(r'^- \*\*(.+?)\*\*', text, re.MULTILINE)
 
 
-def verify_source(source_dir: str, floor: float = REVIEW_FLOOR) -> dict:
+def verify_source(source_dir: str, floor: float = REVIEW_FLOOR, synonym_map: dict = None) -> dict:
     fp_path = os.path.join(source_dir, "first_principles.md")
     if not os.path.exists(fp_path):
         return {"error": f"no first_principles.md in {source_dir}"}
@@ -110,10 +115,13 @@ def verify_source(source_dir: str, floor: float = REVIEW_FLOOR) -> dict:
         return {"error": f"no transcripts/*.srt in {source_dir} — cannot verify"}
 
     corpus = build_corpus(source_dir)
+    if synonym_map:
+        corpus = normalize_text(corpus, synonym_map)
+        
     principles = extract_principles(fp_path)
     results = []
     for p in principles:
-        r = score_principle(p, corpus)
+        r = score_principle(p, corpus, synonym_map)
         r["claim"] = p
         r["review_flag"] = r["score"] < floor
         results.append(r)
@@ -138,9 +146,12 @@ def main():
                         help="List absent salient terms per principle (triage detail)")
     parser.add_argument("--gate", action="store_true",
                         help="Exit 2 if any principle is review-flagged (for CI that wants to require human sign-off). Default exits 0 — this is a triage aid, not a pass/fail gate.")
+    parser.add_argument("--domain", default=None,
+                        help="Domain ID to load synonyms for (e.g. market-structure)")
     args = parser.parse_args()
 
-    out = verify_source(args.source_dir, floor=args.floor)
+    synonym_map = load_domain_synonyms(args.domain) if args.domain else None
+    out = verify_source(args.source_dir, floor=args.floor, synonym_map=synonym_map)
     if "error" in out:
         print(f"Error: {out['error']}")
         sys.exit(1)

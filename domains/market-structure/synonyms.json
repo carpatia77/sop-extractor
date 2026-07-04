@@ -1,0 +1,20 @@
+{
+  "domain_id": "market-structure",
+  "groups": [
+    {
+      "canonical": "range",
+      "synonyms": [
+        "banda de preço",
+        "faixa de preço",
+        "bounded area"
+      ]
+    },
+    {
+      "canonical": "initiative",
+      "synonyms": [
+        "directional conviction",
+        "aggressive participation"
+      ]
+    }
+  ]
+}

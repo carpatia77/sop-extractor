@@ -3,6 +3,11 @@ import re
 import sys
 import argparse
 
+try:
+    from scripts.domain_synonyms import load_domain_synonyms, normalize_text
+except ImportError:
+    from domain_synonyms import load_domain_synonyms, normalize_text
+
 STOPWORDS = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't", "as", "at", 
     "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can't", "cannot", "could", 
@@ -34,7 +39,11 @@ def jaccard(a: str, b: str) -> float:
         return 0.0
     return len(sa & sb) / len(sa | sb)
 
-def verify_claim(claim: str, source_text: str) -> bool:
+def verify_claim(claim: str, source_text: str, synonym_map: dict = None) -> bool:
+    if synonym_map:
+        claim = normalize_text(claim, synonym_map)
+        source_text = normalize_text(source_text, synonym_map)
+        
     sa = normalize(claim)
     if not sa:
         return False
@@ -57,7 +66,7 @@ def verify_claim(claim: str, source_text: str) -> bool:
             
     return False
 
-def run_validation(audit_path: str, first_principles_path: str, sops_path: str) -> int:
+def run_validation(audit_path: str, first_principles_path: str, sops_path: str, synonym_map: dict = None) -> int:
     if not os.path.exists(audit_path):
         print(f"Error: Audit file not found: {audit_path}")
         return 1
@@ -92,7 +101,7 @@ def run_validation(audit_path: str, first_principles_path: str, sops_path: str) 
         unverified_claims = []
         
         for claim in claims:
-            if not verify_claim(claim, source_text):
+            if not verify_claim(claim, source_text, synonym_map):
                 unverified_claims.append(claim)
                 
         unverified_pct = len(unverified_claims) / total_claims
@@ -120,10 +129,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate coherence audit output against sources.")
     parser.add_argument("audit_file", help="Path to coherence_audit.md")
     parser.add_argument("--dir", default=".", help="Directory containing first_principles.md and sops.md")
+    parser.add_argument("--domain", default=None, help="Domain ID to load synonyms for (e.g. market-structure)")
     
     args = parser.parse_args()
+    
+    synonym_map = load_domain_synonyms(args.domain) if args.domain else None
     
     fp_path = os.path.join(args.dir, "first_principles.md")
     sops_path = os.path.join(args.dir, "sops.md")
     
-    sys.exit(run_validation(args.audit_file, fp_path, sops_path))
+    sys.exit(run_validation(args.audit_file, fp_path, sops_path, synonym_map))
