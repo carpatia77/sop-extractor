@@ -88,16 +88,18 @@ def validate_skill(skill_dir: str) -> int:
             overall_status = 1
 
     # 4. Evolution Audit
+    unverified_pct = None
     manifest_path = dir_path / "set_manifest.json"
     if manifest_path.exists():
         print("\n--- 4. Evolution Audit ---")
         try:
             res = run_evolution(str(dir_path))
-            if res == 0:
+            if res.exit_code == 0:
                 print("✅ Evolution validation passed.")
             else:
                 print("❌ Evolution validation failed.")
                 overall_status = 1
+            unverified_pct = res.unverified_pct
         except Exception as e:
             print(f"Error in Evolution Audit: {e}")
             overall_status = 1
@@ -107,6 +109,37 @@ def validate_skill(skill_dir: str) -> int:
         print("✅ ALL DISCOVERED VALIDATIONS PASSED.")
     else:
         print("❌ ONE OR MORE VALIDATIONS FAILED.")
+        
+    try:
+        from _runlog import append_run
+        from datetime import datetime, timezone
+        
+        # Build per_skill stats
+        # Currently we run triage and coherence on the dir_path directly.
+        skill_id = dir_path.name
+        skill_stats = {}
+        
+        if 'det' in locals() and det is not None:
+            skill_stats['determinism_pct'] = det
+        if 'flags' in locals():
+            skill_stats['concept_flags'] = flags
+        if 'res' in locals() and 'coherence_audit.md' in str(audit_path):
+            skill_stats['coherence'] = "pass" if res == 0 else "fail"
+            
+        record = {
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "set": dir_path.name,
+            "evolution": "pass" if (manifest_path.exists() and unverified_pct is not None and overall_status == 0) else "fail",
+            "per_skill": {skill_id: skill_stats} if skill_stats else {}
+        }
+        if unverified_pct is not None:
+            record["unverified_claims_pct"] = unverified_pct
+            
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        log_path = os.path.join(repo_root, "runs.jsonl")
+        append_run(record, log_path)
+    except Exception as e:
+        print(f"Warning: could not write to run log: {e}")
         
     return overall_status
 

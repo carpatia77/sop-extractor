@@ -69,7 +69,7 @@ def test_1_refined_valid_chronology():
 | mom | 1990-01-01 | book | introduced | Range is 10 percent |
 | mip | 2007-01-01 | book | refined | Range is bounded by balance |
 """)
-        assert run_validation(tmpdir) == 0
+        assert run_validation(tmpdir).exit_code == 0
 
 def test_2_superseded_chronology_inversion():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -83,7 +83,7 @@ def test_2_superseded_chronology_inversion():
 | mom | 1990-01-01 | book | superseded | Range is 10 percent |
 """)
         # Hard fail because mom (1990) supersedes mip (2007)
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_3_silence_gate():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -97,7 +97,7 @@ def test_3_silence_gate():
 | mip | 2007-01-01 | book | superseded | concept is missing |
 """)
         # Hard fail because superseded by silence
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
         
 def test_4_dropped_high_confidence():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -110,7 +110,7 @@ def test_4_dropped_high_confidence():
 | mom | 1990-01-01 | book | introduced | Range is 10 percent |
 | mip | 2007-01-01 | book | dropped? | High confidence that it was removed |
 """)
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_5_unverified_claim():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -124,7 +124,7 @@ def test_5_unverified_claim():
 | mip | 2007-01-01 | book | refined | Completely fabricated claim not in source |
 """)
         # >30% unverified
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_6_reaffirmed_valid():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -140,7 +140,7 @@ def test_6_reaffirmed_valid():
 | mom | 1990-01-01 | book | introduced | Range is 10 percent |
 | mip | 2007-01-01 | book | reaffirmed | Range is 10 percent |
 """)
-        assert run_validation(tmpdir) == 0
+        assert run_validation(tmpdir).exit_code == 0
 
 def test_7_current_md_missing_tag():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -155,7 +155,7 @@ def test_7_current_md_missing_tag():
         with open(os.path.join(tmpdir, "set_current.md"), "w", encoding="utf-8") as f:
             f.write("- **Range** — bounded. (no tag here)\n")
             
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_8_import_reuse():
     import scripts.validate_evolution_audit as vea
@@ -179,19 +179,19 @@ def test_generic_author_name():
         # Remove set_current.md created by setup_mock_set
         os.remove(os.path.join(tmpdir, "set_current.md"))
         
-        assert run_validation(tmpdir) == 0
+        assert run_validation(tmpdir).exit_code == 0
 
 def test_no_evolution_file():
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_mock_set(tmpdir)
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_multiple_evolution_files():
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_mock_set(tmpdir)
         with open(os.path.join(tmpdir, "a_evolution.md"), "w") as f: f.write("")
         with open(os.path.join(tmpdir, "b_evolution.md"), "w") as f: f.write("")
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_tied_dates_without_sequence_fails():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -204,7 +204,7 @@ def test_tied_dates_without_sequence_fails():
 | course_a | 2025-01-01 | live_training | introduced | Range is 10 percent |
 | course_b | 2025-01-01 | live_training | refined | Range is bounded by balance |
 """)
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_tied_dates_with_valid_sequence_passes():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -217,7 +217,7 @@ def test_tied_dates_with_valid_sequence_passes():
 | course_a | 2025-01-01 | live_training | introduced | Range is 10 percent |
 | course_b | 2025-01-01 | live_training | refined | Range is bounded by balance |
 """)
-        assert run_validation(tmpdir) == 0
+        assert run_validation(tmpdir).exit_code == 0
 
 def test_tied_dates_with_inverted_sequence_fails():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -230,7 +230,7 @@ def test_tied_dates_with_inverted_sequence_fails():
 | course_a | 2025-01-01 | live_training | introduced | Range is 10 percent |
 | course_b | 2025-01-01 | live_training | refined | Range is bounded by balance |
 """)
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_tied_dates_with_sequence_on_only_one_side_fails():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -243,7 +243,7 @@ def test_tied_dates_with_sequence_on_only_one_side_fails():
 | course_a | 2025-01-01 | live_training | introduced | Range is 10 percent |
 | course_b | 2025-01-01 | live_training | refined | Range is bounded by balance |
 """)
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_provenance_unknown_source():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -258,7 +258,7 @@ def test_provenance_unknown_source():
         with open(os.path.join(tmpdir, "set_current.md"), "w", encoding="utf-8") as f:
             f.write("- **Range** — bounded. `[fake_source/1990-01-01]`\n")
             
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1
 
 def test_provenance_wrong_date():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -273,4 +273,4 @@ def test_provenance_wrong_date():
         with open(os.path.join(tmpdir, "set_current.md"), "w", encoding="utf-8") as f:
             f.write("- **Range** — bounded. `[mip/2026-01-01]`\n")
             
-        assert run_validation(tmpdir) == 1
+        assert run_validation(tmpdir).exit_code == 1

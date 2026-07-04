@@ -5,6 +5,11 @@ import sys
 import argparse
 import glob
 from datetime import datetime
+from typing import NamedTuple
+
+class EvolutionResult(NamedTuple):
+    exit_code: int
+    unverified_pct: float = 0.0
 
 # Re-use from validate_coherence_audit
 try:
@@ -73,19 +78,19 @@ def _discover(dir_path: str, suffix: str):
         return None
     return matches[0]
 
-def run_validation(dir_path: str) -> int:
+def run_validation(dir_path: str) -> EvolutionResult:
     manifest = load_manifest(dir_path)
     
     evo_path = _discover(dir_path, "evolution")
     if evo_path is None:
-        return 1
+        return EvolutionResult(1)
         
     with open(evo_path, 'r', encoding='utf-8') as f:
         evo_content = f.read()
         
     current_path = _discover(dir_path, "current")
     if current_path is None:
-        return 1
+        return EvolutionResult(1)
         
     # 1. Validate current state format and Provenance Integrity
     with open(current_path, 'r', encoding='utf-8') as f:
@@ -98,7 +103,7 @@ def run_validation(dir_path: str) -> int:
             if not tag_match:
                 print(f"Error in {os.path.basename(current_path)} line {line_num}: Missing provenance tag [source_id/date]")
                 print(f"Line: {line}")
-                return 1
+                return EvolutionResult(1)
                 
             tag_content = tag_match.group(1)
             pairs = re.findall(r'([\w-]+)/(\d{4}(?:-\d{2}-\d{2})?)', tag_content)
@@ -106,19 +111,19 @@ def run_validation(dir_path: str) -> int:
             if not pairs:
                 print(f"Error in {os.path.basename(current_path)} line {line_num}: Missing provenance tag [source_id/date]")
                 print(f"Line: {line}")
-                return 1
+                return EvolutionResult(1)
                 
             for sid, date_str in pairs:
                 if sid not in manifest:
                     print(f"Provenance Integrity FAILED in {os.path.basename(current_path)} line {line_num}:")
                     print(f"Provenance tag cites unknown source '{sid}'.")
-                    return 1
+                    return EvolutionResult(1)
                     
                 manifest_date = manifest[sid]["date"]
                 if date_str != manifest_date:
                     print(f"Provenance Integrity FAILED in {os.path.basename(current_path)} line {line_num}:")
                     print(f"Tag date '{date_str}' for source '{sid}' contradicts manifest date '{manifest_date}'.")
-                    return 1
+                    return EvolutionResult(1)
 
     # 2. Parse evolution matrix
     sections = re.split(r'\n##\s+', evo_content)
@@ -163,30 +168,30 @@ def run_validation(dir_path: str) -> int:
                         if current_date < previous_date:
                             print(f"Chronology Gate FAILED for concept '{concept_name}':")
                             print(f"Source '{source_id}' claims to {category} '{previous_source}', but is not chronologically later.")
-                            return 1
+                            return EvolutionResult(1)
                         if current_date == previous_date:
                             if current_seq is None or previous_seq is None:
                                 print(f"Chronology Gate FAILED for concept '{concept_name}':")
                                 print(f"Source '{source_id}' and '{previous_source}' share the same date ({manifest[source_id]['date']}); "
                                       f"add an explicit integer 'sequence' field to both members in set_manifest.json to establish order.")
-                                return 1
+                                return EvolutionResult(1)
                             if current_seq <= previous_seq:
                                 print(f"Chronology Gate FAILED for concept '{concept_name}':")
                                 print(f"Source '{source_id}' (sequence {current_seq}) claims to {category} '{previous_source}' (sequence {previous_seq}), but is not sequenced later.")
-                                return 1
+                                return EvolutionResult(1)
 
                     # Silence Gate
                     if category == 'superseded' and ('absence' in description.lower() or 'missing' in description.lower() or 'not mentioned' in description.lower() or 'silence' in description.lower()):
                         print(f"Silence Gate FAILED for concept '{concept_name}':")
                         print(f"Cannot infer 'superseded' from silence. Must downgrade to 'dropped?'.")
-                        return 1
+                        return EvolutionResult(1)
                         
                     # Dropped Confidence check
                     if 'dropped?' in category or category == 'dropped':
                         desc_lower = description.lower()
                         if 'high' in desc_lower or 'alta' in desc_lower:
                             print(f"Confidence Gate FAILED for concept '{concept_name}': dropped? must be low confidence.")
-                            return 1
+                            return EvolutionResult(1)
                             
                     if category not in ['introduced', 'dropped?', 'dropped']:
                         total_claims += 1
@@ -200,7 +205,7 @@ def run_validation(dir_path: str) -> int:
 
     if total_claims == 0:
         print("Warning: No transitions found to validate.")
-        return 0
+        return EvolutionResult(0)
         
     unverified_pct = len(unverified_claims) / total_claims
     
@@ -212,13 +217,13 @@ def run_validation(dir_path: str) -> int:
             
     if unverified_pct > 0.3:
         print(f"\nFAILURE: Unverified claims ({unverified_pct*100:.1f}%) exceed the 30% threshold.")
-        return 1
+        return EvolutionResult(1, unverified_pct)
         
     print("\nSUCCESS: Temporal evolution audit passed validation.")
-    return 0
+    return EvolutionResult(0, unverified_pct)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate temporal evolution audit output.")
     parser.add_argument("--dir", default=".", help="Directory containing set_manifest.json and audit files")
     args = parser.parse_args()
-    sys.exit(run_validation(args.dir))
+    sys.exit(run_validation(args.dir).exit_code)
