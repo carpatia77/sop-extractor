@@ -77,8 +77,8 @@ def validate_skill(skill_dir: str) -> int:
         fp_path = dir_path / "first_principles.md"
         sops_path = dir_path / "sops.md"
         try:
-            res = run_coherence(str(audit_path), str(fp_path), str(sops_path))
-            if res == 0:
+            coherence_res = run_coherence(str(audit_path), str(fp_path), str(sops_path))
+            if coherence_res == 0:
                 print("✅ Coherence validation passed.")
             else:
                 print("❌ Coherence validation failed.")
@@ -123,8 +123,8 @@ def validate_skill(skill_dir: str) -> int:
             skill_stats['determinism_pct'] = det
         if 'flags' in locals():
             skill_stats['concept_flags'] = flags
-        if 'res' in locals() and 'coherence_audit.md' in str(audit_path):
-            skill_stats['coherence'] = "pass" if res == 0 else "fail"
+        if 'coherence_res' in locals() and 'coherence_audit.md' in str(audit_path):
+            skill_stats['coherence'] = "pass" if coherence_res == 0 else "fail"
             
         record = {
             "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
