@@ -7,7 +7,7 @@ import json
 import hashlib
 import subprocess
 import glob
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 def sha256_file(path: str) -> str:
@@ -73,7 +73,7 @@ def write_run_manifest(set_dir: str, model: str = "unspecified"):
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(scripts_dir)
     
-    run_id = datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
+    run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
     
     run_record = {
         "run_id": run_id,
