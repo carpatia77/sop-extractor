@@ -244,3 +244,33 @@ def test_tied_dates_with_sequence_on_only_one_side_fails():
 | course_b | 2025-01-01 | live_training | refined | Range is bounded by balance |
 """)
         assert run_validation(tmpdir) == 1
+
+def test_provenance_unknown_source():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_mock_set(tmpdir)
+        with open(os.path.join(tmpdir, "set_evolution.md"), "w", encoding="utf-8") as f:
+            f.write("""
+## Range
+| Fonte | Data | Papel | Tratamento | O que mudou |
+|---|---|---|---|---|
+| mom | 1990-01-01 | book | introduced | Range is 10 percent |
+""")
+        with open(os.path.join(tmpdir, "set_current.md"), "w", encoding="utf-8") as f:
+            f.write("- **Range** — bounded. `[fake_source/1990-01-01]`\n")
+            
+        assert run_validation(tmpdir) == 1
+
+def test_provenance_wrong_date():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_mock_set(tmpdir)
+        with open(os.path.join(tmpdir, "set_evolution.md"), "w", encoding="utf-8") as f:
+            f.write("""
+## Range
+| Fonte | Data | Papel | Tratamento | O que mudou |
+|---|---|---|---|---|
+| mip | 2007-01-01 | book | introduced | Range is bounded |
+""")
+        with open(os.path.join(tmpdir, "set_current.md"), "w", encoding="utf-8") as f:
+            f.write("- **Range** — bounded. `[mip/2026-01-01]`\n")
+            
+        assert run_validation(tmpdir) == 1

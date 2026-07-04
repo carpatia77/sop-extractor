@@ -87,16 +87,38 @@ def run_validation(dir_path: str) -> int:
     if current_path is None:
         return 1
         
-    # 1. Validate current state format
+    # 1. Validate current state format and Provenance Integrity
     with open(current_path, 'r', encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            if not re.search(r'\[[\w-]+/\d{4}(?:-\d{2}-\d{2})?.*\]', line):
+            
+            tag_match = re.search(r'\[(.*?)\]', line)
+            if not tag_match:
                 print(f"Error in {os.path.basename(current_path)} line {line_num}: Missing provenance tag [source_id/date]")
                 print(f"Line: {line}")
                 return 1
+                
+            tag_content = tag_match.group(1)
+            pairs = re.findall(r'([\w-]+)/(\d{4}(?:-\d{2}-\d{2})?)', tag_content)
+            
+            if not pairs:
+                print(f"Error in {os.path.basename(current_path)} line {line_num}: Missing provenance tag [source_id/date]")
+                print(f"Line: {line}")
+                return 1
+                
+            for sid, date_str in pairs:
+                if sid not in manifest:
+                    print(f"Provenance Integrity FAILED in {os.path.basename(current_path)} line {line_num}:")
+                    print(f"Provenance tag cites unknown source '{sid}'.")
+                    return 1
+                    
+                manifest_date = manifest[sid]["date"]
+                if date_str != manifest_date:
+                    print(f"Provenance Integrity FAILED in {os.path.basename(current_path)} line {line_num}:")
+                    print(f"Tag date '{date_str}' for source '{sid}' contradicts manifest date '{manifest_date}'.")
+                    return 1
 
     # 2. Parse evolution matrix
     sections = re.split(r'\n##\s+', evo_content)
