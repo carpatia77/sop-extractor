@@ -56,7 +56,7 @@ def get_prompt_version(repo_root: str) -> str:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unversioned"
 
-def write_run_manifest(set_dir: str, model: str = "unspecified"):
+def write_run_manifest(set_dir: str, model: str = "unspecified", audit_model: str = "unspecified"):
     set_dir_path = Path(set_dir).resolve()
     manifest_path = set_dir_path / "set_manifest.json"
     
@@ -78,6 +78,7 @@ def write_run_manifest(set_dir: str, model: str = "unspecified"):
     run_record = {
         "run_id": run_id,
         "generated_by_model": model,
+        "audit_model": audit_model,
         "prompt_version": get_prompt_version(repo_root),
         "sources": [],
         "set_artifacts_sha256": {}
@@ -128,6 +129,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Write a run.json to record validation inputs.")
     parser.add_argument("--set", required=True, help="Path to the set directory")
     parser.add_argument("--model", default="unspecified", help="Model used for extraction (e.g. claude-3-opus)")
+    parser.add_argument("--audit-model", default="unspecified", help="Model used for isolated audit pass")
     args = parser.parse_args()
     
-    write_run_manifest(args.set, args.model)
+    write_run_manifest(args.set, args.model, args.audit_model)

@@ -40,18 +40,19 @@ def test_write_run_manifest(tmp_path):
     (skill_dir / "sops.md").write_text("sops", encoding='utf-8')
     
     (tmp_path / "test_evolution.md").write_text("evo", encoding='utf-8')
+    # Call the writer
+    success = write_run_manifest(str(tmp_path), model="claude-4-test", audit_model="gpt-4o")
+    assert success
     
-    res = write_run_manifest(str(tmp_path), model="test-model-42")
-    assert res is True
-    
+    # Read the run.json
     run_json = tmp_path / "run.json"
     assert run_json.exists()
     
-    with open(run_json, 'r') as f:
+    with open(run_json, 'r', encoding='utf-8') as f:
         data = json.load(f)
         
-    assert "run_id" in data
-    assert data["generated_by_model"] == "test-model-42"
+    assert data["generated_by_model"] == "claude-4-test"
+    assert data["audit_model"] == "gpt-4o"
     assert "prompt_version" in data
     
     assert len(data["sources"]) == 1

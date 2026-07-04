@@ -156,6 +156,7 @@ if __name__ == "__main__":
     parser.add_argument("skill_dir", help="Path to the set/skill directory")
     parser.add_argument("--write-run", action="store_true", help="Stamp a run.json record upon successful validation")
     parser.add_argument("--model", default="unspecified", help="Model used, to stamp into run.json (e.g. claude-3-opus)")
+    parser.add_argument("--audit-model", default="unspecified", help="Model used for isolated audit pass")
     parser.add_argument("--since-last", action="store_true", help="Print structural changes since last run")
     args = parser.parse_args()
     
@@ -164,6 +165,6 @@ if __name__ == "__main__":
     if status == 0 and args.write_run:
         from write_run_manifest import write_run_manifest
         print("\n--- Stamping Reproducibility Record ---")
-        write_run_manifest(args.skill_dir, model=args.model)
+        write_run_manifest(args.skill_dir, model=args.model, audit_model=args.audit_model)
         
     sys.exit(status)

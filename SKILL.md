@@ -749,6 +749,8 @@ After Step 9.5, automatically generate the coherence audit prompt:
    ```
 2. Stop generation and print to the user:
    > "Para isolamento real (evita viés de confirmação), abra uma nova sessão/thread e rode: `[seu-agente] execute a auditoria de coerência usando .coherence_audit_prompt.md`"
+   > 
+   > *Run the isolated audit session on a different model family than the extraction where possible — a second model is less likely to rubber-stamp the first model's phrasing.*
 
 ---
 
@@ -950,6 +952,8 @@ When multiple skills from the same author or lineage exist, they can be grouped 
 
 3. **Stop and print handoff**:
    > "Para isolamento real (evita viés de histórico), abra uma nova sessão/thread e rode: `[seu-agente] execute a auditoria temporal usando <author-lastname>-set/.evolution_audit_prompt.md`"
+   > 
+   > *Run the isolated audit session on a different model family than the extraction where possible — a second model is less likely to rubber-stamp the first model's phrasing.*
 
 ---
 
