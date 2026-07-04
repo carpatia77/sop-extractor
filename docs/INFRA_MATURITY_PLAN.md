@@ -234,6 +234,43 @@ python scripts/detect_changes.py --set examples/<author>-set
 
 ---
 
+## Item 9 — Domain synonym map (cheap paraphrase recall, no embeddings)
+
+**Why:** `verify_concept_presence.py`'s salient-term matching and `validate_coherence_audit.py`'s Jaccard matching are both surface-token matchers — a faithful paraphrase using domain synonyms ("range" vs. "banda de preço", "colidiu" vs. "bateu") reads as absent/unverified even when the claim is correct. This is real (the calibration note in `verify_concept_presence.py:34-44` already found one faithful-but-heavily-paraphrased principle at 20%). The alternative — sentence embeddings/NLI (Phase 2 below) — solves this plus semantic entailment, but at the cost of a heavy model dependency. A **per-domain synonym map** solves the paraphrase-recall half of that gap for near-zero cost, staying pure-Python, human-auditable, and cumulative as you add more authors in the same field (the stated near-term case: a second author in the same market-structure domain as the existing Set).
+
+**Explicitly out of scope for this item:** semantic entailment / negation detection ("never do X" vs. "do X") — a static synonym list cannot catch that; it stays a Phase 2 (or human-audit) concern. Item 9 only widens *recall* for correct-but-differently-worded claims; it does not add a new correctness gate.
+
+**Deliverable:**
+1. `schemas/domain_synonyms.schema.json` — same lightweight-contract pattern as `set_manifest.schema.json` (Item 3): documents the expected shape, not a runtime dependency.
+2. `domains/<domain-id>/synonyms.json` — one file per subject area (e.g. `domains/market-structure/synonyms.json`), format:
+   ```json
+   {
+     "domain_id": "market-structure",
+     "groups": [
+       {"canonical": "range", "synonyms": ["banda de preço", "faixa de preço", "bounded area"]},
+       {"canonical": "initiative", "synonyms": ["directional conviction", "aggressive participation"]}
+     ]
+   }
+   ```
+3. `scripts/domain_synonyms.py`:
+   - `load_domain_synonyms(domain_id: str) -> dict[str, str]` — loads `domains/<domain_id>/synonyms.json` and returns a flat `{synonym_token: canonical_token}` lookup (lowercased, hyphen/slash-split consistent with `verify_concept_presence.salient_terms`).
+   - `normalize_terms(terms: list, synonym_map: dict) -> list` — maps each term to its canonical form when present in the map, passes through unchanged otherwise. Pure function, no I/O.
+4. **Wiring into `verify_concept_presence.py`:** `score_principle()` gets an optional `synonym_map` parameter; when present, both the claim's `salient_terms()` output and the corpus text are normalized through `normalize_terms()` before the presence check. Default `None` — behavior is unchanged unless a domain is explicitly passed, so existing calibration (the `REVIEW_FLOOR = 0.34`) isn't invalidated for sources that don't use one.
+5. **Wiring into `validate_coherence_audit.py`:** same optional-parameter pattern for `verify_claim()` — normalize both `claim` and `source_text` tokens before Jaccard, when a `synonym_map` is supplied.
+6. **CLI:** `verify_concept_presence.py --domain market-structure path/to/skill` and `validate_all.py --domain market-structure <dir>` (passed through to both checks when `domains/<domain>/synonyms.json` exists; silently skipped otherwise — no domain, no behavior change).
+7. **Population workflow (human-in-the-loop, not automated):** after extracting a source, an operator may ask the extraction LLM to propose synonym candidates from that source's own `glossary.md` (one-off prompt, not a pipeline step); a human reviews and merges accepted pairs into the domain's `synonyms.json`. The file is committed and versioned like any other input — it is data, not inferred at runtime.
+
+**Tests (`tests/test_domain_synonyms.py`):**
+- `load_domain_synonyms` returns the expected flat map for a fixture file; missing domain file → empty dict (no crash).
+- `normalize_terms` maps known synonyms to canonical form and passes unknown terms through unchanged.
+- `score_principle(..., synonym_map=...)` turns a previously-absent synonym term present via its canonical form (regression test replicating the "banda de preço" vs. "range" case).
+- `verify_claim(..., synonym_map=...)` raises a previously-failing Jaccard match to pass when the only difference is a mapped synonym.
+- No-domain-passed path is byte-identical to current behavior (guards against silently changing scores for sources that don't opt in).
+
+**Acceptance:** existing 218 tests still pass unchanged (no default-path behavior change); new tests pass; running the concept-presence triage on a synthetic paraphrase-heavy fixture shows a measurable score increase only when `--domain` is passed. Effort: **low-medium** (pure Python, no new dependency; the human curation step is out-of-repo work, not code).
+
+---
+
 ## Phase 2 (after the Pareto 8 — highest-value non-Pareto item)
 
 **Semantic claim verification.** The deepest real anti-hallucination gap the review found (4.2 "paráfrase distorcida", Claim Verification "verificação estrutural, não semântica"): today `validate_evolution_audit` / `validate_coherence_audit` verify claims via Jaccard token overlap (`scripts/validate_coherence_audit.py:verify_claim`), which a subtly-distorted paraphrase can pass. Upgrade path, keeping it dependency-light:
@@ -262,8 +299,8 @@ Effort: **medium**. Deferred out of the Pareto because it needs a model/embeddin
 
 ## Suggested execution order
 
-1 → 3 → 4 → 2 → 6 → 5 → 7 → 8, then Phase 2.
+1 → 3 → 4 → 2 → 6 → 5 → 7 → 8 → 9, then Phase 2.
 
-(1 gives the harness everything else plugs into; 3 and 4 are the highest-integrity-per-hour; 2 and 6 add the reproducibility/trend spine; 5 depends on 2; 7 and 8 are doc-weight finishers.)
+(1 gives the harness everything else plugs into; 3 and 4 are the highest-integrity-per-hour; 2 and 6 add the reproducibility/trend spine; 5 depends on 2; 7 and 8 are doc-weight finishers; 9 is independent of 1-8 and can be pulled forward whenever a second author in the same domain makes paraphrase recall worth curating.)
 
 Keep `python -m pytest tests/` green after each item; each item ships with its own tests.
