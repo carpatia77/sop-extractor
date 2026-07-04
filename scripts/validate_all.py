@@ -112,7 +112,16 @@ def validate_skill(skill_dir: str) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Unified validation harness.")
-    parser.add_argument("skill_dir", help="Path to the skill directory")
+    parser.add_argument("skill_dir", help="Path to the set/skill directory")
+    parser.add_argument("--write-run", action="store_true", help="Stamp a run.json record upon successful validation")
+    parser.add_argument("--model", default="unspecified", help="Model used, to stamp into run.json (e.g. claude-3-opus)")
     args = parser.parse_args()
     
-    sys.exit(validate_skill(args.skill_dir))
+    status = validate_skill(args.skill_dir)
+    
+    if status == 0 and args.write_run:
+        from write_run_manifest import write_run_manifest
+        print("\n--- Stamping Reproducibility Record ---")
+        write_run_manifest(args.skill_dir, model=args.model)
+        
+    sys.exit(status)
