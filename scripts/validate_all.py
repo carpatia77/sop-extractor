@@ -17,11 +17,19 @@ from validate_coherence_audit import run_validation as run_coherence
 from validate_evolution_audit import run_validation as run_evolution
 from validate_manifest import validate_manifest
 
-def validate_skill(skill_dir: str) -> int:
+def validate_skill(skill_dir: str, since_last: bool = False) -> int:
     dir_path = Path(skill_dir)
     if not dir_path.is_dir():
         print(f"Error: Directory {skill_dir} not found.")
         return 1
+        
+    if since_last:
+        try:
+            from detect_changes import detect_changes, print_changes
+            changes = detect_changes(skill_dir)
+            print_changes(changes)
+        except Exception as e:
+            print(f"Warning: could not detect changes: {e}")
 
     print(f"=== Validating Set/Skill: {skill_dir} ===")
     
@@ -148,9 +156,10 @@ if __name__ == "__main__":
     parser.add_argument("skill_dir", help="Path to the set/skill directory")
     parser.add_argument("--write-run", action="store_true", help="Stamp a run.json record upon successful validation")
     parser.add_argument("--model", default="unspecified", help="Model used, to stamp into run.json (e.g. claude-3-opus)")
+    parser.add_argument("--since-last", action="store_true", help="Print structural changes since last run")
     args = parser.parse_args()
     
-    status = validate_skill(args.skill_dir)
+    status = validate_skill(args.skill_dir, since_last=args.since_last)
     
     if status == 0 and args.write_run:
         from write_run_manifest import write_run_manifest
