@@ -271,6 +271,20 @@ python scripts/detect_changes.py --set examples/<author>-set
 
 ---
 
+## Item 10 — Extraction pre-flight checklist (config-answer review, human convention)
+
+**Why:** `SKILL.md` Steps 1.5, 4, 5, and 5.5 are written as a live back-and-forth with a human, but in practice an operator (or an executor acting on their behalf) pre-answers all of them in a single "Full Conversion" prompt so the run can proceed unattended. Nothing today forces a review of those pre-answers *before* extraction starts — and the wrong answer to Step 1.5 in particular is expensive to discover after the fact. This is not hypothetical: the Steidlmayer extraction was pre-configured with `BOOK_TYPE=text` (Option 2, "text-heavy... few or no tables"), when the source is a Market Profile book whose central content is TPO charts — tabular/diagrammatic material that `text` mode's `pdftotext` extractor does not preserve. It was only caught because the operator happened to show a screenshot of one such chart in conversation; nothing in the pipeline would have flagged the mismatch on its own, and running with `BOOK_TYPE=technical` (Docling) from the start would have given the extraction the best chance of recovering the tabular content that was recoverable (the two tables it did rescue in ch06 came from choosing correctly, after the fact).
+
+**Deliverable:** `docs/EXTRACTION_PREFLIGHT_CHECKLIST.md` — a short template the operator fills in and re-reads *before* handing a "pre-answered Full Conversion" prompt to an executor (human or agent), covering:
+- **Step 1.5 (`BOOK_TYPE`) sanity check:** open the source and sample 3-5 pages spread across it (not just the first chapter). Is any of the book's *core argument* — not incidental illustration — carried in a table, chart, formula, or diagram? If yes, `BOOK_TYPE=technical` regardless of how prose-heavy the rest of the book reads; "text-heavy" is about the book's *dominant* content, not its majority page count. Note whether those figures are selectable text or rasterized images — if rasterized, flag upfront (in the eventual `SKILL.md`/glossary) that they will not survive extraction under *any* `BOOK_TYPE`, so the gap is expected and documented from the start rather than discovered after a full run.
+- **Step 4 (`DEPTH`) sanity check:** confirm the stated purpose actually maps to the intended token budget (option 3-only → `reference`; anything else → `study`) — this one is mechanical and rarely wrong, but a one-line confirmation costs nothing.
+- **Step 5 (name/destination) sanity check:** if the destination skill directory already exists, confirm that "overwrite" is really intended (vs. Update/Fold-in or Rename) — a pre-answered "overwrite" in a batch prompt can silently destroy a prior extraction the operator forgot was there.
+- **Step 5.5 (lineage) sanity check:** author-name auto-detection only catches same-author lineages. A deliberate cross-author "school of thought" grouping (e.g. Steidlmayer as `primary_theory` originator feeding into the Dalton Set as `practitioner_book` extensions) will never be auto-suggested — the operator must decide this explicitly, in writing, before the run, rather than defaulting to "isolated extraction" by omission.
+
+**Acceptance:** the checklist file exists, is linked from `SKILL.md`'s Step 1.5 section and from `docs/OPERATING_CONVENTIONS.md` (Item 8), and the stated convention is that no pre-answered Full Conversion prompt is handed off without the checklist being filled in first. This is a discipline, not a gate a script can enforce — same category as Item 8. Effort: **low (doc)**.
+
+---
+
 ## Phase 2 (after the Pareto 8 — highest-value non-Pareto item)
 
 **Semantic claim verification.** The deepest real anti-hallucination gap the review found (4.2 "paráfrase distorcida", Claim Verification "verificação estrutural, não semântica"): today `validate_evolution_audit` / `validate_coherence_audit` verify claims via Jaccard token overlap (`scripts/validate_coherence_audit.py:verify_claim`), which a subtly-distorted paraphrase can pass. Upgrade path, keeping it dependency-light:
