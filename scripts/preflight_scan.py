@@ -22,6 +22,33 @@ import sys
 
 TABULAR_LINE_RE = re.compile(r'(\S+\s{2,}\S+\s{2,}\S+)|(\d+\s+\d+\s+\d+)')
 
+# A single short token (number, unit, short label) alone on its own line — the
+# signature of a table whose columns collapsed into one cell per line during
+# PDF-to-text conversion (column layout lost, but not the content). A lone
+# short line doesn't mean much; a *run* of several in a row is the signal.
+SHORT_LINE_RE = re.compile(r'^\S{1,20}$')
+MIN_BURST_RUN = 4
+
+
+def short_line_burst_ratio(lines: list) -> float:
+    """Fraction of (non-empty) lines that belong to a run of at least
+    MIN_BURST_RUN consecutive single-token short lines."""
+    if not lines:
+        return 0.0
+    is_short = [bool(SHORT_LINE_RE.match(l.strip())) for l in lines]
+    burst_lines = 0
+    run = 0
+    for s in is_short:
+        if s:
+            run += 1
+        else:
+            if run >= MIN_BURST_RUN:
+                burst_lines += run
+            run = 0
+    if run >= MIN_BURST_RUN:
+        burst_lines += run
+    return burst_lines / len(lines)
+
 
 def sample_page_indices(total_pages: int, sample_n: int = 5) -> list:
     """Evenly-spread page indices across the document (0-indexed), not just the front."""
@@ -35,12 +62,20 @@ def sample_page_indices(total_pages: int, sample_n: int = 5) -> list:
 
 def score_page_text(text: str) -> dict:
     """Heuristic signal from one page's extracted text: how much of it reads as
-    tabular/aligned data versus prose."""
+    tabular/aligned data versus prose, via two independent signals:
+    - tabular_line_ratio: lines with multi-space-aligned columns on one line.
+    - burst_ratio: runs of single-token lines, the signature of a table whose
+      columns collapsed one-cell-per-line during PDF-to-text conversion
+      (alignment lost, content intact) — a pattern the first signal can't see."""
     lines = [l for l in text.splitlines() if l.strip()]
     if not lines:
-        return {"n_lines": 0, "tabular_line_ratio": 0.0}
+        return {"n_lines": 0, "tabular_line_ratio": 0.0, "burst_ratio": 0.0}
     tabular_lines = sum(1 for l in lines if TABULAR_LINE_RE.search(l))
-    return {"n_lines": len(lines), "tabular_line_ratio": tabular_lines / len(lines)}
+    return {
+        "n_lines": len(lines),
+        "tabular_line_ratio": tabular_lines / len(lines),
+        "burst_ratio": short_line_burst_ratio(lines),
+    }
 
 
 def scan_pdf(path: str, sample_n: int = 5) -> dict:
@@ -90,7 +125,10 @@ def scan_pdf(path: str, sample_n: int = 5) -> dict:
 def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: bool) -> dict:
     ratios = [p["tabular_line_ratio"] for p in pages if p["n_lines"] > 0]
     avg_tabular_ratio = sum(ratios) / len(ratios) if ratios else 0.0
+    burst_ratios = [p.get("burst_ratio", 0.0) for p in pages if p["n_lines"] > 0]
+    avg_burst_ratio = sum(burst_ratios) / len(burst_ratios) if burst_ratios else 0.0
     pages_with_images = sum(1 for p in pages if p["n_images"] > 0)
+    pages_with_burst = sum(1 for p in pages if p.get("burst_ratio", 0.0) > 0.1)
 
     warnings = []
     if pages_with_images > 0:
@@ -102,13 +140,24 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
             "plain-text extractor will not preserve them, and if they are rasterized "
             "images, no BOOK_TYPE recovers them; document that gap upfront."
         )
+    if pages_with_burst > 0:
+        warnings.append(
+            f"{pages_with_burst}/{len(pages)} sampled windows contain runs of short, "
+            "single-token lines — the signature of a table whose columns collapsed to "
+            "one cell per line during PDF-to-text conversion (structure lost, content "
+            "intact). If confirmed, choose technical regardless of the overall ratio, "
+            "and treat any reconstructed table as needing a provenance check against "
+            "the raw source before trusting the row/column pairing the extractor infers."
+        )
 
-    if avg_tabular_ratio > 0.15 or any_images:
+    is_technical_signal = avg_tabular_ratio > 0.15 or any_images or avg_burst_ratio > 0.1
+    if is_technical_signal:
         suggestion = "technical"
-        confidence = "high" if (avg_tabular_ratio > 0.3 or pages_with_images >= len(pages) / 2) else "medium"
+        strong = avg_tabular_ratio > 0.3 or pages_with_images >= len(pages) / 2 or avg_burst_ratio > 0.25
+        confidence = "high" if strong else "medium"
     else:
         suggestion = "text"
-        confidence = "medium" if avg_tabular_ratio < 0.05 and not any_images else "low"
+        confidence = "medium" if avg_tabular_ratio < 0.05 and not any_images and avg_burst_ratio < 0.05 else "low"
 
     if confidence in ("medium", "low"):
         warnings.append(
@@ -123,6 +172,7 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
         "pages": pages,
         "any_images": any_images,
         "avg_tabular_ratio": round(avg_tabular_ratio, 3),
+        "avg_burst_ratio": round(avg_burst_ratio, 3),
         "suggestion": suggestion,
         "confidence": confidence,
         "warnings": warnings,
@@ -188,6 +238,7 @@ def print_report(result: dict, path: str):
         print(f"Sampled {len(result['sampled_pages'])} {unit}-window(s) out of "
               f"{result['total_pages']} total {unit}s (start indices {result['sampled_pages']}).")
         print(f"Avg tabular-line ratio: {result['avg_tabular_ratio']*100:.1f}% | "
+              f"Avg short-line burst ratio: {result.get('avg_burst_ratio', 0.0)*100:.1f}% | "
               f"Pages with embedded images: {sum(1 for p in result['pages'] if p['n_images'] > 0)}")
     print(f"\nSuggested BOOK_TYPE: {result['suggestion']}  (confidence: {result['confidence']})")
     for w in result.get("warnings", []):

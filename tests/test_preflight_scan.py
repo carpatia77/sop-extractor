@@ -9,6 +9,7 @@ from preflight_scan import (
     _summarize,
     scan_source,
     scan_plain_text,
+    short_line_burst_ratio,
 )
 
 
@@ -40,7 +41,7 @@ def test_score_page_text_tabular_data_has_high_ratio():
 
 
 def test_score_page_text_empty():
-    assert score_page_text("") == {"n_lines": 0, "tabular_line_ratio": 0.0}
+    assert score_page_text("") == {"n_lines": 0, "tabular_line_ratio": 0.0, "burst_ratio": 0.0}
 
 
 def test_summarize_suggests_technical_with_images():
@@ -131,3 +132,56 @@ def test_scan_source_missing_pypdf_or_missing_file_reports_error_or_handles(tmp_
         # for real corrupt files since pypdf raises PdfReadError which callers
         # of scan_source should handle; this test just documents current behavior.
         assert e is not None
+
+
+def test_short_line_burst_ratio_detects_collapsed_table():
+    lines = ["Damage Table", "ST"] + [str(i) for i in range(1, 40)]
+    ratio = short_line_burst_ratio(lines)
+    assert ratio > 0.5
+
+
+def test_short_line_burst_ratio_ignores_isolated_short_lines():
+    lines = [
+        "This is a normal prose sentence describing something at length.",
+        "42",
+        "Another full sentence continuing the narrative argument here.",
+        "7",
+        "A third sentence, still prose, still no burst of short lines.",
+    ]
+    # Only isolated short lines (runs of 1), below MIN_BURST_RUN=4 — no burst.
+    assert short_line_burst_ratio(lines) == 0.0
+
+
+def test_short_line_burst_ratio_empty():
+    assert short_line_burst_ratio([]) == 0.0
+
+
+def test_score_page_text_includes_burst_ratio():
+    table_text = "Damage Table\nST\n" + "\n".join(str(i) for i in range(1, 40))
+    result = score_page_text(table_text)
+    assert result["burst_ratio"] > 0.5
+
+
+def test_summarize_suggests_technical_from_burst_alone():
+    pages = [
+        {"n_lines": 50, "tabular_line_ratio": 0.0, "burst_ratio": 0.3, "page_index": 0, "n_images": 0},
+    ]
+    result = _summarize(50, [0], pages, any_images=False)
+    assert result["suggestion"] == "technical"
+    assert any("collapsed to one cell per line" in w for w in result["warnings"])
+
+
+def test_gurps_like_collapsed_table_end_to_end(tmp_path):
+    """A table whose columns collapsed to one-value-per-line (the real-world
+    PDF-to-text artifact this heuristic exists for) must be flagged technical
+    even though the classic multi-space tabular_line_ratio sees nothing."""
+    lines = [f"Prose sentence {i} in ordinary flowing narrative style here." for i in range(50)]
+    lines += ["Damage Table", "ST"] + [str(i) for i in range(1, 40)]
+    lines += [f"More prose paragraph {i} continuing the narrative style." for i in range(50)]
+    f = tmp_path / "collapsed_table.txt"
+    f.write_text("\n".join(lines), encoding="utf-8")
+
+    result = scan_source(str(f), sample_n=3)
+    assert result["suggestion"] == "technical"
+    assert result["avg_tabular_ratio"] == 0.0  # classic heuristic sees nothing
+    assert result["avg_burst_ratio"] > 0.1     # burst heuristic catches it
