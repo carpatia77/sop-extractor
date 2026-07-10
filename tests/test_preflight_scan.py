@@ -220,7 +220,7 @@ def test_scan_source_non_pdf_includes_recommendation_fields():
     assert "recommendation_reason" in result
 
 
-def test_build_prompt_draft_fills_book_type_and_leaves_todos():
+def test_build_prompt_draft_is_fully_filled_with_defaults():
     from preflight_scan import build_prompt_draft
     result = {
         "suggestion": "technical",
@@ -228,12 +228,34 @@ def test_build_prompt_draft_fills_book_type_and_leaves_todos():
         "recommendation": "technical",
         "recommendation_reason": "some reason",
     }
-    prompt = build_prompt_draft(result, "/path/to/book.pdf")
+    prompt = build_prompt_draft(result, "/path/to/my-book.pdf")
     assert "BOOK_TYPE=technical" in prompt
-    assert "/path/to/book.pdf" in prompt
-    assert "DEPTH=____" in prompt
-    assert "TODO" in prompt
-    assert prompt.count("TODO") >= 3  # depth, name/destination, lineage
+    assert "/path/to/my-book.pdf" in prompt
+    assert "DEPTH=study" in prompt  # sensible default, not a blank
+    assert 'nome="my-book"' in prompt  # slugified from filename
+    assert "isolated extraction" in prompt
+    assert "TODO" not in prompt  # fully filled, not blanks to complete
+    assert "(S/N)" in prompt
+
+
+def test_build_prompt_draft_overrides_are_respected():
+    from preflight_scan import build_prompt_draft
+    result = {"suggestion": "technical", "confidence": "high", "recommendation": "technical", "recommendation_reason": "x"}
+    prompt = build_prompt_draft(
+        result, "/path/to/book.pdf",
+        depth="reference", skill_name="custom-name", skills_home="~/.agents/skills",
+        lineage="part of the alpha-set lineage",
+    )
+    assert "DEPTH=reference" in prompt
+    assert 'nome="custom-name"' in prompt
+    assert "~/.agents/skills/custom-name" in prompt
+    assert "part of the alpha-set lineage" in prompt
+
+
+def test_slugify_filename():
+    from preflight_scan import slugify_filename
+    assert slugify_filename("/mnt/c/Users/x/Gurps-Basic-Set-4th-ed.txt") == "gurps-basic-set-4th-ed"
+    assert slugify_filename("My Book (v2).pdf") == "my-book-v2"
 
 
 def test_build_prompt_draft_uses_recommendation_not_raw_suggestion():

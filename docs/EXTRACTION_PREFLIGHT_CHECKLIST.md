@@ -17,9 +17,9 @@ regardless of what the source is about.
 ```bash
 python scripts/preflight_scan.py path/to/source.pdf
 
-# Optionally, draft a pre-answered Full Conversion prompt with BOOK_TYPE
-# already filled in from the recommendation (DEPTH/name/lineage stay as
-# TODOs — the scanner can't infer intent from the source alone):
+# Optionally, get a fully-filled, ready-to-approve Full Conversion prompt:
+# BOOK_TYPE from the scan recommendation, DEPTH/name/lineage from sensible
+# labeled defaults (override with --depth/--skill-name/--skills-home/--lineage):
 python scripts/preflight_scan.py path/to/source.pdf --emit-prompt
 ```
 

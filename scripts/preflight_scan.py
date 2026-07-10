@@ -283,27 +283,50 @@ def print_report(result: dict, path: str):
           "docs/EXTRACTION_PREFLIGHT_CHECKLIST.md before running Full Conversion.")
 
 
-def build_prompt_draft(result: dict, path: str) -> str:
-    """Drafts a pre-answered Full Conversion prompt with BOOK_TYPE filled in
-    from the scan recommendation, leaving DEPTH/name/destination/lineage as
-    explicit TODOs — those depend on intent the scanner cannot infer from the
-    source alone (SKILL.md Steps 4, 5, 5.5)."""
+def slugify_filename(path: str) -> str:
+    """Derives a skill-name slug from a source filename: lowercase, non-
+    alphanumeric runs collapsed to single hyphens, trimmed."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    slug = re.sub(r'[^a-z0-9]+', '-', stem.lower()).strip('-')
+    return slug or "extracted-skill"
+
+
+def build_prompt_draft(result: dict, path: str, depth: str = None,
+                        skill_name: str = None, skills_home: str = "~/.claude/skills",
+                        lineage: str = None) -> str:
+    """Drafts a ready-to-approve, fully-filled Full Conversion prompt: BOOK_TYPE
+    comes from the scan recommendation (a measured finding); DEPTH, name, and
+    lineage get sensible, clearly-labeled defaults the scanner cannot verify
+    against content (SKILL.md Steps 4, 5, 5.5) — the operator reviews and
+    approves/overrides rather than filling blanks from scratch."""
     recommendation = result.get("recommendation", result.get("suggestion", "text"))
     reason = result.get("recommendation_reason", "")
     confidence = result.get("confidence", "unknown")
+
+    depth = depth or "study"
+    skill_name = skill_name or slugify_filename(path)
+    destino = f"{skills_home.rstrip('/')}/{skill_name}"
+    lineage = lineage or (
+        "isolated extraction (default — no other Set assumed; override explicitly "
+        "if this source belongs to a deliberate lineage/grouping with other sources)"
+    )
 
     lines = [
         "Execute a skill book-to-skill para realizar a conversão completa (Full Conversion) do seguinte documento:",
         f'"{path}"',
         "",
-        "Respostas antecipadas (revisadas via docs/EXTRACTION_PREFLIGHT_CHECKLIST.md):",
+        "Respostas (pre-flight scan + defaults — revise antes de aprovar):",
         f"- Step 1.5 (Content Type): BOOK_TYPE={recommendation}",
-        f"    Pre-flight scan recommendation (confidence: {confidence}). Reasoning: {reason}",
-        "- Step 4 (Purpose): DEPTH=____  [TODO — fill in: reference (option 3 only) or study (anything else)]",
-        "- Step 5 (Skill Name e Destino): nome=____  [TODO], destino=____  [TODO — confirm overwrite vs. fold-in/rename if it already exists]",
-        "- Step 5.5 (Lineage): ____  [TODO — decide explicitly: isolated extraction, or part of a deliberate lineage/grouping; do not default to isolated by omission]",
+        f"    [medido] Pre-flight scan (confidence: {confidence}). {reason}",
+        f"- Step 4 (Purpose): DEPTH={depth}",
+        f"    [default] Assume \"All of the above\" (Option 4) unless you only want quick reference lookup (Option 3 -> DEPTH=reference).",
+        f"- Step 5 (Skill Name e Destino): nome=\"{skill_name}\", destino=\"{destino}\"",
+        f"    [default] Nome derivado do arquivo de origem. Confirme overwrite vs. fold-in/rename se o destino já existir.",
+        f"- Step 5.5 (Lineage): {lineage}",
         "",
         "Assuma o Pre-flight Cost Estimate como aprovado e proceda seguindo as restrições de Token Budget.",
+        "",
+        "Confirma estas escolhas e autoriza a execução? (S/N)",
     ]
     return "\n".join(lines)
 
@@ -313,8 +336,17 @@ if __name__ == "__main__":
     parser.add_argument("source_path", help="Path to the source file (PDF, epub, docx, txt, md...)")
     parser.add_argument("--sample-n", type=int, default=5, help="Number of pages to sample (PDF only)")
     parser.add_argument("--emit-prompt", action="store_true",
-                         help="Also print a draft pre-answered Full Conversion prompt with BOOK_TYPE "
-                              "filled in from the recommendation (DEPTH/name/lineage left as TODOs)")
+                         help="Also print a ready-to-approve Full Conversion prompt: BOOK_TYPE from "
+                              "the recommendation, DEPTH/name/lineage filled with sensible defaults "
+                              "(override with --depth/--skill-name/--skills-home/--lineage)")
+    parser.add_argument("--depth", choices=["study", "reference"], default=None,
+                         help="Override the DEPTH default (study) used in --emit-prompt")
+    parser.add_argument("--skill-name", default=None,
+                         help="Override the skill name default (derived from the filename) used in --emit-prompt")
+    parser.add_argument("--skills-home", default="~/.claude/skills",
+                         help="Skill root used to build the destination path in --emit-prompt (default: ~/.claude/skills)")
+    parser.add_argument("--lineage", default=None,
+                         help="Override the lineage default (isolated extraction) used in --emit-prompt")
     args = parser.parse_args()
 
     if not os.path.isfile(args.source_path):
@@ -326,8 +358,12 @@ if __name__ == "__main__":
 
     if args.emit_prompt:
         print(f"\n{'='*60}")
-        print("DRAFT FULL CONVERSION PROMPT (fill in the TODOs before handoff)")
+        print("FULL CONVERSION PROMPT — review and approve (S/N)")
         print(f"{'='*60}\n")
-        print(build_prompt_draft(out, args.source_path))
+        print(build_prompt_draft(
+            out, args.source_path,
+            depth=args.depth, skill_name=args.skill_name,
+            skills_home=args.skills_home, lineage=args.lineage,
+        ))
 
     sys.exit(0)

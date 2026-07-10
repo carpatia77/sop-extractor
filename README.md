@@ -120,8 +120,9 @@ validation — are plain scripts you can also run directly:
 # BOOK_TYPE recommendation instead of guessing from the first chapter
 python scripts/preflight_scan.py path/to/source.pdf
 
-# ...or have it also draft a pre-answered Full Conversion prompt with
-# BOOK_TYPE filled in (DEPTH/name/lineage left as TODOs for you to decide)
+# ...or get a fully-filled, ready-to-approve Full Conversion prompt: BOOK_TYPE
+# from the scan, DEPTH/name/lineage from sensible labeled defaults you can
+# override (--depth, --skill-name, --skills-home, --lineage)
 python scripts/preflight_scan.py path/to/source.pdf --emit-prompt
 
 # Structural determinism of an extracted source
