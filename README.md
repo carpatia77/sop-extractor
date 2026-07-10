@@ -92,7 +92,7 @@ The full flow is documented, with a rendered diagram, in
 
 ## 📦 What it generates
 
-Per source, an on-demand agent skill (the [Agent Skills](https://github.com/agentskills/agentskills) standard — Claude Code, GitHub Copilot CLI, Amp):
+Per source, an on-demand agent skill (the [Agent Skills](https://github.com/agentskills/agentskills) standard — GitHub Copilot CLI, Amp, and other compatible agents):
 
 | File | Purpose |
 |------|---------|

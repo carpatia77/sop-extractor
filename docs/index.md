@@ -45,14 +45,14 @@ Turn any book or document into a structured, on-demand agent skill — named fra
 
     ---
 
-    One `SKILL.md` runs on Claude Code, GitHub Copilot CLI, and Amp through the
-    open Agent Skills standard.
+    One `SKILL.md` runs on GitHub Copilot CLI, Amp, and other compatible agents
+    through the open Agent Skills standard.
 
 </div>
 
 ## Install
 
-**As an agent skill** (gives you the `/book-to-skill` command in Claude Code, Copilot CLI, Amp):
+**As an agent skill** (gives you the `/book-to-skill` command in Copilot CLI, Amp, and other compatible agents):
 
 ```bash
 git clone https://github.com/virgiliojr94/book-to-skill.git ~/.claude/skills/book-to-skill

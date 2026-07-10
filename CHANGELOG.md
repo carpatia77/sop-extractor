@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - Clarified the two install paths so they are not confused: **`git clone` into a
-  skills folder** registers the `/book-to-skill` agent skill (Claude Code / Copilot
-  CLI / Amp), while **`pip install book-to-skill`** installs only the standalone
+  skills folder** registers the `/book-to-skill` agent skill (Copilot
+  CLI / Amp / other compatible agents), while **`pip install book-to-skill`** installs only the standalone
   extraction CLI and does not register the skill. README and the docs landing now
   show both explicitly.
 - README now leads with the measured headline (24×–51× fewer tokens than a
@@ -104,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **GitHub Copilot CLI as a first-class target** — the same `SKILL.md` now
-  discovers, installs, and runs across GitHub Copilot CLI, Amp, and Claude Code
-  via the open Agent Skills standard. Skill Locations cover 8 discovery paths and
+  discovers, installs, and runs across GitHub Copilot CLI, Amp, and other
+  compatible agents via the open Agent Skills standard. Skill Locations cover 8 discovery paths and
   the script probe walks all of them (#30).
 - **`validate_skill.py --lens claude|copilot|amp`** — audits a generated SKILL.md
   against each host's rules; `claude` stays the default for CI back-compat (#30).
@@ -151,8 +151,8 @@ validated on real books.
 - **README positioning** — copyright & fair-use section, "Beyond books" use cases,
   context-dump / RAG / 1M-window FAQ, and a measured Discovery Loop Tax + real
   per-conversion cost table across four books (#19, #27).
-- Default output target is `~/.claude/skills/` for Claude Code, with Amp skill
-  directories also supported (#13, #14).
+- Default output target is `~/.claude/skills/` for compatible agents, with Amp
+  skill directories also supported (#13, #14).
 
 ### Fixed
 - **Chapter detection** — scans the full text (was capped at 50k chars) and counts
