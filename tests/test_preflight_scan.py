@@ -8,6 +8,7 @@ from preflight_scan import (
     score_page_text,
     _summarize,
     scan_source,
+    scan_plain_text,
 )
 
 
@@ -76,6 +77,43 @@ def test_scan_source_non_pdf_defaults_to_text_low_confidence():
     result = scan_source("book.epub")
     assert result["suggestion"] == "text"
     assert result["confidence"] == "low"
+
+
+def test_scan_plain_text_detects_tabular_content(tmp_path):
+    lines = [f"Prose sentence number {i} in flowing narrative style." for i in range(60)]
+    lines += [f"{i}d6   {i*3}   {i*2}   crushing" for i in range(30)]
+    f = tmp_path / "rules.txt"
+    f.write_text("\n".join(lines), encoding="utf-8")
+
+    result = scan_plain_text(str(f), sample_n=5, window_lines=200)
+    assert result["suggestion"] == "technical"
+    assert result["unit"] == "line-window"
+
+
+def test_scan_plain_text_pure_prose_suggests_text(tmp_path):
+    lines = [f"Sentence {i} of ordinary flowing prose." for i in range(300)]
+    f = tmp_path / "prose.txt"
+    f.write_text("\n".join(lines), encoding="utf-8")
+
+    result = scan_plain_text(str(f), sample_n=5, window_lines=200)
+    assert result["suggestion"] == "text"
+
+
+def test_scan_plain_text_empty_file(tmp_path):
+    f = tmp_path / "empty.txt"
+    f.write_text("", encoding="utf-8")
+    result = scan_plain_text(str(f))
+    assert result["total_pages"] == 0
+
+
+def test_scan_source_dispatches_txt_to_line_window_sampling(tmp_path):
+    lines = [f"{i}d6   {i*3}   {i*2}   crushing" for i in range(60)]
+    f = tmp_path / "rules.txt"
+    f.write_text("\n".join(lines), encoding="utf-8")
+
+    result = scan_source(str(f))
+    assert result["unit"] == "line-window"
+    assert result["suggestion"] == "technical"
 
 
 def test_scan_source_missing_pypdf_or_missing_file_reports_error_or_handles(tmp_path):

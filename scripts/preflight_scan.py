@@ -129,20 +129,51 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     }
 
 
+def scan_plain_text(path: str, sample_n: int = 5, window_lines: int = 200) -> dict:
+    """Samples fixed-size line windows spread across a plain-text file (.txt/.md)
+    using the same tabular-line heuristic as scan_pdf. No image signal is
+    possible for plain text, so the suggestion leans on tabular_line_ratio alone."""
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+
+    total_lines = len(lines)
+    if total_lines == 0:
+        return _summarize(0, [], [], any_images=False)
+
+    n_windows = min(sample_n, max(1, total_lines // window_lines)) or 1
+    indices = sample_page_indices(max(total_lines - window_lines, 0) + 1, n_windows) or [0]
+
+    pages = []
+    for start in indices:
+        chunk = "".join(lines[start:start + window_lines])
+        stats = score_page_text(chunk)
+        stats["page_index"] = start
+        stats["n_images"] = 0
+        pages.append(stats)
+
+    result = _summarize(total_lines, indices, pages, any_images=False)
+    result["unit"] = "line-window"
+    return result
+
+
 def scan_source(path: str, sample_n: int = 5) -> dict:
-    """Dispatches by file extension. Non-PDF text formats (epub/docx/txt/md) carry
-    much lower table/diagram-loss risk from their extractors, so they get a plain
-    low-touch result rather than page sampling."""
+    """Dispatches by file extension. PDF gets true page sampling; plain-text
+    formats (.txt/.md) get line-window sampling with the same heuristic;
+    other binary formats (epub/docx/rtf/mobi) aren't sampled by this tool yet
+    and get a low-confidence default."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
         return scan_pdf(path, sample_n=sample_n)
+    if ext in (".txt", ".md", ".markdown"):
+        return scan_plain_text(path, sample_n=sample_n)
     return {
         "suggestion": "text",
         "confidence": "low",
         "warnings": [
-            f"'{ext}' sources are not page-sampled by this tool (only PDF is). "
-            "If this source has embedded tables, code blocks, or diagrams that carry "
-            "load-bearing content, choose technical manually regardless of this default."
+            f"'{ext}' sources are not sampled by this tool (only PDF and plain-text "
+            ".txt/.md are). If this source has embedded tables, code blocks, or "
+            "diagrams that carry load-bearing content, choose technical manually "
+            "regardless of this default."
         ],
     }
 
@@ -153,8 +184,9 @@ def print_report(result: dict, path: str):
         print(f"⚠️  {result['error']}")
         return
     if "total_pages" in result:
-        print(f"Sampled {len(result['sampled_pages'])}/{result['total_pages']} pages "
-              f"(indices {result['sampled_pages']}).")
+        unit = "line" if result.get("unit") == "line-window" else "page"
+        print(f"Sampled {len(result['sampled_pages'])} {unit}-window(s) out of "
+              f"{result['total_pages']} total {unit}s (start indices {result['sampled_pages']}).")
         print(f"Avg tabular-line ratio: {result['avg_tabular_ratio']*100:.1f}% | "
               f"Pages with embedded images: {sum(1 for p in result['pages'] if p['n_images'] > 0)}")
     print(f"\nSuggested BOOK_TYPE: {result['suggestion']}  (confidence: {result['confidence']})")
