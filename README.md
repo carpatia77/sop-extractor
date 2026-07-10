@@ -110,10 +110,16 @@ Across a **Set**, two more: `<author>_evolution.md` (the lineage matrix) and
 
 ## 🚀 Usage
 
-Extraction is driven by the skill spec in [`SKILL.md`](SKILL.md); the deterministic
-parts are plain scripts you can run directly:
+Extraction is driven by the skill spec in [`SKILL.md`](SKILL.md), which walks
+an agent through a Q&A (content type, purpose, name, lineage) before running
+the extraction. The deterministic parts — content scanning, scoring,
+validation — are plain scripts you can also run directly:
 
 ```bash
+# Before extracting a PDF: scan it to get a BOOK_TYPE suggestion (text vs.
+# technical) instead of guessing from the first chapter — see below
+python scripts/preflight_scan.py path/to/source.pdf
+
 # Structural determinism of an extracted source
 python scripts/determinism_score.py path/to/your-skill
 
@@ -125,10 +131,30 @@ python scripts/verify_concept_presence.py path/to/your-skill --show-absent
 
 # For a video course: rescue frames at visual-reference gaps (dry-run first)
 python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
+
+# Run everything discovered in a skill/set directory in one pass
+python scripts/validate_all.py path/to/your-skill
 ```
 
 Supported source formats: PDF, EPUB, DOCX, TXT, Markdown, reStructuredText,
 AsciiDoc, HTML, RTF, MOBI/AZW — plus **SRT/VTT** video-course transcripts.
+
+**Before running a Full Conversion**, fill in
+[`docs/EXTRACTION_PREFLIGHT_CHECKLIST.md`](docs/EXTRACTION_PREFLIGHT_CHECKLIST.md)
+— it walks through the same content-type, depth, destination, and lineage
+decisions the skill spec asks about, with the scanner above doing the first
+pass for you. Getting the content type wrong (calling a table/diagram-driven
+source "text-heavy") is the single most expensive mistake to discover after
+a full run has already completed.
+
+**For audiovisual sources (video courses):** the frame-rescue step
+(`extract_frames_at_timestamps.py`, [`SKILL.md`](SKILL.md) Step 7.5) needs
+**both** the transcript (SRT/VTT) **and** the source video to pull still
+frames at the moments the speaker points at something visual without
+describing it in words. Keep the transcript file in the same folder as its
+corresponding video (one pair per part, for multi-part courses) before
+starting extraction — without a transcript alongside the video, this module
+has nothing to scan for visual-reference gaps and is skipped entirely.
 
 ---
 
