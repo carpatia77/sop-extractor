@@ -25,5 +25,5 @@ Whenever possible, run the extraction phase on one model family (e.g., Claude 3.
 - **Why:** A different model is much less likely to rubber-stamp the first model's phrasing or overlook its blind spots. This provides the 80% benefit of multi-agent voting without the heavy infrastructure.
 
 ## 5. Extraction Pre-Flight Review
-Before handing a pre-answered "Full Conversion" prompt (`BOOK_TYPE`, `DEPTH`, name/destination, lineage) to an executor, fill in `docs/EXTRACTION_PREFLIGHT_CHECKLIST.md`.
-- **Why:** these Steps (1.5, 4, 5, 5.5 in `SKILL.md`) are written as a live Q&A but get pre-answered for unattended runs; nothing in the pipeline validates the pre-answers before extraction starts. A wrong `BOOK_TYPE` in particular (e.g. calling a table/diagram-driven book "text-heavy") is expensive to discover after a full run has already completed.
+Before handing a pre-answered "Full Conversion" prompt (`BOOK_TYPE`, `DEPTH`, name/destination, lineage) to an executor, run `python scripts/preflight_scan.py <source>` and fill in `docs/EXTRACTION_PREFLIGHT_CHECKLIST.md`.
+- **Why:** these Steps (1.5, 4, 5, 5.5 in `SKILL.md`) are written as a live Q&A but get pre-answered for unattended runs; nothing in the pipeline validates the pre-answers before extraction starts. A wrong `BOOK_TYPE` in particular (e.g. calling a table/diagram-driven source "text-heavy" when its core argument is carried by tables or diagrams) is expensive to discover after a full run has already completed — this can happen with any source in any field, not just an obvious edge case.

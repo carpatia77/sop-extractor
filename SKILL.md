@@ -118,7 +118,7 @@ If no supported files are found, stop with a clear error message.
 
 ## Step 1.5 — Identify content type
 
-If the answers to this step (and Steps 4, 5, 5.5) are being pre-supplied up front for an unattended Full Conversion rather than asked live, review them first against `docs/EXTRACTION_PREFLIGHT_CHECKLIST.md` — a wrong `BOOK_TYPE` here is the single most expensive mistake in this workflow to discover after the fact.
+If the answers to this step (and Steps 4, 5, 5.5) are being pre-supplied up front for an unattended Full Conversion rather than asked live, run `python scripts/preflight_scan.py <source>` and review the result against `docs/EXTRACTION_PREFLIGHT_CHECKLIST.md` first — a wrong `BOOK_TYPE` here is the single most expensive mistake in this workflow to discover after the fact.
 
 Before extracting, ask the user:
 
