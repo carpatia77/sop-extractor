@@ -185,3 +185,36 @@ def test_gurps_like_collapsed_table_end_to_end(tmp_path):
     assert result["suggestion"] == "technical"
     assert result["avg_tabular_ratio"] == 0.0  # classic heuristic sees nothing
     assert result["avg_burst_ratio"] > 0.1     # burst heuristic catches it
+
+
+def test_summarize_recommendation_overrides_diluted_average():
+    """Real-world case: a large mostly-prose source with sparse but real
+    tables — one sampled window hits a collapsed-table burst, but the
+    average across many prose-only windows dilutes the raw suggestion to
+    'text'. The final recommendation must still say technical."""
+    pages = [{"n_lines": 50, "tabular_line_ratio": 0.0, "burst_ratio": 0.3, "page_index": 0, "n_images": 0}]
+    pages += [
+        {"n_lines": 50, "tabular_line_ratio": 0.0, "burst_ratio": 0.0, "page_index": i, "n_images": 0}
+        for i in range(1, 10)
+    ]
+    result = _summarize(500, list(range(10)), pages, any_images=False)
+    assert result["suggestion"] == "text"
+    assert result["recommendation"] == "technical"
+    assert "overriding" in result["recommendation_reason"]
+
+
+def test_summarize_recommendation_matches_suggestion_when_no_localized_evidence():
+    pages = [
+        {"n_lines": 50, "tabular_line_ratio": 0.0, "burst_ratio": 0.0, "page_index": i, "n_images": 0}
+        for i in range(5)
+    ]
+    result = _summarize(250, list(range(5)), pages, any_images=False)
+    assert result["suggestion"] == "text"
+    assert result["recommendation"] == "text"
+    assert "matches the raw signal" in result["recommendation_reason"]
+
+
+def test_scan_source_non_pdf_includes_recommendation_fields():
+    result = scan_source("book.epub")
+    assert "recommendation" in result
+    assert "recommendation_reason" in result

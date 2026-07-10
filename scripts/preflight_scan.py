@@ -166,6 +166,32 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
             "especially any pages the table of contents suggests are diagram/exhibit-heavy."
         )
 
+    # The final actionable call is deliberately biased toward `technical` whenever
+    # *any* sampled window shows hard evidence (an image, or a burst run) — even if
+    # the average across a large, mostly-prose document dilutes that signal below
+    # the suggestion threshold above. The two failure costs are not symmetric:
+    # choosing `technical` needlessly only costs processing time, while choosing
+    # `text` on a source with even sparse load-bearing tables/diagrams silently
+    # loses that content, often undiscovered until well after a full run.
+    localized_hard_evidence = pages_with_images > 0 or pages_with_burst > 0
+    if suggestion == "text" and localized_hard_evidence:
+        recommendation = "technical"
+        recommendation_reason = (
+            f"overriding the raw '{suggestion}' suggestion: {pages_with_images} sampled "
+            f"window(s) had embedded images and {pages_with_burst} had collapsed-table "
+            "bursts. In a large, mostly-prose document these can dilute the *average* "
+            "signal below the auto-suggestion threshold while still being real, "
+            "load-bearing content in a minority of the source. Missing that content "
+            "silently costs far more than the extra processing time of technical mode."
+        )
+    else:
+        recommendation = suggestion
+        recommendation_reason = (
+            "matches the raw signal — no localized hard evidence (images or collapsed-"
+            "table bursts) was found in the sampled windows beyond what the ratio "
+            "already reflects."
+        )
+
     return {
         "total_pages": total_pages,
         "sampled_pages": sampled_pages,
@@ -175,6 +201,8 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
         "avg_burst_ratio": round(avg_burst_ratio, 3),
         "suggestion": suggestion,
         "confidence": confidence,
+        "recommendation": recommendation,
+        "recommendation_reason": recommendation_reason,
         "warnings": warnings,
     }
 
@@ -219,6 +247,8 @@ def scan_source(path: str, sample_n: int = 5) -> dict:
     return {
         "suggestion": "text",
         "confidence": "low",
+        "recommendation": "text",
+        "recommendation_reason": "no scanner coverage for this format — this is an unexamined default, not a finding.",
         "warnings": [
             f"'{ext}' sources are not sampled by this tool (only PDF and plain-text "
             ".txt/.md are). If this source has embedded tables, code blocks, or "
@@ -240,10 +270,16 @@ def print_report(result: dict, path: str):
         print(f"Avg tabular-line ratio: {result['avg_tabular_ratio']*100:.1f}% | "
               f"Avg short-line burst ratio: {result.get('avg_burst_ratio', 0.0)*100:.1f}% | "
               f"Pages with embedded images: {sum(1 for p in result['pages'] if p['n_images'] > 0)}")
-    print(f"\nSuggested BOOK_TYPE: {result['suggestion']}  (confidence: {result['confidence']})")
+    print(f"\nRaw signal suggestion: {result['suggestion']}  (confidence: {result['confidence']})")
     for w in result.get("warnings", []):
         print(f"⚠️  {w}")
-    print("\nThis is a suggestion, not an automatic decision — confirm against "
+
+    recommendation = result.get("recommendation", result["suggestion"])
+    print(f"\n{'='*60}")
+    print(f"RECOMMENDATION: BOOK_TYPE={recommendation}")
+    print(f"Why: {result.get('recommendation_reason', '')}")
+    print(f"{'='*60}")
+    print("\nThis is a recommendation, not an automatic decision — confirm against "
           "docs/EXTRACTION_PREFLIGHT_CHECKLIST.md before running Full Conversion.")
 
 

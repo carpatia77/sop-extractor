@@ -25,7 +25,16 @@ images and tabular-looking text layout. It is a **suggestion, not a verdict**
 before deciding. Non-PDF sources (epub/docx/txt/md) are not page-sampled;
 judge them by hand using section 1 below.
 
-**Scanner output:** BOOK_TYPE suggestion: ______________  Confidence: ______________
+**Scanner output — Recommendation:** ______________  **Reason given:** ______________________
+
+The scanner prints both a raw signal (average across sampled windows) and a
+final recommendation — the two can differ: in a large, mostly-prose source,
+sparse-but-real tables can dilute the average below the auto-suggestion
+threshold, so the recommendation is deliberately biased toward `technical`
+whenever *any* sampled window shows hard evidence (an image, or a
+collapsed-table burst — cells that landed one-per-line instead of aligned
+columns, a common PDF-to-text artifact), even if the average alone would
+have said `text`. Follow the recommendation, not just the raw signal.
 
 ## 1. Content type (`BOOK_TYPE`, Step 1.5)
 
