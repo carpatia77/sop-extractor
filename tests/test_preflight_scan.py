@@ -218,3 +218,32 @@ def test_scan_source_non_pdf_includes_recommendation_fields():
     result = scan_source("book.epub")
     assert "recommendation" in result
     assert "recommendation_reason" in result
+
+
+def test_build_prompt_draft_fills_book_type_and_leaves_todos():
+    from preflight_scan import build_prompt_draft
+    result = {
+        "suggestion": "technical",
+        "confidence": "high",
+        "recommendation": "technical",
+        "recommendation_reason": "some reason",
+    }
+    prompt = build_prompt_draft(result, "/path/to/book.pdf")
+    assert "BOOK_TYPE=technical" in prompt
+    assert "/path/to/book.pdf" in prompt
+    assert "DEPTH=____" in prompt
+    assert "TODO" in prompt
+    assert prompt.count("TODO") >= 3  # depth, name/destination, lineage
+
+
+def test_build_prompt_draft_uses_recommendation_not_raw_suggestion():
+    from preflight_scan import build_prompt_draft
+    result = {
+        "suggestion": "text",
+        "confidence": "medium",
+        "recommendation": "technical",
+        "recommendation_reason": "overriding the raw suggestion",
+    }
+    prompt = build_prompt_draft(result, "/path/to/book.txt")
+    assert "BOOK_TYPE=technical" in prompt
+    assert "BOOK_TYPE=text" not in prompt

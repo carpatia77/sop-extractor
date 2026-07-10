@@ -12,10 +12,15 @@ regardless of what the source is about.
 
 ## Source: ______________________
 
-## 0. Run the automated pre-scan first (PDF sources)
+## 0. Run the automated pre-scan first (PDF or plain-text sources)
 
 ```bash
 python scripts/preflight_scan.py path/to/source.pdf
+
+# Optionally, draft a pre-answered Full Conversion prompt with BOOK_TYPE
+# already filled in from the recommendation (DEPTH/name/lineage stay as
+# TODOs — the scanner can't infer intent from the source alone):
+python scripts/preflight_scan.py path/to/source.pdf --emit-prompt
 ```
 
 This samples pages spread across the whole document (not just the front) and

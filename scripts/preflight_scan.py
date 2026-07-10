@@ -283,10 +283,38 @@ def print_report(result: dict, path: str):
           "docs/EXTRACTION_PREFLIGHT_CHECKLIST.md before running Full Conversion.")
 
 
+def build_prompt_draft(result: dict, path: str) -> str:
+    """Drafts a pre-answered Full Conversion prompt with BOOK_TYPE filled in
+    from the scan recommendation, leaving DEPTH/name/destination/lineage as
+    explicit TODOs — those depend on intent the scanner cannot infer from the
+    source alone (SKILL.md Steps 4, 5, 5.5)."""
+    recommendation = result.get("recommendation", result.get("suggestion", "text"))
+    reason = result.get("recommendation_reason", "")
+    confidence = result.get("confidence", "unknown")
+
+    lines = [
+        "Execute a skill book-to-skill para realizar a conversão completa (Full Conversion) do seguinte documento:",
+        f'"{path}"',
+        "",
+        "Respostas antecipadas (revisadas via docs/EXTRACTION_PREFLIGHT_CHECKLIST.md):",
+        f"- Step 1.5 (Content Type): BOOK_TYPE={recommendation}",
+        f"    Pre-flight scan recommendation (confidence: {confidence}). Reasoning: {reason}",
+        "- Step 4 (Purpose): DEPTH=____  [TODO — fill in: reference (option 3 only) or study (anything else)]",
+        "- Step 5 (Skill Name e Destino): nome=____  [TODO], destino=____  [TODO — confirm overwrite vs. fold-in/rename if it already exists]",
+        "- Step 5.5 (Lineage): ____  [TODO — decide explicitly: isolated extraction, or part of a deliberate lineage/grouping; do not default to isolated by omission]",
+        "",
+        "Assuma o Pre-flight Cost Estimate como aprovado e proceda seguindo as restrições de Token Budget.",
+    ]
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pre-flight content-type scan for a source.")
     parser.add_argument("source_path", help="Path to the source file (PDF, epub, docx, txt, md...)")
     parser.add_argument("--sample-n", type=int, default=5, help="Number of pages to sample (PDF only)")
+    parser.add_argument("--emit-prompt", action="store_true",
+                         help="Also print a draft pre-answered Full Conversion prompt with BOOK_TYPE "
+                              "filled in from the recommendation (DEPTH/name/lineage left as TODOs)")
     args = parser.parse_args()
 
     if not os.path.isfile(args.source_path):
@@ -295,4 +323,11 @@ if __name__ == "__main__":
 
     out = scan_source(args.source_path, sample_n=args.sample_n)
     print_report(out, args.source_path)
+
+    if args.emit_prompt:
+        print(f"\n{'='*60}")
+        print("DRAFT FULL CONVERSION PROMPT (fill in the TODOs before handoff)")
+        print(f"{'='*60}\n")
+        print(build_prompt_draft(out, args.source_path))
+
     sys.exit(0)

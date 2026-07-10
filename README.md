@@ -116,9 +116,13 @@ the extraction. The deterministic parts — content scanning, scoring,
 validation — are plain scripts you can also run directly:
 
 ```bash
-# Before extracting a PDF: scan it to get a BOOK_TYPE suggestion (text vs.
-# technical) instead of guessing from the first chapter — see below
+# Before extracting: scan a PDF or plain-text (.txt/.md) source to get a
+# BOOK_TYPE recommendation instead of guessing from the first chapter
 python scripts/preflight_scan.py path/to/source.pdf
+
+# ...or have it also draft a pre-answered Full Conversion prompt with
+# BOOK_TYPE filled in (DEPTH/name/lineage left as TODOs for you to decide)
+python scripts/preflight_scan.py path/to/source.pdf --emit-prompt
 
 # Structural determinism of an extracted source
 python scripts/determinism_score.py path/to/your-skill
