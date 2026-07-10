@@ -110,47 +110,60 @@ Across a **Set**, two more: `<author>_evolution.md` (the lineage matrix) and
 
 ## 🚀 Usage
 
-Extraction is driven by the skill spec in [`SKILL.md`](SKILL.md), which walks
-an agent through a Q&A (content type, purpose, name, lineage) before running
-the extraction. The deterministic parts — content scanning, scoring,
-validation — are plain scripts you can also run directly:
+Extraction is driven by the skill spec in [`SKILL.md`](SKILL.md), run by an
+agent (Copilot CLI, Amp, or another Agent Skills-compatible host). The
+deterministic parts — content scanning, scoring, validation — are plain
+scripts you run directly. Typical flow, in order:
+
+**1. Scan the source and get a ready-to-approve prompt** — do this before
+anything else, especially for PDFs. Getting the content type wrong (calling a
+table/diagram-driven source "text-heavy") is the single most expensive
+mistake to discover *after* a full run has already completed:
 
 ```bash
-# Before extracting: scan a PDF or plain-text (.txt/.md) source to get a
-# BOOK_TYPE recommendation instead of guessing from the first chapter
-python scripts/preflight_scan.py path/to/source.pdf
-
-# ...or get a fully-filled, ready-to-approve Full Conversion prompt: BOOK_TYPE
-# from the scan, DEPTH/name/lineage from sensible labeled defaults you can
-# override (--depth, --skill-name, --skills-home, --lineage)
 python scripts/preflight_scan.py path/to/source.pdf --emit-prompt
+```
 
+This samples the source, recommends `BOOK_TYPE`, and prints a **fully-filled**
+Full Conversion prompt (depth/name/destination/lineage use sensible, clearly
+labeled defaults you can override with `--depth`, `--skill-name`,
+`--skills-home`, `--lineage`) ending in a plain approve/reject question — copy
+it, review it, and hand it to your agent.
+
+**2. Hand the approved prompt to your agent** to run the actual extraction
+(`SKILL.md` Steps 0–9). This produces the skill folder (`SKILL.md`, `chapters/`,
+`first_principles.md`, `sops.md`, `glossary.md`).
+
+**3. Validate what came out**, everything discovered in one pass:
+
+```bash
+python scripts/validate_all.py path/to/your-skill
+```
+
+Or run the individual checks it wraps:
+
+```bash
 # Structural determinism of an extracted source
 python scripts/determinism_score.py path/to/your-skill
-
-# Validate a cross-source temporal evolution audit (all four gates)
-python scripts/validate_evolution_audit.py --dir path/to/your-set
 
 # Triage how well a course's First Principles trace to its transcript
 python scripts/verify_concept_presence.py path/to/your-skill --show-absent
 
+# Validate a cross-source temporal evolution audit (all four gates, Sets only)
+python scripts/validate_evolution_audit.py --dir path/to/your-set
+
 # For a video course: rescue frames at visual-reference gaps (dry-run first)
 python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
-
-# Run everything discovered in a skill/set directory in one pass
-python scripts/validate_all.py path/to/your-skill
 ```
 
 Supported source formats: PDF, EPUB, DOCX, TXT, Markdown, reStructuredText,
 AsciiDoc, HTML, RTF, MOBI/AZW — plus **SRT/VTT** video-course transcripts.
 
-**Before running a Full Conversion**, fill in
+For the full set of decisions behind step 1 (content type, depth,
+destination, lineage), see
 [`docs/EXTRACTION_PREFLIGHT_CHECKLIST.md`](docs/EXTRACTION_PREFLIGHT_CHECKLIST.md)
-— it walks through the same content-type, depth, destination, and lineage
-decisions the skill spec asks about, with the scanner above doing the first
-pass for you. Getting the content type wrong (calling a table/diagram-driven
-source "text-heavy") is the single most expensive mistake to discover after
-a full run has already completed.
+— the scanner above fills it in for you, but it's there to review before
+approving, not to fill in from scratch.
 
 **For audiovisual sources (video courses):** the frame-rescue step
 (`extract_frames_at_timestamps.py`, [`SKILL.md`](SKILL.md) Step 7.5) needs
