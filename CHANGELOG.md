@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exemplo, pessoa, entender" — the verb "estar", generic "exemplo"/"entender",
   and singular "pessoa" (only the plural "pessoas" had been excluded).
   Extended `_STOPWORDS` accordingly.
+- **Third wave of PT-BR filler in `analyst_lens` evidence.** Same real-transcript
+  re-run after the second pass still surfaced "hoje, também" — generic
+  temporal/discourse adverbs. Extended `_STOPWORDS` with these plus the
+  immediate same-class neighbors (agora, ainda, depois, antes).
 
 ### Added
 - **Subtitle transcript (`.srt`/`.vtt`) support in `scripts/preflight_scan.py`.**

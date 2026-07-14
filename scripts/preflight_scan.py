@@ -85,6 +85,7 @@ _STOPWORDS = {
     "sendo", "acho", "acha", "achar", "gente", "cara", "pessoas", "pessoa", "parte",
     "coisa", "coisas", "vez", "vezes", "esta", "está", "estao", "estão", "estar",
     "exemplo", "exemplos", "entender", "entendeu", "entendendo", "entendi",
+    "hoje", "tambem", "também", "agora", "ainda", "depois", "antes",
 }
 
 

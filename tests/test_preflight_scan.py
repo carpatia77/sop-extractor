@@ -362,6 +362,24 @@ def test_salient_terms_excludes_second_wave_ptbr_filler():
     assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range", "mercado"))
 
 
+def test_salient_terms_excludes_third_wave_ptbr_filler():
+    """Regression test: running against the real ASG transcript after the first
+    two stopword passes still surfaced 'hoje, também' as evidence — generic
+    temporal/discourse adverbs, not domain vocabulary. Also covers the
+    immediate same-class neighbors (agora, ainda, depois, antes)."""
+    transcript = (
+        "Hoje eu também vou mostrar isso. Agora vamos ver, e ainda depois "
+        "disso, antes de terminar, também hoje é um bom dia pra explicar. "
+        "Hoje também, agora ainda, depois antes, hoje também, agora ainda. "
+        "O volume profile mostra o range de mercado e o backtest confirma o sinal. "
+        "O volume profile é a base do backtest e do sinal que o sistema gera. "
+    ) * 3
+    terms = salient_terms(transcript)
+    for filler in ("hoje", "também", "tambem", "agora", "ainda", "depois", "antes"):
+        assert filler not in terms, f"filler word {filler!r} leaked into salient_terms: {terms}"
+    assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range", "mercado"))
+
+
 def test_scan_source_txt_includes_re_candidacy_fields(tmp_path):
     f = tmp_path / "demo.txt"
     f.write_text(SYSTEM_DEMO_TRANSCRIPT * 3, encoding="utf-8")
