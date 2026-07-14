@@ -64,11 +64,26 @@ MIN_SYSTEM_MENTIONS = 3
 MIN_UI_DEIXIS_FOR_CANDIDATE = 3
 
 _WORD_RE = re.compile(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]{2,}")
+# Conversational filler and function words in EN + PT-BR — NOT domain vocabulary
+# in any subject. Excluding these from salient_terms() is what keeps the
+# analyst_lens proposal pointing at actual domain terms (e.g. "mercado",
+# "sinal") instead of generic speech filler ("gente", "cara", "pessoas") that
+# dominates raw word-frequency counts in any spoken transcript regardless of
+# subject matter.
 _STOPWORDS = {
     "the", "and", "that", "this", "with", "for", "you", "your", "are", "was", "not",
-    "但是", "para", "com", "que", "uma", "dos", "das", "por", "como", "mais", "isso",
-    "voce", "você", "aqui", "então", "entao", "quando", "porque", "tem", "the",
     "here", "there", "when", "what", "have", "will", "can", "our", "they", "them",
+    "但是",
+    "para", "com", "que", "uma", "dos", "das", "por", "como", "mais", "isso", "essa",
+    "esse", "essas", "esses", "nessa", "nesse", "nessas", "nesses", "dessa", "desse",
+    "dessas", "desses", "voce", "você", "voces", "vocês", "aqui", "então", "entao",
+    "quando", "porque", "tem", "muito", "muita", "muitos", "muitas", "assim", "bem",
+    "tudo", "toda", "todo", "todos", "todas", "outra", "outro", "outros", "outras",
+    "mesmo", "mesma", "sobre", "onde", "quer", "quero", "vai", "vou", "vamos", "veja",
+    "vejam", "olha", "olhe", "olhem", "nosso", "nossa", "nossos", "nossas", "pra",
+    "pro", "certo", "certeza", "tipo", "cada", "algum", "alguma", "alguns", "algumas",
+    "sendo", "acho", "acha", "achar", "gente", "cara", "pessoas", "parte", "coisa",
+    "coisas", "vez", "vezes",
 }
 
 

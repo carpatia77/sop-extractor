@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`analyst_lens` evidence no longer drowns in PT-BR conversational filler.**
+  Found running the scanner against a real course transcript: `salient_terms()`
+  surfaced "gente, mercado, cara, pessoas, parte, vocês" — mostly filler words
+  ("folks", "dude", "people", "part", "you all"), not domain vocabulary,
+  because the stopword list only covered a handful of PT-BR function words.
+  Expanded `_STOPWORDS` with common PT-BR conversational filler and discourse
+  markers; the same transcript now surfaces actual domain terms ("sinal",
+  "backtest", "range") instead.
+
 ### Added
 - **Subtitle transcript (`.srt`/`.vtt`) support in `scripts/preflight_scan.py`.**
   Previously these fell through to the generic low-confidence default (no real

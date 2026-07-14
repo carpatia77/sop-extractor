@@ -16,6 +16,7 @@ from preflight_scan import (
     detect_named_system,
     propose_analyst_lens,
     build_prompt_draft,
+    salient_terms,
 )
 
 
@@ -321,6 +322,24 @@ def test_propose_analyst_lens_is_generic_base_with_evidence():
     assert lens["lens"] == "systems-architect"  # generic base, not a hardcoded domain
     assert isinstance(lens["evidence"], list)
     assert lens["system"] == "ASG"
+
+
+def test_salient_terms_excludes_ptbr_conversational_filler():
+    """Regression test for a real-world case (a genuine ASG course transcript):
+    raw word-frequency surfaced 'gente, mercado, cara, pessoas, parte, vocês' as
+    evidence — all conversational filler except 'mercado', which drowned out any
+    actual domain vocabulary. Filler must never outrank real domain terms."""
+    transcript = (
+        "Gente, olha só, cara, isso aqui é muito importante pra vocês. "
+        "Toda vez que a gente fala com as pessoas, essa parte do negócio é assim. "
+        "Gente, cara, pessoas, parte, vocês, gente, cara, pessoas, parte, vocês. "
+        "O volume profile mostra o range de mercado e o backtest confirma o sinal. "
+        "O volume profile é a base do backtest e do sinal que o sistema gera. "
+    ) * 3
+    terms = salient_terms(transcript)
+    for filler in ("gente", "cara", "pessoas", "parte", "vocês", "vocês"):
+        assert filler not in terms, f"filler word {filler!r} leaked into salient_terms: {terms}"
+    assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range"))
 
 
 def test_scan_source_txt_includes_re_candidacy_fields(tmp_path):
