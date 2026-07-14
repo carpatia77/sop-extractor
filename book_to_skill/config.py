@@ -16,11 +16,13 @@ WORDS_PER_TOKEN = 0.75  # approximate
 TEXT_EXTENSIONS = {".txt", ".text", ".md", ".markdown", ".rst", ".adoc", ".asciidoc"}
 HTML_EXTENSIONS = {".html", ".htm", ".xhtml"}
 CALIBRE_EBOOK_EXTENSIONS = {".mobi", ".azw", ".azw3"}
+SUBTITLE_EXTENSIONS = {".srt", ".vtt"}
 SUPPORTED_EXTENSIONS = {
     ".pdf", ".epub", ".docx", ".rtf",
     *TEXT_EXTENSIONS,
     *HTML_EXTENSIONS,
     *CALIBRE_EBOOK_EXTENSIONS,
+    *SUBTITLE_EXTENSIONS,
 }
 
 PYTHON_DEPENDENCIES = {

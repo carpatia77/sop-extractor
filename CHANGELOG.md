@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immediate same-class neighbors (agora, ainda, depois, antes).
 
 ### Added
+- **Subtitle transcript (`.srt`/`.vtt`) support in the extraction pipeline
+  (`book_to_skill/parsers/subtitle.py`).** Found running a real Full Conversion
+  end-to-end: `preflight_scan.py` and SKILL.md Step 1.5 both treat `.srt`/`.vtt`
+  as a first-class `BOOK_TYPE=transcript` source, but `extract.py`/`utils.py`
+  had no matching support — `SUPPORTED_EXTENSIONS` never included them, so
+  Step 2 failed outright with "Unsupported format '.srt'" on every transcript
+  source, book scanned or not. Adds `SUBTITLE_EXTENSIONS` to `config.py`, a
+  `subtitle.py` parser (cue-index/timestamp/WEBVTT stripping — same grammar as
+  `preflight_scan.py`'s `strip_subtitle_markup`, kept in sync intentionally
+  rather than imported, since `preflight_scan.py` is deliberately dependency-free
+  standalone tooling), and a dispatch branch in `extract_single_file`.
 - **Subtitle transcript (`.srt`/`.vtt`) support in `scripts/preflight_scan.py`.**
   Previously these fell through to the generic low-confidence default (no real
   signal), so a video-course transcript — exactly the material Item 11 targets

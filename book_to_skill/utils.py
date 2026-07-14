@@ -20,6 +20,7 @@ from book_to_skill.config import (
     TEXT_EXTENSIONS,
     HTML_EXTENSIONS,
     CALIBRE_EBOOK_EXTENSIONS,
+    SUBTITLE_EXTENSIONS,
     supported_formats_message,
 )
 from book_to_skill.dependencies import (
@@ -28,6 +29,7 @@ from book_to_skill.dependencies import (
     run_dependency_check,
 )
 from book_to_skill.parsers.text import read_text_file
+from book_to_skill.parsers.subtitle import read_subtitle_file
 from book_to_skill.parsers.html import extract_html_file
 from book_to_skill.parsers.docx import extract_docx
 from book_to_skill.parsers.rtf import extract_rtf
@@ -501,6 +503,14 @@ def extract_single_file(input_path: Path, extraction_mode: str, install_mode: st
         if text is None or not text.strip():
             raise ExtractionError(f"Could not extract text from HTML: {input_path.name}")
         method = "html-parser"
+        pages = 0
+        pages_label = "sections"
+    elif ext in SUBTITLE_EXTENSIONS:
+        print(f"Extracting subtitle transcript: {input_str}")
+        text = read_subtitle_file(input_str)
+        if text is None or not text.strip():
+            raise ExtractionError(f"Could not read subtitle transcript: {input_path.name}")
+        method = "subtitle-strip"
         pages = 0
         pages_label = "sections"
     elif ext == ".docx":
