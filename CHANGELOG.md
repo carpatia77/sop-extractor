@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
+  opt-in fourth audit layer that reconstructs a demonstrated system's backend
+  from its observable frontend, kept walled off from the anti-fabrication core:
+  - `scripts/validate_architecture_audit.py` — deterministic, no-LLM validator
+    for a `<system>_architecture.md` artifact, with four gates: **Seal** (every
+    bulleted claim carries exactly one `[OBSERVED …]`/`[INFERRED …]` seal),
+    **Grounding** (every inference cites ≥1 real observed id; persona-blind, so
+    an expert lens never licenses uncited inference), **Non-Contamination** (no
+    `[INFERRED …]` seal in `SKILL.md`/`first_principles.md`/`sops.md`), and
+    **Intent** (front matter records `intent: reverse-engineering`, an approver,
+    and the confirmed `analyst_lens`).
+  - `scripts/preflight_scan.py` now detects reverse-engineering **candidacy**
+    (`re_candidate`) from on-screen/UI deixis, a repeated named system, and
+    outputs-shown-without-computation, and proposes an evidence-derived
+    `analyst_lens` — surfacing an `[A]` faithful / `[B]` Blackhat Mode choice
+    (`[A]` default; RE mode never auto-selected).
+  - `docs/ARCHITECTURE_AUDIT.md` documents the artifact grammar and gates.
+
 ### Documentation
+- Planned the remaining maturity-plan item: **Item 12 — Unified CLI menu
+  (`sopx`)**, a thin dispatcher over the existing scripts that doubles as 1:1
+  scaffolding for a future frontend (spec only, no pipeline code yet).
 - Clarified the two install paths so they are not confused: **`git clone` into a
   skills folder** registers the `/book-to-skill` agent skill (Copilot
   CLI / Amp / other compatible agents), while **`pip install book-to-skill`** installs only the standalone

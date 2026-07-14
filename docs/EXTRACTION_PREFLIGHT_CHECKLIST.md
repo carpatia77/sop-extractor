@@ -41,6 +41,34 @@ collapsed-table burst — cells that landed one-per-line instead of aligned
 columns, a common PDF-to-text artifact), even if the average alone would
 have said `text`. Follow the recommendation, not just the raw signal.
 
+## 0.5 Reverse-engineering candidacy (`re_candidate` / "Blackhat Mode", Item 11)
+
+The scanner also reports whether the source *demonstrates a system* (on-screen
+deixis, a repeated named system, outputs shown without their computation). When
+`re_candidate` is true it offers two options — **neither is auto-selected**:
+
+- `[A]` faithful doctrine only (normal audit → `SKILL.md`) — **default**.
+- `[B]` **Blackhat Mode**: also produce a `<system>_architecture.md` that
+  reverse-engineers the backend from the observable frontend, every line sealed
+  `[OBSERVED …]` or `[INFERRED ← …]` and checked by
+  `scripts/validate_architecture_audit.py`.
+
+- [ ] If I want the reverse-engineering layer, I chose `[B]` **explicitly** —
+      it is never assumed, even on a 100%-candidate source. Inferring a
+      proprietary backend is speculative by nature.
+- [ ] I confirmed (or sharpened) the proposed `analyst_lens`. The scanner
+      proposes a generic base (`systems-architect`) plus the source's own
+      vocabulary; I refined it to the actual domain (e.g.
+      `quantitative-systems-architect`) so the inference reasons as a domain
+      expert — **without** that lens ever exempting a claim from citing
+      observed evidence (the Grounding Gate is persona-blind).
+
+**Blackhat Mode chosen?** ☐ No (default) ☐ Yes — `analyst_lens`: ______________
+**Approved by:** ______________  (recorded in the artifact front matter)
+
+See [`ARCHITECTURE_AUDIT.md`](ARCHITECTURE_AUDIT.md) for the full artifact
+grammar and the four gates.
+
 ## 1. Content type (`BOOK_TYPE`, Step 1.5)
 
 - [ ] I reviewed the scanner output (or, for non-PDF sources, sampled 3–5

@@ -29,6 +29,48 @@ TABULAR_LINE_RE = re.compile(r'(\S+\s{2,}\S+\s{2,}\S+)|(\d+\s+\d+\s+\d+)')
 SHORT_LINE_RE = re.compile(r'^\S{1,20}$')
 MIN_BURST_RUN = 4
 
+# --- Reverse-engineering ("Blackhat Mode", Item 11) candidacy signals ---------
+# On-screen / UI deixis: the speaker points at something visual instead of
+# describing it in words. Multilingual (EN + PT-BR), the two languages this
+# pipeline is exercised on; the list is signal, not an exhaustive grammar.
+UI_DEIXIS_RES = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r'\blook at (this|that|here)\b', r'\bas you can see\b', r'\byou can see\b',
+        r'\bhere you (can )?see\b', r'\bover here\b', r'\bthis (button|screen|window|panel|chart|column|line)\b',
+        r'\bclick (on|here)\b', r'\bright here\b', r'\bon (the|your) screen\b',
+        r'\bolh[ae] (aqui|s[óo]|para|isso|aqui\b)', r'\brepara?( n[oa])?\b', r'\bveja( aqui| s[óo]| bem)?\b',
+        r'\baqui (no|na|nessa|nesse|em|voc[êe])\b', r'\bnessa tela\b', r'\bna tela\b',
+        r'\bclic(a|ar|ando)( aqui| n[oa])?\b', r'\baperta( aqui| n[oa])?\b',
+        r'\bseleciona( aqui| n[oa])?\b', r'\bpercebe( n[oa])?\b',
+    ]
+]
+
+# Outputs presented as objects (a signal/indicator/result shown) rather than
+# derived — the frontend of a system whose computation stays hidden.
+OUTPUT_MENTION_RES = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r'\bsignal(s)?\b', r'\bsinal(is|z)?\b', r'\bindicator\b', r'\bindicador(es)?\b',
+        r'\boutput(s)?\b', r'\bresultado(s)?\b', r'\balert(a|s)?\b', r'\bsetup(s)?\b',
+        r'\bthe system (shows|gives|tells|marks|paints|plots)\b',
+        r'\bo sistema (mostra|d[áa]|marca|pinta|plota|indica)\b',
+    ]
+]
+
+# A named proprietary system: a repeated short ALL-CAPS acronym (ASG, TPO) or a
+# repeated Capitalized proper noun that isn't a sentence-start artifact.
+ACRONYM_RE = re.compile(r'\b([A-Z]{2,6})\b')
+STOP_ACRONYMS = {"PDF", "URL", "API", "CEO", "USA", "OK", "TV", "PC", "ID", "FAQ", "AI", "II", "III", "IV"}
+MIN_SYSTEM_MENTIONS = 3
+MIN_UI_DEIXIS_FOR_CANDIDATE = 3
+
+_WORD_RE = re.compile(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]{2,}")
+_STOPWORDS = {
+    "the", "and", "that", "this", "with", "for", "you", "your", "are", "was", "not",
+    "但是", "para", "com", "que", "uma", "dos", "das", "por", "como", "mais", "isso",
+    "voce", "você", "aqui", "então", "entao", "quando", "porque", "tem", "the",
+    "here", "there", "when", "what", "have", "will", "can", "our", "they", "them",
+}
+
 
 def short_line_burst_ratio(lines: list) -> float:
     """Fraction of (non-empty) lines that belong to a run of at least
@@ -48,6 +90,81 @@ def short_line_burst_ratio(lines: list) -> float:
     if run >= MIN_BURST_RUN:
         burst_lines += run
     return burst_lines / len(lines)
+
+
+def detect_named_system(text: str):
+    """Most-repeated ALL-CAPS acronym (excluding common ones) appearing at least
+    MIN_SYSTEM_MENTIONS times — the fingerprint of a named proprietary system
+    demonstrated in the material. Returns (name, count) or (None, 0)."""
+    counts = {}
+    for m in ACRONYM_RE.finditer(text):
+        tok = m.group(1)
+        if tok in STOP_ACRONYMS:
+            continue
+        counts[tok] = counts.get(tok, 0) + 1
+    if not counts:
+        return None, 0
+    name, count = max(counts.items(), key=lambda kv: kv[1])
+    if count >= MIN_SYSTEM_MENTIONS:
+        return name, count
+    return None, 0
+
+
+def salient_terms(text: str, top_k: int = 6) -> list:
+    """Most frequent non-stopword content terms, lowercased — the source's own
+    vocabulary, used to propose (not hardcode) an analyst lens for the operator
+    to confirm. Domain-agnostic: no subject keywords are baked in."""
+    counts = {}
+    for m in _WORD_RE.finditer(text.lower()):
+        w = m.group(0)
+        if w in _STOPWORDS or len(w) < 4:
+            continue
+        counts[w] = counts.get(w, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [w for w, c in ranked[:top_k] if c > 1]
+
+
+def propose_analyst_lens(text: str, system_name: str = None) -> dict:
+    """Proposes a base analyst lens plus the vocabulary evidence the operator
+    uses to sharpen it. Deliberately does NOT guess the domain: the base lens is
+    the generic 'systems-architect' (right for reverse-engineering any system),
+    and the source's salient terms are surfaced so the human refines it one-key
+    (e.g. -> 'quantitative-systems-architect'). Nothing subject-specific is
+    hardcoded, preserving agnosticism."""
+    evidence = salient_terms(text)
+    return {
+        "lens": "systems-architect",
+        "evidence": evidence,
+        "system": system_name,
+        "note": ("base lens is generic; sharpen it from the surfaced vocabulary before approving "
+                 "(e.g. 'systems-architect' -> '<domain>-systems-architect')"),
+    }
+
+
+def analyze_re_candidacy(text: str) -> dict:
+    """Detects whether the material *demonstrates a system* (a reverse-engineering
+    candidate) from on-screen deixis, a named system, and outputs-shown-without-
+    computation. Candidacy is a content property; the RE ('Blackhat') mode is
+    only ever activated by explicit operator declaration, never auto-selected —
+    so this only sets a suggestion flag."""
+    ui_deixis = sum(len(rx.findall(text)) for rx in UI_DEIXIS_RES)
+    output_mentions = sum(len(rx.findall(text)) for rx in OUTPUT_MENTION_RES)
+    system_name, system_count = detect_named_system(text)
+
+    re_candidate = (
+        ui_deixis >= MIN_UI_DEIXIS_FOR_CANDIDATE
+        or (system_name is not None and output_mentions >= 2)
+    )
+    return {
+        "re_candidate": re_candidate,
+        "system_demonstration": {
+            "ui_deixis": ui_deixis,
+            "named_system": system_name,
+            "named_system_mentions": system_count,
+            "output_mentions": output_mentions,
+        },
+        "analyst_lens_suggestion": propose_analyst_lens(text, system_name),
+    }
 
 
 def sample_page_indices(total_pages: int, sample_n: int = 5) -> list:
@@ -102,12 +219,14 @@ def scan_pdf(path: str, sample_n: int = 5) -> dict:
 
         pages = []
         any_images = False
+        sampled_text_parts = []
         for i in indices:
             page = reader.pages[i]
             try:
                 text = page.extract_text() or ""
             except Exception:
                 text = ""
+            sampled_text_parts.append(text)
             try:
                 n_images = len(page.images)
             except Exception:
@@ -119,7 +238,9 @@ def scan_pdf(path: str, sample_n: int = 5) -> dict:
             stats["n_images"] = n_images
             pages.append(stats)
 
-    return _summarize(total_pages, indices, pages, any_images)
+    result = _summarize(total_pages, indices, pages, any_images)
+    result.update(analyze_re_candidacy("\n".join(sampled_text_parts)))
+    return result
 
 
 def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: bool) -> dict:
@@ -231,6 +352,7 @@ def scan_plain_text(path: str, sample_n: int = 5, window_lines: int = 200) -> di
 
     result = _summarize(total_lines, indices, pages, any_images=False)
     result["unit"] = "line-window"
+    result.update(analyze_re_candidacy("".join(lines)))
     return result
 
 
@@ -282,6 +404,28 @@ def print_report(result: dict, path: str):
     print("\nThis is a recommendation, not an automatic decision — confirm against "
           "docs/EXTRACTION_PREFLIGHT_CHECKLIST.md before running Full Conversion.")
 
+    if result.get("re_candidate"):
+        sd = result.get("system_demonstration", {})
+        lens = result.get("analyst_lens_suggestion", {})
+        print(f"\n{'='*60}")
+        print("🕶  REVERSE-ENGINEERING CANDIDATE (Blackhat Mode available)")
+        print(f"{'='*60}")
+        sys_name = sd.get('named_system')
+        sys_suffix = f" (x{sd.get('named_system_mentions')})" if sys_name else ""
+        print(f"Signals: {sd.get('ui_deixis', 0)} on-screen/UI deixis reference(s), "
+              f"named system: {sys_name or 'none detected'}{sys_suffix}, "
+              f"{sd.get('output_mentions', 0)} output/signal mention(s).")
+        print("This material demonstrates a system — you MAY reverse-engineer its backend from the "
+              "observable frontend. This is opt-in and never assumed; choose:")
+        print("  [A] faithful doctrine only (normal audit -> SKILL.md)          [default]")
+        print("  [B] Blackhat Mode: faithful doctrine + reverse-engineering layer "
+              "(adds <system>_architecture.md with [OBSERVED]/[INFERRED] seals)")
+        proposed = lens.get("lens", "systems-architect")
+        evidence = ", ".join(lens.get("evidence", []) or []) or "(no strong vocabulary signal)"
+        print(f"Proposed analyst lens (confirm/override one-key): {proposed}")
+        print(f"  Derived from source vocabulary: {evidence}")
+        print(f"  {lens.get('note', '')}")
+
 
 def slugify_filename(path: str) -> str:
     """Derives a skill-name slug from a source filename: lowercase, non-
@@ -323,6 +467,21 @@ def build_prompt_draft(result: dict, path: str, depth: str = None,
         f"- Step 5 (Skill Name e Destino): nome=\"{skill_name}\", destino=\"{destino}\"",
         "    [default] Nome derivado do arquivo de origem. Confirme overwrite vs. fold-in/rename se o destino já existir.",
         f"- Step 5.5 (Lineage): {lineage}",
+    ]
+
+    if result.get("re_candidate"):
+        lens = result.get("analyst_lens_suggestion", {})
+        proposed = lens.get("lens", "systems-architect")
+        evidence = ", ".join(lens.get("evidence", []) or []) or "(no strong vocabulary signal)"
+        lines += [
+            "- Item 11 (Reverse-Engineering / Blackhat Mode): material demonstra um sistema (RE-candidate).",
+            "    [A] Doutrina fiel apenas (default) — só SKILL.md.",
+            "    [B] Blackhat Mode — adiciona <system>_architecture.md com selos [OBSERVED]/[INFERRED].",
+            f"    Se [B]: analyst_lens proposta=\"{proposed}\" (derivada do vocabulário: {evidence}) — confirme/ajuste.",
+            "    [default] [A] — o modo RE nunca é assumido; só ligue [B] declarando explicitamente.",
+        ]
+
+    lines += [
         "",
         "Assuma o Pre-flight Cost Estimate como aprovado e proceda seguindo as restrições de Token Budget.",
         "",
