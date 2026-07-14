@@ -1,6 +1,4 @@
-import os
 import json
-import pytest
 from scripts.validate_manifest import validate_manifest
 
 def create_manifest(tmp_path, data):

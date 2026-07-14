@@ -1,5 +1,4 @@
 import json
-import pytest
 from scripts._runlog import append_run, tail_log
 
 def test_append_run(tmp_path):

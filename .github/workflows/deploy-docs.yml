@@ -7,7 +7,6 @@ on:
       - docs/**
       - README.md
       - SKILL.md
-      - BACKERS.md
       - mkdocs.yml
       - .github/workflows/deploy-docs.yml
   pull_request:
@@ -15,7 +14,6 @@ on:
       - docs/**
       - README.md
       - SKILL.md
-      - BACKERS.md
       - mkdocs.yml
       - .github/workflows/deploy-docs.yml
 
@@ -42,7 +40,6 @@ jobs:
         run: |
           cp README.md docs/guide.md
           cp SKILL.md docs/skill-reference.md
-          cp BACKERS.md docs/BACKERS.md
       - name: Build
         run: mkdocs build
       - name: Deploy to gh-pages (master push only)

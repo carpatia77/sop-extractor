@@ -1,6 +1,4 @@
-import os
 import json
-import pytest
 from scripts.write_run_manifest import sha256_file, get_source_hash, write_run_manifest
 
 def test_sha256_file(tmp_path):

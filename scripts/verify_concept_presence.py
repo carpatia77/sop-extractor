@@ -165,10 +165,10 @@ def main():
         if args.show_absent and r["absent"]:
             print(f"          absent: {r['absent']}")
 
-    print(f"\nReminder: a flag means 'the assertion's wording is mostly not in the "
-          f"source' — usually heavy paraphrase (benign), occasionally a fabricated "
-          f"claim (real). Inspect the absent terms to tell which; the tool does not "
-          f"decide that for you.")
+    print("\nReminder: a flag means 'the assertion's wording is mostly not in the "
+          "source' — usually heavy paraphrase (benign), occasionally a fabricated "
+          "claim (real). Inspect the absent terms to tell which; the tool does not "
+          "decide that for you.")
 
     if args.gate and out["review_flags"]:
         sys.exit(2)

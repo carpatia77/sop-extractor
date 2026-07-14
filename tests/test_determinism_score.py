@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from scripts.determinism_score import score_chapter, score_skill
 
 def test_chapter_all_sops():

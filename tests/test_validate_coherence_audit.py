@@ -1,6 +1,5 @@
 import os
 import tempfile
-import pytest
 from scripts.validate_coherence_audit import normalize, jaccard, verify_claim, run_validation
 
 def test_normalize():

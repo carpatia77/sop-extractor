@@ -1,7 +1,6 @@
 import os
 import json
 import tempfile
-import pytest
 from scripts.validate_evolution_audit import run_validation
 
 def setup_mock_set(tmpdir):

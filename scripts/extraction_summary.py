@@ -71,7 +71,7 @@ def main():
         print(f"  - Output (MD): ~{output_tokens:,} tokens ({output_words:,} words)")
         print(f"  - Total Context: ~{input_tokens + output_tokens:,} tokens")
 
-    print(f"\n=== OVERALL (Courses Only) ===")
+    print("\n=== OVERALL (Courses Only) ===")
     print(f"Total Duration: {total_hours:.2f} hours")
     print(f"Total Input Tokens: ~{int(total_input_words * 1.33):,}")
     print(f"Total Output Tokens: ~{int(total_output_words * 1.33):,}")
