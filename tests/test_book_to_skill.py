@@ -38,6 +38,7 @@ from book_to_skill.parsers.text import read_text_file
 from book_to_skill.parsers.docx import extract_docx_with_zipfile
 from book_to_skill.parsers.rtf import strip_rtf_fallback
 from book_to_skill.parsers.epub import extract_with_zipfile
+from book_to_skill.parsers.subtitle import strip_subtitle_markup, read_subtitle_file
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -60,6 +61,26 @@ def _make_html_file(path: Path) -> Path:
     """Create a minimal HTML file."""
     path.write_text(
         "<html><body><h1>Hello</h1><p>Test paragraph.</p></body></html>",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _make_srt_file(path: Path) -> Path:
+    """Create a minimal .srt subtitle file."""
+    path.write_text(
+        "1\n00:00:00,000 --> 00:00:03,500\nHello subtitle content.\n\n"
+        "2\n00:00:03,500 --> 00:00:07,000\nSecond spoken line.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _make_vtt_file(path: Path) -> Path:
+    """Create a minimal .vtt subtitle file."""
+    path.write_text(
+        "WEBVTT\n\nNOTE not spoken content\n\n"
+        "00:00:00.000 --> 00:00:03.500\nHello VTT content.\n",
         encoding="utf-8",
     )
     return path
@@ -848,6 +869,44 @@ class TestHtmlExtraction:
         assert result["format"] == "html"
         assert result["extraction_method"] == "html-parser"
         assert "Test paragraph" in result["text"]
+
+
+class TestSubtitleExtraction:
+    """Tests for .srt/.vtt subtitle transcript extraction."""
+
+    def test_extract_srt_file(self, tmp_path):
+        srt = _make_srt_file(tmp_path / "vid1.srt")
+
+        with mock.patch("book_to_skill.utils.prepare_dependencies"):
+            result = extract_single_file(srt, "transcript", "no")
+
+        assert result["format"] == "srt"
+        assert result["extraction_method"] == "subtitle-strip"
+        assert "Hello subtitle content." in result["text"]
+        assert "Second spoken line." in result["text"]
+        assert "-->" not in result["text"]
+        assert "00:00:00,000" not in result["text"]
+
+    def test_extract_vtt_file(self, tmp_path):
+        vtt = _make_vtt_file(tmp_path / "vid1.vtt")
+
+        with mock.patch("book_to_skill.utils.prepare_dependencies"):
+            result = extract_single_file(vtt, "transcript", "no")
+
+        assert result["format"] == "vtt"
+        assert result["extraction_method"] == "subtitle-strip"
+        assert "Hello VTT content." in result["text"]
+        assert "WEBVTT" not in result["text"]
+        assert "NOTE not spoken content" not in result["text"]
+
+    def test_strip_subtitle_markup_direct(self):
+        cleaned = strip_subtitle_markup(
+            "1\n00:00:00,000 --> 00:00:03,500\nSpoken line one.\n"
+        )
+        assert cleaned == "Spoken line one."
+
+    def test_read_subtitle_file_missing_returns_none(self, tmp_path):
+        assert read_subtitle_file(str(tmp_path / "does-not-exist.srt")) is None
 
 
 class TestDocxExtraction:
