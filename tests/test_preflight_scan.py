@@ -16,6 +16,7 @@ from preflight_scan import (
     detect_named_system,
     propose_analyst_lens,
     build_prompt_draft,
+    salient_terms,
 )
 
 
@@ -321,6 +322,62 @@ def test_propose_analyst_lens_is_generic_base_with_evidence():
     assert lens["lens"] == "systems-architect"  # generic base, not a hardcoded domain
     assert isinstance(lens["evidence"], list)
     assert lens["system"] == "ASG"
+
+
+def test_salient_terms_excludes_ptbr_conversational_filler():
+    """Regression test for a real-world case (a genuine ASG course transcript):
+    raw word-frequency surfaced 'gente, mercado, cara, pessoas, parte, vocês' as
+    evidence — all conversational filler except 'mercado', which drowned out any
+    actual domain vocabulary. Filler must never outrank real domain terms."""
+    transcript = (
+        "Gente, olha só, cara, isso aqui é muito importante pra vocês. "
+        "Toda vez que a gente fala com as pessoas, essa parte do negócio é assim. "
+        "Gente, cara, pessoas, parte, vocês, gente, cara, pessoas, parte, vocês. "
+        "O volume profile mostra o range de mercado e o backtest confirma o sinal. "
+        "O volume profile é a base do backtest e do sinal que o sistema gera. "
+    ) * 3
+    terms = salient_terms(transcript)
+    for filler in ("gente", "cara", "pessoas", "parte", "vocês", "vocês"):
+        assert filler not in terms, f"filler word {filler!r} leaked into salient_terms: {terms}"
+    assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range"))
+
+
+def test_salient_terms_excludes_second_wave_ptbr_filler():
+    """Regression test: after the first stopword pass above, running against the
+    real ASG transcript (not the synthetic reproduction) still surfaced
+    'está, exemplo, pessoa, entender' as evidence alongside real domain terms —
+    a second wave of discourse filler the first pass didn't cover (verb 'estar',
+    generic 'exemplo'/'entender', and the singular 'pessoa', where only the
+    plural 'pessoas' had been excluded)."""
+    transcript = (
+        "Olha, isso está sendo um exemplo de como o sistema está funcionando. "
+        "Essa pessoa não vai entender se a gente não mostrar um exemplo claro. "
+        "Está vendo? Vou dar outro exemplo pra você entender melhor essa pessoa. "
+        "O volume profile mostra o range de mercado e o backtest confirma o sinal. "
+        "O volume profile é a base do backtest e do sinal que o sistema gera. "
+    ) * 3
+    terms = salient_terms(transcript)
+    for filler in ("está", "esta", "exemplo", "exemplos", "pessoa", "entender"):
+        assert filler not in terms, f"filler word {filler!r} leaked into salient_terms: {terms}"
+    assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range", "mercado"))
+
+
+def test_salient_terms_excludes_third_wave_ptbr_filler():
+    """Regression test: running against the real ASG transcript after the first
+    two stopword passes still surfaced 'hoje, também' as evidence — generic
+    temporal/discourse adverbs, not domain vocabulary. Also covers the
+    immediate same-class neighbors (agora, ainda, depois, antes)."""
+    transcript = (
+        "Hoje eu também vou mostrar isso. Agora vamos ver, e ainda depois "
+        "disso, antes de terminar, também hoje é um bom dia pra explicar. "
+        "Hoje também, agora ainda, depois antes, hoje também, agora ainda. "
+        "O volume profile mostra o range de mercado e o backtest confirma o sinal. "
+        "O volume profile é a base do backtest e do sinal que o sistema gera. "
+    ) * 3
+    terms = salient_terms(transcript)
+    for filler in ("hoje", "também", "tambem", "agora", "ainda", "depois", "antes"):
+        assert filler not in terms, f"filler word {filler!r} leaked into salient_terms: {terms}"
+    assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range", "mercado"))
 
 
 def test_scan_source_txt_includes_re_candidacy_fields(tmp_path):
