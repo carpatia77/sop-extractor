@@ -10,6 +10,9 @@ from preflight_scan import (
     scan_source,
     scan_plain_text,
     short_line_burst_ratio,
+    analyze_re_candidacy,
+    detect_named_system,
+    propose_analyst_lens,
 )
 
 
@@ -269,3 +272,83 @@ def test_build_prompt_draft_uses_recommendation_not_raw_suggestion():
     prompt = build_prompt_draft(result, "/path/to/book.txt")
     assert "BOOK_TYPE=technical" in prompt
     assert "BOOK_TYPE=text" not in prompt
+
+
+# --- Item 11: reverse-engineering candidacy + analyst lens -------------------
+
+SYSTEM_DEMO_TRANSCRIPT = (
+    "Bem-vindos ao ASG. Olha aqui na tela, o ASG te dá um sinal quando o preço entra. "
+    "Repara nesse indicador. Como vocês podem ver, o ASG mostra o setup aqui. "
+    "Clica nesse botão e o sistema mostra o resultado. Veja aqui o alerta. "
+    "As you can see, the ASG signal appears right here on the screen. "
+)
+
+CONCEPTUAL_TRANSCRIPT = (
+    "Today we discuss the philosophy of decision making under uncertainty. "
+    "Rationality is bounded, and heuristics shape how humans reason about probability. "
+    "We reflect on the epistemology of forecasting and the ethics of judgment. "
+) * 3
+
+
+def test_analyze_re_candidacy_flags_system_demo():
+    result = analyze_re_candidacy(SYSTEM_DEMO_TRANSCRIPT)
+    assert result["re_candidate"] is True
+    assert result["system_demonstration"]["named_system"] == "ASG"
+    assert result["system_demonstration"]["ui_deixis"] >= 3
+
+
+def test_analyze_re_candidacy_false_for_conceptual_material():
+    result = analyze_re_candidacy(CONCEPTUAL_TRANSCRIPT)
+    assert result["re_candidate"] is False
+    assert result["system_demonstration"]["named_system"] is None
+
+
+def test_detect_named_system_ignores_common_acronyms():
+    assert detect_named_system("PDF PDF PDF URL URL API API API")[0] is None
+
+
+def test_detect_named_system_finds_repeated_acronym():
+    name, count = detect_named_system("The ASG does X. ASG does Y. Look at ASG again.")
+    assert name == "ASG"
+    assert count >= 3
+
+
+def test_propose_analyst_lens_is_generic_base_with_evidence():
+    lens = propose_analyst_lens(SYSTEM_DEMO_TRANSCRIPT, system_name="ASG")
+    assert lens["lens"] == "systems-architect"  # generic base, not a hardcoded domain
+    assert isinstance(lens["evidence"], list)
+    assert lens["system"] == "ASG"
+
+
+def test_scan_source_txt_includes_re_candidacy_fields(tmp_path):
+    f = tmp_path / "demo.txt"
+    f.write_text(SYSTEM_DEMO_TRANSCRIPT * 3, encoding="utf-8")
+    result = scan_source(str(f))
+    assert "re_candidate" in result
+    assert "analyst_lens_suggestion" in result
+    assert result["re_candidate"] is True
+
+
+def test_build_prompt_draft_offers_blackhat_option_when_candidate():
+    from preflight_scan import build_prompt_draft
+    result = {
+        "suggestion": "text", "confidence": "medium",
+        "recommendation": "text", "recommendation_reason": "x",
+        "re_candidate": True,
+        "analyst_lens_suggestion": {"lens": "systems-architect", "evidence": ["asg", "signal"]},
+    }
+    prompt = build_prompt_draft(result, "/path/to/asg.txt")
+    assert "Blackhat Mode" in prompt
+    assert "[A]" in prompt and "[B]" in prompt
+    assert "analyst_lens" in prompt
+
+
+def test_build_prompt_draft_omits_blackhat_when_not_candidate():
+    from preflight_scan import build_prompt_draft
+    result = {
+        "suggestion": "text", "confidence": "medium",
+        "recommendation": "text", "recommendation_reason": "x",
+        "re_candidate": False,
+    }
+    prompt = build_prompt_draft(result, "/path/to/book.txt")
+    assert "Blackhat Mode" not in prompt
