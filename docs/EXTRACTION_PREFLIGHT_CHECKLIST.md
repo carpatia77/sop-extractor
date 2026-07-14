@@ -12,7 +12,7 @@ regardless of what the source is about.
 
 ## Source: ______________________
 
-## 0. Run the automated pre-scan first (PDF or plain-text sources)
+## 0. Run the automated pre-scan first (PDF, plain-text, or subtitle transcript sources)
 
 ```bash
 python scripts/preflight_scan.py path/to/source.pdf
@@ -23,12 +23,14 @@ python scripts/preflight_scan.py path/to/source.pdf
 python scripts/preflight_scan.py path/to/source.pdf --emit-prompt
 ```
 
-This samples pages spread across the whole document (not just the front) and
-returns a suggested `BOOK_TYPE` with a confidence level, flagging embedded
-images and tabular-looking text layout. It is a **suggestion, not a verdict**
-— low/medium confidence or any warning means read the flagged pages yourself
-before deciding. Non-PDF sources (epub/docx/txt/md) are not page-sampled;
-judge them by hand using section 1 below.
+This samples pages (or, for plain-text/subtitle sources, line-windows spread
+across the whole file) and returns a suggested `BOOK_TYPE` with a confidence
+level, flagging embedded images and tabular-looking text layout — and, for
+video-course transcripts (`.srt`/`.vtt`), whether the material demonstrates a
+system (`re_candidate`, see section 0.5 below). It is a **suggestion, not a
+verdict** — low/medium confidence or any warning means read the flagged
+pages/lines yourself before deciding. Other non-sampled sources (epub/docx)
+are not page-sampled; judge them by hand using section 1 below.
 
 **Scanner output — Recommendation:** ______________  **Reason given:** ______________________
 

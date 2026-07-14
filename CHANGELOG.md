@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Subtitle transcript (`.srt`/`.vtt`) support in `scripts/preflight_scan.py`.**
+  Previously these fell through to the generic low-confidence default (no real
+  signal), so a video-course transcript — exactly the material Item 11 targets
+  — never got the reverse-engineering candidacy check. Cue indices, timestamps,
+  and WEBVTT/NOTE headers are stripped down to spoken words before sampling, so
+  both the tabular/burst heuristics and `re_candidate`/`analyst_lens` now score
+  real signal. `BOOK_TYPE` is correctly reported as `transcript` (SKILL.md Step
+  1.5 option 3), not `text`/`technical`, in both the report and the emitted
+  Full Conversion prompt.
 - **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
   opt-in fourth audit layer that reconstructs a demonstrated system's backend
   from its observable frontend, kept walled off from the anti-fabrication core:

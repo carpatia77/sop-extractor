@@ -9,10 +9,13 @@ from preflight_scan import (
     _summarize,
     scan_source,
     scan_plain_text,
+    scan_transcript,
+    strip_subtitle_markup,
     short_line_burst_ratio,
     analyze_re_candidacy,
     detect_named_system,
     propose_analyst_lens,
+    build_prompt_draft,
 )
 
 
@@ -352,3 +355,96 @@ def test_build_prompt_draft_omits_blackhat_when_not_candidate():
     }
     prompt = build_prompt_draft(result, "/path/to/book.txt")
     assert "Blackhat Mode" not in prompt
+
+
+# --- .srt/.vtt subtitle transcript support -----------------------------------
+
+SRT_SAMPLE = """1
+00:00:00,000 --> 00:00:03,500
+Bem-vindos ao ASG. Olha aqui na tela, o ASG te dá um sinal quando o preço entra.
+
+2
+00:00:03,500 --> 00:00:07,000
+Repara nesse indicador. Como vocês podem ver, o ASG mostra o setup aqui.
+
+3
+00:00:07,000 --> 00:00:10,000
+Clica nesse botão e o sistema mostra o resultado do backtest.
+"""
+
+VTT_SAMPLE = """WEBVTT
+
+NOTE this is a note, not spoken content
+
+00:00:00.000 --> 00:00:03.500
+Bem-vindos ao ASG. Olha aqui na tela, o ASG te dá um sinal quando o preço entra.
+
+00:00:03.500 --> 00:00:07.000
+Repara nesse indicador. Como vocês podem ver, o ASG mostra o setup aqui.
+"""
+
+
+def test_strip_subtitle_markup_removes_srt_structure():
+    cleaned = strip_subtitle_markup(SRT_SAMPLE)
+    assert "-->" not in cleaned
+    assert "\n1\n" not in f"\n{cleaned}\n"
+    assert "Bem-vindos ao ASG" in cleaned
+
+
+def test_strip_subtitle_markup_removes_vtt_structure():
+    cleaned = strip_subtitle_markup(VTT_SAMPLE)
+    assert "WEBVTT" not in cleaned
+    assert "NOTE" not in cleaned
+    assert "-->" not in cleaned
+    assert "Bem-vindos ao ASG" in cleaned
+
+
+def test_scan_transcript_sets_source_kind(tmp_path):
+    f = tmp_path / "vid1.srt"
+    f.write_text(SRT_SAMPLE * 20, encoding="utf-8")
+    result = scan_transcript(str(f))
+    assert result["source_kind"] == "transcript"
+    assert result["unit"] == "line-window"
+
+
+def test_scan_transcript_detects_re_candidacy(tmp_path):
+    f = tmp_path / "vid1.srt"
+    f.write_text(SRT_SAMPLE * 20, encoding="utf-8")
+    result = scan_transcript(str(f))
+    assert result["re_candidate"] is True
+    assert result["system_demonstration"]["named_system"] == "ASG"
+
+
+def test_scan_transcript_empty_file(tmp_path):
+    f = tmp_path / "empty.srt"
+    f.write_text("", encoding="utf-8")
+    result = scan_transcript(str(f))
+    assert result["source_kind"] == "transcript"
+    assert result["re_candidate"] is False
+
+
+def test_scan_source_dispatches_srt_to_scan_transcript(tmp_path):
+    f = tmp_path / "vid1.srt"
+    f.write_text(SRT_SAMPLE * 20, encoding="utf-8")
+    result = scan_source(str(f))
+    assert result["source_kind"] == "transcript"
+    assert result["re_candidate"] is True
+
+
+def test_scan_source_dispatches_vtt_to_scan_transcript(tmp_path):
+    f = tmp_path / "vid2.vtt"
+    f.write_text(VTT_SAMPLE * 20, encoding="utf-8")
+    result = scan_source(str(f))
+    assert result["source_kind"] == "transcript"
+
+
+def test_build_prompt_draft_uses_book_type_transcript_for_subtitle_source():
+    result = {
+        "source_kind": "transcript",
+        "suggestion": "text", "confidence": "low",
+        "recommendation": "text", "recommendation_reason": "x",
+        "re_candidate": False,
+    }
+    prompt = build_prompt_draft(result, "/path/to/vid1.srt")
+    assert "BOOK_TYPE=transcript" in prompt
+    assert "BOOK_TYPE=text" not in prompt

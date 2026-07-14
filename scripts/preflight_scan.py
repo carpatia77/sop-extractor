@@ -328,6 +328,73 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     }
 
 
+SUBTITLE_EXTS = (".srt", ".vtt")
+
+SRT_CUE_INDEX_RE = re.compile(r'^\d+$')
+SUBTITLE_TIMESTAMP_RE = re.compile(r'\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}')
+VTT_HEADER_RE = re.compile(r'^WEBVTT\b')
+VTT_META_RE = re.compile(r'^(NOTE|STYLE|REGION)\b')
+
+
+def strip_subtitle_markup(raw_text: str) -> str:
+    """Strips SRT/VTT structure (cue-index numbers, timestamp lines, WEBVTT
+    headers, NOTE/STYLE/REGION blocks) down to the spoken-word text, so the
+    tabular/burst/re-candidacy heuristics score actual speech instead of being
+    diluted or confused by subtitle syntax that isn't prose."""
+    out = []
+    for line in raw_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if VTT_HEADER_RE.match(stripped) or VTT_META_RE.match(stripped):
+            continue
+        if SUBTITLE_TIMESTAMP_RE.search(stripped):
+            continue
+        if SRT_CUE_INDEX_RE.match(stripped):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def scan_transcript(path: str, sample_n: int = 5, window_lines: int = 200) -> dict:
+    """Samples a subtitle transcript (.srt/.vtt) the same way as plain text,
+    after stripping cue indices/timestamps/headers so the heuristics (and the
+    Item 11 reverse-engineering candidacy signal) score the spoken words, not
+    subtitle syntax. Video-course transcripts are exactly the material Item 11
+    targets — a screen-demonstrated system described in spoken words — so this
+    format must get real signal, not the generic low-confidence default."""
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        raw_text = f.read()
+
+    cleaned = strip_subtitle_markup(raw_text)
+    lines = [l + "\n" for l in cleaned.splitlines()]
+
+    total_lines = len(lines)
+    if total_lines == 0:
+        result = _summarize(0, [], [], any_images=False)
+        result["unit"] = "line-window"
+        result["source_kind"] = "transcript"
+        result.update(analyze_re_candidacy(""))
+        return result
+
+    n_windows = min(sample_n, max(1, total_lines // window_lines)) or 1
+    indices = sample_page_indices(max(total_lines - window_lines, 0) + 1, n_windows) or [0]
+
+    pages = []
+    for start in indices:
+        chunk = "".join(lines[start:start + window_lines])
+        stats = score_page_text(chunk)
+        stats["page_index"] = start
+        stats["n_images"] = 0
+        pages.append(stats)
+
+    result = _summarize(total_lines, indices, pages, any_images=False)
+    result["unit"] = "line-window"
+    result["source_kind"] = "transcript"
+    result.update(analyze_re_candidacy(cleaned))
+    return result
+
+
 def scan_plain_text(path: str, sample_n: int = 5, window_lines: int = 200) -> dict:
     """Samples fixed-size line windows spread across a plain-text file (.txt/.md)
     using the same tabular-line heuristic as scan_pdf. No image signal is
@@ -359,23 +426,29 @@ def scan_plain_text(path: str, sample_n: int = 5, window_lines: int = 200) -> di
 def scan_source(path: str, sample_n: int = 5) -> dict:
     """Dispatches by file extension. PDF gets true page sampling; plain-text
     formats (.txt/.md) get line-window sampling with the same heuristic;
-    other binary formats (epub/docx/rtf/mobi) aren't sampled by this tool yet
-    and get a low-confidence default."""
+    subtitle transcripts (.srt/.vtt) get the same line-window sampling after
+    stripping cue indices/timestamps, so both the tabular/burst heuristics and
+    the Item 11 reverse-engineering candidacy signal get real signal instead
+    of the generic low-confidence default — video-course transcripts are
+    exactly the material Item 11 targets; other binary formats (epub/docx/
+    rtf/mobi) aren't sampled by this tool yet and get a low-confidence default."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
         return scan_pdf(path, sample_n=sample_n)
     if ext in (".txt", ".md", ".markdown"):
         return scan_plain_text(path, sample_n=sample_n)
+    if ext in SUBTITLE_EXTS:
+        return scan_transcript(path, sample_n=sample_n)
     return {
         "suggestion": "text",
         "confidence": "low",
         "recommendation": "text",
         "recommendation_reason": "no scanner coverage for this format — this is an unexamined default, not a finding.",
         "warnings": [
-            f"'{ext}' sources are not sampled by this tool (only PDF and plain-text "
-            ".txt/.md are). If this source has embedded tables, code blocks, or "
-            "diagrams that carry load-bearing content, choose technical manually "
-            "regardless of this default."
+            f"'{ext}' sources are not sampled by this tool (only PDF, plain-text "
+            ".txt/.md, and subtitle .srt/.vtt are). If this source has embedded "
+            "tables, code blocks, or diagrams that carry load-bearing content, "
+            "choose technical manually regardless of this default."
         ],
     }
 
@@ -397,10 +470,21 @@ def print_report(result: dict, path: str):
         print(f"⚠️  {w}")
 
     recommendation = result.get("recommendation", result["suggestion"])
-    print(f"\n{'='*60}")
-    print(f"RECOMMENDATION: BOOK_TYPE={recommendation}")
-    print(f"Why: {result.get('recommendation_reason', '')}")
-    print(f"{'='*60}")
+    if result.get("source_kind") == "transcript":
+        print(f"\n{'='*60}")
+        print("RECOMMENDATION: BOOK_TYPE=transcript")
+        print(f"{'='*60}")
+        print("This is a subtitle transcript (.srt/.vtt) — SKILL.md Step 1.5 option 3 "
+              "(video course transcript) applies regardless of the technical/text signal "
+              f"above ('{recommendation}'). That signal is a secondary check: rare but real "
+              "cases where the speaker reads out a table/formula that a transcript-mode "
+              "extractor might flatten — note it for the executor if strong, but BOOK_TYPE "
+              "itself is transcript.")
+    else:
+        print(f"\n{'='*60}")
+        print(f"RECOMMENDATION: BOOK_TYPE={recommendation}")
+        print(f"Why: {result.get('recommendation_reason', '')}")
+        print(f"{'='*60}")
     print("\nThis is a recommendation, not an automatic decision — confirm against "
           "docs/EXTRACTION_PREFLIGHT_CHECKLIST.md before running Full Conversion.")
 
@@ -443,7 +527,8 @@ def build_prompt_draft(result: dict, path: str, depth: str = None,
     lineage get sensible, clearly-labeled defaults the scanner cannot verify
     against content (SKILL.md Steps 4, 5, 5.5) — the operator reviews and
     approves/overrides rather than filling blanks from scratch."""
-    recommendation = result.get("recommendation", result.get("suggestion", "text"))
+    is_transcript = result.get("source_kind") == "transcript"
+    recommendation = "transcript" if is_transcript else result.get("recommendation", result.get("suggestion", "text"))
     reason = result.get("recommendation_reason", "")
     confidence = result.get("confidence", "unknown")
 
@@ -455,13 +540,22 @@ def build_prompt_draft(result: dict, path: str, depth: str = None,
         "if this source belongs to a deliberate lineage/grouping with other sources)"
     )
 
+    if is_transcript:
+        secondary = result.get("recommendation", result.get("suggestion", "text"))
+        step_1_5_note = (
+            f"    [medido] Fonte é um transcript (.srt/.vtt) — SKILL.md Step 1.5 opção 3 se aplica "
+            f"independente do sinal técnico secundário ('{secondary}', confidence: {confidence})."
+        )
+    else:
+        step_1_5_note = f"    [medido] Pre-flight scan (confidence: {confidence}). {reason}"
+
     lines = [
         "Execute a skill book-to-skill para realizar a conversão completa (Full Conversion) do seguinte documento:",
         f'"{path}"',
         "",
         "Respostas (pre-flight scan + defaults — revise antes de aprovar):",
         f"- Step 1.5 (Content Type): BOOK_TYPE={recommendation}",
-        f"    [medido] Pre-flight scan (confidence: {confidence}). {reason}",
+        step_1_5_note,
         f"- Step 4 (Purpose): DEPTH={depth}",
         "    [default] Assume \"All of the above\" (Option 4) unless you only want quick reference lookup (Option 3 -> DEPTH=reference).",
         f"- Step 5 (Skill Name e Destino): nome=\"{skill_name}\", destino=\"{destino}\"",
