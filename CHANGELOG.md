@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Documentation
+- Planned two new maturity-plan items (spec only, no pipeline code yet):
+  **Item 11 — Architecture Reverse-Engineering Audit ("Blackhat Mode")**, an
+  opt-in fourth audit layer that reconstructs a demonstrated system's backend
+  from its observable frontend with `[OBSERVED]`/`[INFERRED]` seals and four
+  deterministic gates, kept walled off from the anti-fabrication core; and
+  **Item 12 — Unified CLI menu (`sopx`)**, a thin dispatcher over the existing
+  scripts that doubles as 1:1 scaffolding for a future frontend.
 - Clarified the two install paths so they are not confused: **`git clone` into a
   skills folder** registers the `/book-to-skill` agent skill (Copilot
   CLI / Amp / other compatible agents), while **`pip install book-to-skill`** installs only the standalone
