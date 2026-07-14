@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Expanded `_STOPWORDS` with common PT-BR conversational filler and discourse
   markers; the same transcript now surfaces actual domain terms ("sinal",
   "backtest", "range") instead.
+- **Second wave of PT-BR filler in `analyst_lens` evidence.** Found running
+  the (already-patched) scanner against the real ASG transcript end-to-end
+  (not the synthetic reproduction above): evidence still surfaced "está,
+  exemplo, pessoa, entender" — the verb "estar", generic "exemplo"/"entender",
+  and singular "pessoa" (only the plural "pessoas" had been excluded).
+  Extended `_STOPWORDS` accordingly.
 
 ### Added
 - **Subtitle transcript (`.srt`/`.vtt`) support in `scripts/preflight_scan.py`.**

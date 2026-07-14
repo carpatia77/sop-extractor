@@ -82,8 +82,9 @@ _STOPWORDS = {
     "mesmo", "mesma", "sobre", "onde", "quer", "quero", "vai", "vou", "vamos", "veja",
     "vejam", "olha", "olhe", "olhem", "nosso", "nossa", "nossos", "nossas", "pra",
     "pro", "certo", "certeza", "tipo", "cada", "algum", "alguma", "alguns", "algumas",
-    "sendo", "acho", "acha", "achar", "gente", "cara", "pessoas", "parte", "coisa",
-    "coisas", "vez", "vezes",
+    "sendo", "acho", "acha", "achar", "gente", "cara", "pessoas", "pessoa", "parte",
+    "coisa", "coisas", "vez", "vezes", "esta", "está", "estao", "estão", "estar",
+    "exemplo", "exemplos", "entender", "entendeu", "entendendo", "entendi",
 }
 
 

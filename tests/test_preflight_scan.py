@@ -342,6 +342,26 @@ def test_salient_terms_excludes_ptbr_conversational_filler():
     assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range"))
 
 
+def test_salient_terms_excludes_second_wave_ptbr_filler():
+    """Regression test: after the first stopword pass above, running against the
+    real ASG transcript (not the synthetic reproduction) still surfaced
+    'está, exemplo, pessoa, entender' as evidence alongside real domain terms —
+    a second wave of discourse filler the first pass didn't cover (verb 'estar',
+    generic 'exemplo'/'entender', and the singular 'pessoa', where only the
+    plural 'pessoas' had been excluded)."""
+    transcript = (
+        "Olha, isso está sendo um exemplo de como o sistema está funcionando. "
+        "Essa pessoa não vai entender se a gente não mostrar um exemplo claro. "
+        "Está vendo? Vou dar outro exemplo pra você entender melhor essa pessoa. "
+        "O volume profile mostra o range de mercado e o backtest confirma o sinal. "
+        "O volume profile é a base do backtest e do sinal que o sistema gera. "
+    ) * 3
+    terms = salient_terms(transcript)
+    for filler in ("está", "esta", "exemplo", "exemplos", "pessoa", "entender"):
+        assert filler not in terms, f"filler word {filler!r} leaked into salient_terms: {terms}"
+    assert any(t in terms for t in ("volume", "profile", "backtest", "sinal", "range", "mercado"))
+
+
 def test_scan_source_txt_includes_re_candidacy_fields(tmp_path):
     f = tmp_path / "demo.txt"
     f.write_text(SYSTEM_DEMO_TRANSCRIPT * 3, encoding="utf-8")
