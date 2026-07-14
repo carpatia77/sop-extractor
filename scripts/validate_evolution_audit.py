@@ -13,9 +13,10 @@ class EvolutionResult(NamedTuple):
 
 # Re-use from validate_coherence_audit
 try:
-    from scripts.validate_coherence_audit import normalize, jaccard, verify_claim
+    # normalize/jaccard are intentionally re-exported for reuse (see test_8_import_reuse)
+    from scripts.validate_coherence_audit import normalize, jaccard, verify_claim  # noqa: F401
 except ImportError:
-    from validate_coherence_audit import normalize, jaccard, verify_claim
+    from validate_coherence_audit import normalize, jaccard, verify_claim  # noqa: F401
 
 def load_manifest(dir_path: str) -> dict:
     manifest_path = os.path.join(dir_path, "set_manifest.json")
@@ -183,7 +184,7 @@ def run_validation(dir_path: str) -> EvolutionResult:
                     # Silence Gate
                     if category == 'superseded' and ('absence' in description.lower() or 'missing' in description.lower() or 'not mentioned' in description.lower() or 'silence' in description.lower()):
                         print(f"Silence Gate FAILED for concept '{concept_name}':")
-                        print(f"Cannot infer 'superseded' from silence. Must downgrade to 'dropped?'.")
+                        print("Cannot infer 'superseded' from silence. Must downgrade to 'dropped?'.")
                         return EvolutionResult(1)
                         
                     # Dropped Confidence check

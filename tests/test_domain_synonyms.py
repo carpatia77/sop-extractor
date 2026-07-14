@@ -1,6 +1,4 @@
-import os
 import json
-import pytest
 
 from scripts.domain_synonyms import load_domain_synonyms, normalize_text
 from scripts.verify_concept_presence import score_principle
@@ -85,12 +83,8 @@ def test_validate_coherence_audit_with_synonyms():
     claim = "The participant showed directional conviction"
     source = "The participant showed initiative in the market."
     
-    # Without synonyms, "directional conviction" and "initiative" don't match.
-    # Jaccard overlap will be very low (participant, showed).
-    res_without = verify_claim(claim, source)
-    
     syn_map = {"directional conviction": "initiative"}
     res_with = verify_claim(claim, source, synonym_map=syn_map)
-    
+
     # The synonym map should normalize the claim to "initiative", making it match the source exactly.
     assert res_with is True

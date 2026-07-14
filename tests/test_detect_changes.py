@@ -1,6 +1,4 @@
-import os
 import json
-import pytest
 from scripts.detect_changes import detect_changes
 
 def test_detect_changes(tmp_path):

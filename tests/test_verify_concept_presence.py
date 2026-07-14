@@ -1,6 +1,5 @@
 import os
 import tempfile
-import pytest
 from scripts.verify_concept_presence import (
     salient_terms,
     score_principle,

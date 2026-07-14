@@ -1,6 +1,5 @@
 import json
 import os
-from datetime import datetime, timezone
 import collections
 
 def append_run(record: dict, log_path: str = "runs.jsonl"):
