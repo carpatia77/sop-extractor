@@ -12,6 +12,10 @@ license = { text = "MIT" }
 
 [project.scripts]
 book-to-skill = "book_to_skill.cli:main"
+sopx = "scripts.menu:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["book_to_skill", "scripts"]
 
 [project.optional-dependencies]
 epub = ["ebooklib", "beautifulsoup4"]

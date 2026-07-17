@@ -144,3 +144,17 @@ def test_headless_scan_command_matches_manual_invocation():
     assert cmd[0] == "python3"
     assert cmd[1].endswith("preflight_scan.py")
     assert cmd[2:] == ["/tmp/book.pdf", "--emit-prompt"]
+
+
+def test_pyproject_registers_sopx_console_script():
+    """Regression test for the sopx packaging fix: `pyproject.toml` must
+    declare the `sopx` console-script entry pointing at `scripts.menu:main`,
+    and `scripts/` must be an actual package (importable, has __init__.py)
+    so hatchling includes it in the wheel — otherwise `pip install -e .`
+    gives you `book-to-skill` but no `sopx` command at all."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    pyproject_path = os.path.join(repo_root, "pyproject.toml")
+    with open(pyproject_path, encoding="utf-8") as f:
+        content = f.read()
+    assert 'sopx = "scripts.menu:main"' in content
+    assert os.path.isfile(os.path.join(repo_root, "scripts", "__init__.py"))
