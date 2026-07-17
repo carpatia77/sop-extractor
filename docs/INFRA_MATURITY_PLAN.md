@@ -178,7 +178,7 @@ python scripts/detect_changes.py --set examples/<author>-set
 
 **Integrate:** `validate_all.py --since-last` prints the change summary at the top so the operator knows the minimal reprocessing set.
 
-**Note on "raw source":** many skills won't have the raw source committed (that's the private-source convention — see `docs/ROADMAP.md` item 2). When absent, checksum only the artifacts and say so. Don't hard-require raw sources.
+**Note on "raw source":** many skills won't have the raw source committed (that's the private-source convention — see `docs/OPERATING_CONVENTIONS.md` item 6). When absent, checksum only the artifacts and say so. Don't hard-require raw sources.
 
 **Tests:** first run → all new; unchanged run → all unchanged; mutate one artifact → that member flagged.
 
