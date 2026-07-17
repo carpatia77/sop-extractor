@@ -166,6 +166,13 @@ python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
 # Read the finished skill as one page instead of six separate .md files —
 # provenance tags and OBSERVED/INFERRED seals render as colored badges
 python scripts/render_skill_viewer.py path/to/your-skill
+
+# Multi-part course: scan every part in one command, one combined prompt
+python scripts/preflight_scan.py part1.srt part2.srt --emit-prompt
+
+# Blackhat Mode on a multi-part course: merge each part's architecture doc
+# into one, with continuous OBSERVED/INFERRED numbering, then re-validated
+python scripts/merge_architecture_audit.py part1_architecture.md part2_architecture.md --out <system>_architecture.md
 ```
 
 Supported source formats: PDF, EPUB, DOCX, TXT, Markdown, reStructuredText,

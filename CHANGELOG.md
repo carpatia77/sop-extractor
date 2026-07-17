@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scripts/merge_architecture_audit.py` — consolidates multi-part Blackhat
+  Mode artifacts (Item 14.1).** Processing a course in separate parts produces
+  one `<system>_architecture.md` per part, each numbering its `O`/`I` ids from
+  scratch. This script merges N of them into one artifact with continuous
+  numbering, rewritten `INFERRED` citations, pooled (not interleaved) sections,
+  and preserved per-source prose — then re-validates the result against the
+  same Seal/Grounding/Intent gates `validate_architecture_audit.py` enforces.
+  Automates exactly the manual renumber-and-consolidate labor a real two-part
+  ASG course extraction required this week. Wired into `sopx` as `merge-arch`.
+- **Batch dispatch for multi-part courses in `scripts/preflight_scan.py`
+  (Item 14.2).** `preflight_scan.py part1.srt part2.srt --emit-prompt` now
+  scans every part and emits one Full Conversion prompt covering the whole
+  course (`PART_ID=part1..partN`, matching `SKILL.md`'s existing multi-part
+  convention), instead of requiring one manual run per part and hand-stitched
+  prompts. Warns if parts disagree on `BOOK_TYPE`; points at
+  `merge_architecture_audit.py` as the next step when any part is a Blackhat
+  Mode candidate. Single-path invocation is unchanged (no regression).
+- Registered **Item 14** in `docs/INFRA_MATURITY_PLAN.md`.
+
 ## [1.3.0] — 2026-07-17
 
 ### Added

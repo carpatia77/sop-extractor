@@ -405,6 +405,26 @@ This reuses Item 12's `sopx` dispatch map directly (`sopx view <skill_dir>` is a
 
 ---
 
+## Item 14 — Multi-part-course practical blind spots (merge tool + batch scan)
+
+**Why:** processing the two real ASG videos end-to-end this week surfaced two concrete, repeatable friction points that Items 11-13 didn't cover, because they only showed up when actually running a multi-part course through the pipeline as two separate extractions:
+
+1. **No tool to consolidate per-part Blackhat artifacts.** Each part produced its own `<system>_architecture.md` with its own `O1`/`I1` numbering starting from scratch. Getting one coherent picture meant manually renumbering ids across files, re-pointing `INFERRED` citations at the new ids, and re-validating the four gates by hand — real, repeatable, mechanical labor with zero domain judgment in it (the domain judgment — spotting that vid1's histogram and vid2's CVD hypothesis are the same mechanism — is a separate, legitimate human/agent synthesis step this item does *not* try to automate).
+2. **No batch entrypoint for multi-part courses.** Scanning N parts of one course meant running `preflight_scan.py` once per file and manually deciding/declaring fold-in vs. isolated and stitching N separate prompts by hand, instead of one command that treats them as one course from the start.
+
+**Deliverable, two parts:**
+
+1. **`scripts/merge_architecture_audit.py`** — merges N per-source architecture artifacts into one. Renumbers `O`/`I` ids continuously across sources (first-occurrence-order, per source, mapped through a per-file id table), rewrites `INFERRED` citations to point at the renumbered ids, pools `## Frontend observations` and `## Inferred backend` bullets from all sources under one heading each (not interleaved by source), and preserves any other per-source prose (e.g. `## Confidence & gaps`) under a `## Per-source notes` section tagged by originating filename — no per-source nuance is discarded. Front matter is merged: `intent` must be `reverse-engineering` on every source; `approved_by` is unioned (or overridden via `--approved-by`); `analyst_lens`/`system` are kept from the first source, with any differing values from later sources surfaced as `analyst_lens_variants`/`system_variants` rather than silently dropped. The merged artifact is re-validated against the same Intent/Seal/Grounding gates `validate_architecture_audit.py` enforces (Non-Contamination needs a skill dir the merge step doesn't have context for, so it's out of scope here — run it separately against the final skill dir).
+2. **Batch dispatch in `scripts/preflight_scan.py`** — `source_path` becomes `nargs='+'`; a single path behaves exactly as before (no regression), multiple paths trigger `scan_batch()` (scans each, in order) and, with `--emit-prompt`, `build_multi_part_prompt_draft()` — one prompt covering all parts as `PART_ID=part1..partN` (matching `SKILL.md`'s existing multi-part convention), warning if parts disagree on `BOOK_TYPE`, and — when any part is an RE-candidate — pointing at `merge_architecture_audit.py` as the next step after per-part extraction.
+
+Both wired into `sopx`: `scan` already accepted pass-through args, so `sopx scan part1.srt part2.srt --emit-prompt` works unchanged; a new `merge-arch` capability added to the menu.
+
+**Tests:** `tests/test_merge_architecture_audit.py` (continuous renumbering across two realistic sources shaped exactly like the real vid1/vid2 artifacts, section pooling not interleaving, per-source prose preservation, front-matter merge/variant-flagging, `--approved-by` override, and — critically — the merged output re-validated with the real `validate_architecture_audit.run_validation`, not just the merge script's own gate calls); `tests/test_preflight_scan.py` additions for `scan_batch` and `build_multi_part_prompt_draft` (part listing, disagreement warning, merge-tool pointer only when RE-candidate).
+
+**Acceptance:** `python scripts/merge_architecture_audit.py part1_architecture.md part2_architecture.md --out <system>_architecture.md` produces a single artifact that passes `validate_architecture_audit.py` standalone; `sopx scan part1.srt part2.srt --emit-prompt` emits one multi-part prompt instead of requiring two separate manual runs. Effort: **low** (both reuse existing parsing/regex/gate code; no new dependency, no new gate).
+
+---
+
 ## Phase 2 (after the Pareto 8 — highest-value non-Pareto item)
 
 **Semantic claim verification.** The deepest real anti-hallucination gap the review found (4.2 "paráfrase distorcida", Claim Verification "verificação estrutural, não semântica"): today `validate_evolution_audit` / `validate_coherence_audit` verify claims via Jaccard token overlap (`scripts/validate_coherence_audit.py:verify_claim`), which a subtly-distorted paraphrase can pass. Upgrade path, keeping it dependency-light:
