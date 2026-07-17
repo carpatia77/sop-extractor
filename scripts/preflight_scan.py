@@ -20,6 +20,11 @@ import os
 import re
 import sys
 
+try:
+    from format_registry import SCANNED_TEXT_EXTENSIONS, SCANNED_SUBTITLE_EXTENSIONS
+except ImportError:
+    from scripts.format_registry import SCANNED_TEXT_EXTENSIONS, SCANNED_SUBTITLE_EXTENSIONS
+
 TABULAR_LINE_RE = re.compile(r'(\S+\s{2,}\S+\s{2,}\S+)|(\d+\s+\d+\s+\d+)')
 
 # A single short token (number, unit, short label) alone on its own line — the
@@ -345,7 +350,9 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     }
 
 
-SUBTITLE_EXTS = (".srt", ".vtt")
+# SUBTITLE_EXTS kept as an alias (same set as format_registry.SCANNED_SUBTITLE_EXTENSIONS)
+# for backward compatibility with any external caller referencing this name.
+SUBTITLE_EXTS = tuple(sorted(SCANNED_SUBTITLE_EXTENSIONS))
 
 SRT_CUE_INDEX_RE = re.compile(r'^\d+$')
 SUBTITLE_TIMESTAMP_RE = re.compile(r'\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}')
@@ -452,7 +459,7 @@ def scan_source(path: str, sample_n: int = 5) -> dict:
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
         return scan_pdf(path, sample_n=sample_n)
-    if ext in (".txt", ".md", ".markdown"):
+    if ext in SCANNED_TEXT_EXTENSIONS:
         return scan_plain_text(path, sample_n=sample_n)
     if ext in SUBTITLE_EXTS:
         return scan_transcript(path, sample_n=sample_n)

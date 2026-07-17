@@ -16,6 +16,7 @@ from verify_concept_presence import verify_source
 from validate_coherence_audit import run_validation as run_coherence
 from validate_evolution_audit import run_validation as run_evolution
 from validate_manifest import validate_manifest
+from validate_run_report import run_validation as run_run_report_check
 
 def validate_skill(skill_dir: str, since_last: bool = False, domain: str = None) -> int:
     dir_path = Path(skill_dir)
@@ -85,6 +86,19 @@ def validate_skill(skill_dir: str, since_last: bool = False, domain: str = None)
     except Exception as e:
         print(f"Error verifying concept presence: {e}")
         overall_status = 1
+
+    # 2.5 Run Report Check (Item 13.3) — informational, not a hard gate: it
+    # only enforces that a skipped step carries a stated reason, not that the
+    # reason is true. Skipped entirely (not even printed) if run_report.json
+    # was never written — that's optional, not required, for now.
+    run_report_path = dir_path / "run_report.json"
+    if run_report_path.exists():
+        print("\n--- 2.5. Run Report Check ---")
+        try:
+            if run_run_report_check(str(dir_path)) != 0:
+                print("⚠️  Run report has skipped step(s) with no recorded reason — review before trusting this run.")
+        except Exception as e:
+            print(f"Error checking run report: {e}")
 
     # 3. Coherence Audit
     audit_path = dir_path / "coherence_audit.md"
