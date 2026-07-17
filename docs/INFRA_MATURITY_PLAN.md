@@ -351,6 +351,60 @@ python scripts/detect_changes.py --set examples/<author>-set
 
 ---
 
+## Item 13 — Audit findings (backend/frontend/UX, world-class-KM gap analysis)
+
+**Why:** an end-to-end run against real material (two ASG course videos, Items 11/12's own validation) surfaced a real-world failure mode: the executor skipped Step 7.5 (frame rescue) citing "1.6GB", which turned out to be a misread of "1,600 snapshots/second" mentioned in the transcript — not a real cost. Nothing in the pipeline caught that a step was skipped for a fabricated reason. That incident, plus a broader audit of the project as a knowledge-management tool, surfaces four gaps that are all **thin-shell fixes over what already exists** — no new subsystem, no framework, no "perfumaria." Ranked by impact/effort, in build order.
+
+**Explicitly out of scope (perfumaria at this scale, confirmed against the existing "Out of scope" table):** a full web/SaaS frontend, vector DB/RAG/knowledge graph, multi-user/RBAC/auth, an orchestrator. The static HTML viewer below (13.4) delivers the visual-surface value at a fraction of that cost; build the rest only when real users ask for it.
+
+### 13.1 — `sopx` unified CLI (implements Item 12)
+
+Item 12 above is the spec; this sub-item is the acceptance trigger: build it now, first, because every other Item 13 gap either depends on it (13.4's viewer reuses its dispatch map) or is made discoverable by it. Deliverable and acceptance are exactly Item 12's — no re-spec needed here.
+
+### 13.2 — Scanner↔extractor format contract (prevents the `.srt` class of bug)
+
+**Why:** the `.srt`/`.vtt` bug fixed this week (PRs #5, #6, #7) happened because `preflight_scan.py`'s supported-format set and the `book_to_skill` package's `SUPPORTED_EXTENSIONS` were two independent, hand-maintained lists that silently drifted — the scanner correctly recommended `BOOK_TYPE=transcript` for a format the extractor rejected outright. Nothing enforced that the two stay in sync; the gap was found by running the real pipeline, not by any test.
+
+**Deliverable:**
+1. A single source of truth for "formats this tool has real scanning + real extraction for" — e.g. `scripts/format_registry.py` exporting `SCANNED_EXTENSIONS` (what `preflight_scan.py` samples with real signal) and re-exporting/importing `book_to_skill.config.SUPPORTED_EXTENSIONS` (what `extract.py` can actually parse) so both sides read from one place instead of hand-copied literals.
+2. A parity test (`tests/test_format_parity.py`) that fails the build if `SCANNED_EXTENSIONS` ever contains a format `SUPPORTED_EXTENSIONS` doesn't (a scanner claiming to recommend a format the extractor can't touch) — the direction that actually bit us. The reverse (extractor supports a format the scanner doesn't sample, e.g. epub/docx today) is allowed and already documented as a low-confidence default, not a bug.
+
+**Tests:** the parity test itself, plus a regression test asserting `.srt`/`.vtt` are in both sets (guards this exact incident from silently recurring if either list is edited independently in the future).
+
+**Acceptance:** `pytest tests/test_format_parity.py` fails on a synthetic drift (temporarily removing `.srt` from one list, restored after assertion) and passes on the current, in-sync state. Effort: **low** (one small registry module + one test file; no behavior change to either script).
+
+### 13.3 — `run_report.json` + skipped-step gate (observability of what the executor actually did)
+
+**Why:** the "1.6GB" incident is a specific instance of a general gap: nothing in this pipeline records *which* `SKILL.md` steps ran, which were skipped, and why. An operator reviewing a finished skill has no artifact to check "was Step 7.5 really skipped for a real cost reason, or a hallucinated one?" — they'd have to re-read the whole agent transcript by hand, if they even kept it.
+
+**Deliverable:**
+1. `SKILL.md` gains an explicit convention: at the end of a run, the executor writes `run_report.json` into the skill directory, listing every numbered step (0–9, 7.5 when applicable) with `status: ran|skipped` and, for any `skipped`, a mandatory non-empty `reason` string.
+2. `scripts/validate_run_report.py` — a deterministic, no-LLM checker: fails if `run_report.json` is missing, if any step is missing from it, or if any `skipped` step has an empty/placeholder reason. It does **not** attempt to judge whether the reason is *true* (that requires re-verifying against the source, out of scope for a mechanical gate) — it only enforces that a reason was recorded, which is what would have made "1.6GB" for a 60MB file visible for human review instead of silently accepted.
+3. Wired into `validate_all.py` as one more check in the consolidated report (informational by default — matching the project's existing "hard gate vs. triage" split for determinism/concept-presence; promote to hard-fail only if the team decides skipped-without-reason should block).
+
+**Tests:** `tests/test_validate_run_report.py` — missing file, missing step, empty reason (each trips the check); a complete, honest report passes.
+
+**Acceptance:** running `validate_all.py` against a skill with a `run_report.json` missing a reason for a skipped step surfaces it in the consolidated output; against a complete one, it's silent. Effort: **low-medium** (one small script, one convention line in `SKILL.md`, one test file).
+
+### 13.4 — Static HTML viewer for a generated skill (output becomes a product, not six `.md` files)
+
+**Why:** a generated skill's real content — provenance tags, `[OBSERVED]`/`[INFERRED]` seals, determinism %, chapter structure — is currently only readable by opening six separate Markdown files in an editor. That is the single biggest UX gap between "personal notes" and "a knowledge-management product," and it's the one Item 12's menu map was explicitly designed to scaffold toward.
+
+**Deliverable:** `scripts/render_skill_viewer.py` — takes a skill directory and renders **one self-contained HTML file** (inline CSS/JS, no server, no build step) with:
+- a left nav listing `SKILL.md` sections + `chapters/*` + `<system>_architecture.md` if present,
+- provenance tags (`[src/date]`) and, where present, `[OBSERVED]`/`[INFERRED]` seals rendered as distinct colored badges (never re-styled to look identical — the visual distinction is the point),
+- the determinism-score % and gate pass/fail badges from `validate_all.py`'s output, if a prior run's result is available in the skill dir.
+
+This reuses Item 12's `sopx` dispatch map directly (`sopx view <skill_dir>` is a thin call to this script) rather than inventing a second interface.
+
+**Tests:** `tests/test_render_skill_viewer.py` — a synthetic skill dir with a `SKILL.md`, one chapter, and an `<system>_architecture.md` containing both seal types renders one HTML file containing the expected nav entries and both badge classes; missing optional files (no architecture doc) render without error, just without that nav entry.
+
+**Acceptance:** `sopx view path/to/skill` opens (prints the path to) a single HTML file that a human can read start-to-finish without touching a terminal again, with OBSERVED/INFERRED visually distinguishable at a glance. Effort: **medium** (templating + one Python script; no dependency — stdlib string templating, no Jinja2 needed at this scale).
+
+**Deferred (Phase 2, not this item):** semantic claim verification (already speced in Phase 2 above) and a `sopx init` one-command quickstart — both real, both lower priority than closing the four gaps above, which each fix or would have caught a concrete failure mode observed in production use this week.
+
+---
+
 ## Phase 2 (after the Pareto 8 — highest-value non-Pareto item)
 
 **Semantic claim verification.** The deepest real anti-hallucination gap the review found (4.2 "paráfrase distorcida", Claim Verification "verificação estrutural, não semântica"): today `validate_evolution_audit` / `validate_coherence_audit` verify claims via Jaccard token overlap (`scripts/validate_coherence_audit.py:verify_claim`), which a subtly-distorted paraphrase can pass. Upgrade path, keeping it dependency-light:
