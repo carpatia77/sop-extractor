@@ -111,77 +111,66 @@ Across a **Set**, two more: `<author>_evolution.md` (the lineage matrix) and
 
 ## 🚀 Usage
 
-Extraction is driven by the skill spec in [`SKILL.md`](SKILL.md), run by an
-agent (Copilot CLI, Amp, or another Agent Skills-compatible host). The
-deterministic parts — content scanning, scoring, validation — are plain
-scripts you run directly.
+> **🆕 Update:** usability just took a real step forward. There's now one
+> entrypoint — `sopx` — instead of having to know which of 14 separate
+> scripts to run. Everything still works standalone if you prefer the old
+> way; this is just the simplest path in.
 
-**Or just run `python scripts/menu.py`** — a single interactive menu over every
-deterministic capability below (scan, validate, audits, determinism score, view),
-with a headless form for scripting (`python scripts/menu.py scan path.pdf`). It's
-a thin dispatcher, not a second implementation — see it as a map of the flow below.
-
-Typical flow, in order:
-
-**1. Scan the source and get a ready-to-approve prompt** — do this before
-anything else, especially for PDFs. Getting the content type wrong (calling a
-table/diagram-driven source "text-heavy") is the single most expensive
-mistake to discover *after* a full run has already completed:
+### The whole flow, 3 commands
 
 ```bash
-python scripts/preflight_scan.py path/to/source.pdf --emit-prompt
+# 1. Scan — samples the source and prints a ready-to-approve prompt
+python scripts/menu.py scan path/to/source.pdf --emit-prompt
+
+# 2. Copy the printed prompt to your agent (Copilot CLI / Claude / Amp) —
+#    it runs the actual extraction (SKILL.md Steps 0-9) and writes the skill folder
+
+# 3. Validate and read the result
+python scripts/menu.py validate path/to/your-skill
+python scripts/menu.py view     path/to/your-skill   # one readable HTML page
 ```
 
-This samples the source, recommends `BOOK_TYPE`, and prints a **fully-filled**
-Full Conversion prompt (depth/name/destination/lineage use sensible, clearly
-labeled defaults you can override with `--depth`, `--skill-name`,
-`--skills-home`, `--lineage`) ending in a plain approve/reject question — copy
-it, review it, and hand it to your agent.
+That covers the common case end to end. Everything past this point is
+optional, for specific situations.
 
-**2. Hand the approved prompt to your agent** to run the actual extraction
-(`SKILL.md` Steps 0–9). This produces the skill folder (`SKILL.md`, `chapters/`,
-`first_principles.md`, `sops.md`, `glossary.md`).
-
-**3. Validate what came out**, everything discovered in one pass:
+### Or skip typing commands — just run the menu
 
 ```bash
-python scripts/validate_all.py path/to/your-skill
+python scripts/menu.py
 ```
+Prints a numbered menu of every capability (scan, validate, each audit,
+determinism score, the viewer, run log); pick a number and follow the
+prompts. `python scripts/menu.py <verb> <args>` runs any of them headless,
+identical to calling the underlying script directly — the menu adds no
+capability that isn't already a standalone script.
 
-Or run the individual checks it wraps:
+### Specific situations
 
 ```bash
-# Structural determinism of an extracted source
-python scripts/determinism_score.py path/to/your-skill
+# Multi-part course (2+ files): one scan, one combined prompt for the whole course
+python scripts/menu.py scan part1.srt part2.srt --emit-prompt
 
-# Triage how well a course's First Principles trace to its transcript
-python scripts/verify_concept_presence.py path/to/your-skill --show-absent
+# Reverse-engineer a demonstrated system ("Blackhat Mode") — after extracting
+# each part, merge their architecture docs into one, continuously numbered
+python scripts/menu.py merge-arch part1_architecture.md part2_architecture.md --out <system>_architecture.md
 
-# Validate a cross-source temporal evolution audit (all four gates, Sets only)
-python scripts/validate_evolution_audit.py --dir path/to/your-set
+# Just one audit instead of the full `validate` bundle
+python scripts/menu.py coherence <audit_file> --dir path/to/your-skill
+python scripts/menu.py evolution --dir path/to/your-set
+python scripts/menu.py blackhat  <architecture.md> --skill-dir path/to/your-skill
+python scripts/menu.py determinism path/to/your-skill
 
-# For a video course: rescue frames at visual-reference gaps (dry-run first)
+# Video course: rescue frames at visual-reference gaps (dry-run first)
 python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
-
-# Read the finished skill as one page instead of six separate .md files —
-# provenance tags and OBSERVED/INFERRED seals render as colored badges
-python scripts/render_skill_viewer.py path/to/your-skill
-
-# Multi-part course: scan every part in one command, one combined prompt
-python scripts/preflight_scan.py part1.srt part2.srt --emit-prompt
-
-# Blackhat Mode on a multi-part course: merge each part's architecture doc
-# into one, with continuous OBSERVED/INFERRED numbering, then re-validated
-python scripts/merge_architecture_audit.py part1_architecture.md part2_architecture.md --out <system>_architecture.md
 ```
 
 Supported source formats: PDF, EPUB, DOCX, TXT, Markdown, reStructuredText,
 AsciiDoc, HTML, RTF, MOBI/AZW — plus **SRT/VTT** video-course transcripts.
 
-For the full set of decisions behind step 1 (content type, depth,
+For the full set of decisions behind the scan step (content type, depth,
 destination, lineage), see
 [`docs/EXTRACTION_PREFLIGHT_CHECKLIST.md`](docs/EXTRACTION_PREFLIGHT_CHECKLIST.md)
-— the scanner above fills it in for you, but it's there to review before
+— the scanner fills it in for you, but it's there to review before
 approving, not to fill in from scratch.
 
 **For audiovisual sources (video courses):** the frame-rescue step
