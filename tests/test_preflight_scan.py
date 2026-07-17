@@ -17,6 +17,8 @@ from preflight_scan import (
     propose_analyst_lens,
     build_prompt_draft,
     salient_terms,
+    scan_batch,
+    build_multi_part_prompt_draft,
 )
 
 
@@ -505,3 +507,62 @@ def test_build_prompt_draft_uses_book_type_transcript_for_subtitle_source():
     prompt = build_prompt_draft(result, "/path/to/vid1.srt")
     assert "BOOK_TYPE=transcript" in prompt
     assert "BOOK_TYPE=text" not in prompt
+
+
+# --- Item 14.2: batch dispatch for multi-part courses -----------------------
+
+def test_scan_batch_scans_each_path_in_order(tmp_path):
+    f1 = tmp_path / "part1.srt"
+    f2 = tmp_path / "part2.srt"
+    f1.write_text(SRT_SAMPLE * 20, encoding="utf-8")
+    f2.write_text(SRT_SAMPLE * 20, encoding="utf-8")
+    batch = scan_batch([str(f1), str(f2)])
+    assert len(batch) == 2
+    assert batch[0][0] == str(f1)
+    assert batch[1][0] == str(f2)
+    assert batch[0][1]["source_kind"] == "transcript"
+
+
+def test_build_multi_part_prompt_draft_lists_all_parts():
+    results = [
+        {"source_kind": "transcript", "recommendation": "text", "suggestion": "text", "re_candidate": False},
+        {"source_kind": "transcript", "recommendation": "text", "suggestion": "text", "re_candidate": False},
+    ]
+    paths = ["/path/part1.srt", "/path/part2.srt"]
+    prompt = build_multi_part_prompt_draft(results, paths)
+    assert "part1" in prompt
+    assert "part2" in prompt
+    assert "curso multi-parte" in prompt
+    assert "BOOK_TYPE=transcript" in prompt
+
+
+def test_build_multi_part_prompt_draft_warns_on_disagreement():
+    results = [
+        {"source_kind": "transcript", "recommendation": "transcript", "suggestion": "text", "re_candidate": False},
+        {"source_kind": None, "recommendation": "technical", "suggestion": "technical", "re_candidate": False},
+    ]
+    paths = ["/path/part1.srt", "/path/part2.pdf"]
+    prompt = build_multi_part_prompt_draft(results, paths)
+    assert "divergem" in prompt
+
+
+def test_build_multi_part_prompt_draft_offers_merge_tool_when_any_part_is_re_candidate():
+    results = [
+        {"source_kind": "transcript", "recommendation": "transcript", "suggestion": "text", "re_candidate": True,
+         "analyst_lens_suggestion": {"lens": "systems-architect", "evidence": ["asg"]}},
+        {"source_kind": "transcript", "recommendation": "transcript", "suggestion": "text", "re_candidate": False},
+    ]
+    paths = ["/path/part1.srt", "/path/part2.srt"]
+    prompt = build_multi_part_prompt_draft(results, paths)
+    assert "merge_architecture_audit.py" in prompt
+    assert "1/2 parte(s)" in prompt
+
+
+def test_build_multi_part_prompt_draft_omits_blackhat_when_no_candidacy():
+    results = [
+        {"source_kind": "transcript", "recommendation": "transcript", "suggestion": "text", "re_candidate": False},
+        {"source_kind": "transcript", "recommendation": "transcript", "suggestion": "text", "re_candidate": False},
+    ]
+    paths = ["/path/part1.srt", "/path/part2.srt"]
+    prompt = build_multi_part_prompt_draft(results, paths)
+    assert "merge_architecture_audit.py" not in prompt

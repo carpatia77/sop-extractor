@@ -608,9 +608,98 @@ def build_prompt_draft(result: dict, path: str, depth: str = None,
     return "\n".join(lines)
 
 
+def scan_batch(paths: list, sample_n: int = 5) -> list:
+    """Scans multiple sources and returns [(path, result), ...] in the given
+    order. Pure orchestration — no new scanning logic, just scan_source per
+    path (Item 14.2: batch dispatch for multi-part courses)."""
+    return [(p, scan_source(p, sample_n=sample_n)) for p in paths]
+
+
+def build_multi_part_prompt_draft(results: list, paths: list, depth: str = None,
+                                   skill_name: str = None, skills_home: str = "~/.claude/skills",
+                                   lineage: str = None) -> str:
+    """Drafts one Full Conversion prompt covering all parts of a multi-part
+    course, using SKILL.md's existing multi-part convention (PART_ID
+    part1..partN, module numbering continues across parts) instead of making
+    the operator run --emit-prompt once per file and stitch the answers by
+    hand. BOOK_TYPE is taken from the first part and a warning is raised if
+    parts disagree, rather than silently picking one."""
+    recommendations = []
+    for result in results:
+        is_transcript = result.get("source_kind") == "transcript"
+        recommendations.append("transcript" if is_transcript else result.get("recommendation", result.get("suggestion", "text")))
+    recommendation = recommendations[0]
+    disagreement = len(set(recommendations)) > 1
+
+    depth = depth or "study"
+    skill_name = skill_name or slugify_filename(paths[0])
+    destino = f"{skills_home.rstrip('/')}/{skill_name}"
+    lineage = lineage or (
+        "isolated extraction (default — no other Set assumed; override explicitly "
+        "if this source belongs to a deliberate lineage/grouping with other sources)"
+    )
+
+    part_lines = [f'    PART_ID=part{i+1}: "{p}"' for i, p in enumerate(paths)]
+
+    lines = [
+        f"Execute a skill book-to-skill para realizar a conversão completa (Full Conversion) de um curso multi-parte ({len(paths)} partes):",
+        *part_lines,
+        "",
+        "Respostas (pre-flight scan em lote + defaults — revise antes de aprovar):",
+        f"- Step 1.5 (Content Type): BOOK_TYPE={recommendation}",
+        "    [medido] Recomendação da parte 1; módulos continuam a numeração entre as partes (SKILL.md multi-part).",
+    ]
+    if disagreement:
+        lines.append(
+            f"    ⚠️  As partes divergem na recomendação bruta ({', '.join(recommendations)}) — "
+            "confirme BOOK_TYPE manualmente antes de aprovar."
+        )
+    lines += [
+        f"- Step 4 (Purpose): DEPTH={depth}",
+        "    [default] Assume \"All of the above\" (Option 4) unless you only want quick reference lookup (Option 3 -> DEPTH=reference).",
+        f"- Step 5 (Skill Name e Destino): nome=\"{skill_name}\", destino=\"{destino}\"",
+        "    [default] Nome derivado do primeiro arquivo; único skill para todas as partes.",
+        f"- Step 5.5 (Lineage): {lineage}",
+    ]
+
+    any_re_candidate = any(r.get("re_candidate") for r in results)
+    if any_re_candidate:
+        lens = next((r.get("analyst_lens_suggestion", {}) for r in results if r.get("re_candidate")), {})
+        proposed = lens.get("lens", "systems-architect")
+        n_candidates = sum(1 for r in results if r.get("re_candidate"))
+        lines += [
+            f"- Item 11 (Reverse-Engineering / Blackhat Mode): {n_candidates}/{len(paths)} parte(s) são RE-candidate.",
+            "    [A] Doutrina fiel apenas (default) — só SKILL.md.",
+            "    [B] Blackhat Mode — cada parte gera seu <system>_architecture.md; depois consolide com:",
+            "        python scripts/merge_architecture_audit.py part1_architecture.md part2_architecture.md ... --out <system>_architecture.md",
+            f"    Se [B]: analyst_lens proposta=\"{proposed}\" — confirme/ajuste (mesma lente para todas as partes).",
+            "    [default] [A] — o modo RE nunca é assumido; só ligue [B] declarando explicitamente.",
+        ]
+
+    lines += [
+        "",
+        "Assuma o Pre-flight Cost Estimate como aprovado e proceda seguindo as restrições de Token Budget.",
+        "",
+        "Confirma estas escolhas e autoriza a execução? (S/N)",
+    ]
+    return "\n".join(lines)
+
+
+def print_batch_report(results: list, paths: list):
+    for path, result in results:
+        print_report(result, path)
+        print()
+    if len(paths) > 1:
+        print(f"{'='*60}")
+        print(f"BATCH: {len(paths)} sources scanned as a multi-part course")
+        print(f"{'='*60}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pre-flight content-type scan for a source.")
-    parser.add_argument("source_path", help="Path to the source file (PDF, epub, docx, txt, md...)")
+    parser.add_argument("source_path", nargs="+",
+                         help="Path(s) to the source file(s) (PDF, epub, docx, txt, md...). "
+                              "Pass multiple paths for a multi-part course — treated as part1..partN.")
     parser.add_argument("--sample-n", type=int, default=5, help="Number of pages to sample (PDF only)")
     parser.add_argument("--emit-prompt", action="store_true",
                          help="Also print a ready-to-approve Full Conversion prompt: BOOK_TYPE from "
@@ -626,21 +715,38 @@ if __name__ == "__main__":
                          help="Override the lineage default (isolated extraction) used in --emit-prompt")
     args = parser.parse_args()
 
-    if not os.path.isfile(args.source_path):
-        print(f"Error: file not found: {args.source_path}", file=sys.stderr)
-        sys.exit(1)
+    for p in args.source_path:
+        if not os.path.isfile(p):
+            print(f"Error: file not found: {p}", file=sys.stderr)
+            sys.exit(1)
 
-    out = scan_source(args.source_path, sample_n=args.sample_n)
-    print_report(out, args.source_path)
+    if len(args.source_path) == 1:
+        path = args.source_path[0]
+        out = scan_source(path, sample_n=args.sample_n)
+        print_report(out, path)
 
-    if args.emit_prompt:
-        print(f"\n{'='*60}")
-        print("FULL CONVERSION PROMPT — review and approve (S/N)")
-        print(f"{'='*60}\n")
-        print(build_prompt_draft(
-            out, args.source_path,
-            depth=args.depth, skill_name=args.skill_name,
-            skills_home=args.skills_home, lineage=args.lineage,
-        ))
+        if args.emit_prompt:
+            print(f"\n{'='*60}")
+            print("FULL CONVERSION PROMPT — review and approve (S/N)")
+            print(f"{'='*60}\n")
+            print(build_prompt_draft(
+                out, path,
+                depth=args.depth, skill_name=args.skill_name,
+                skills_home=args.skills_home, lineage=args.lineage,
+            ))
+    else:
+        batch = scan_batch(args.source_path, sample_n=args.sample_n)
+        print_batch_report(batch, args.source_path)
+
+        if args.emit_prompt:
+            results = [r for _, r in batch]
+            print(f"\n{'='*60}")
+            print("FULL CONVERSION PROMPT (multi-part) — review and approve (S/N)")
+            print(f"{'='*60}\n")
+            print(build_multi_part_prompt_draft(
+                results, args.source_path,
+                depth=args.depth, skill_name=args.skill_name,
+                skills_home=args.skills_home, lineage=args.lineage,
+            ))
 
     sys.exit(0)

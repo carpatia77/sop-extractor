@@ -47,11 +47,13 @@ CAPABILITIES = [
                "--dir <set_dir>", False, False, None),
     Capability("6", "blackhat", "Blackhat / reverse-engineering audit", "validate_architecture_audit.py",
                "<architecture.md> [--skill-dir <dir>]", False, False, None),
-    Capability("7", "determinism", "Determinism score", "determinism_score.py",
+    Capability("7", "merge-arch", "Merge multi-part Blackhat architecture docs", "merge_architecture_audit.py",
+               "<part1_architecture.md> <part2_architecture.md> ... --out <merged.md>", False, False, None),
+    Capability("8", "determinism", "Determinism score", "determinism_score.py",
                "<skill_dir>", False, False, None),
-    Capability("8", "view", "View a skill (renders one HTML page)", "render_skill_viewer.py",
+    Capability("9", "view", "View a skill (renders one HTML page)", "render_skill_viewer.py",
                "<skill_dir> [--out <path>]", False, False, None),
-    Capability("9", "summary", "Summary / run log", "extraction_summary.py",
+    Capability("10", "summary", "Summary / run log", "extraction_summary.py",
                "<path>", False, False, None),
 ]
 
