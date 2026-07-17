@@ -114,7 +114,14 @@ Across a **Set**, two more: `<author>_evolution.md` (the lineage matrix) and
 Extraction is driven by the skill spec in [`SKILL.md`](SKILL.md), run by an
 agent (Copilot CLI, Amp, or another Agent Skills-compatible host). The
 deterministic parts — content scanning, scoring, validation — are plain
-scripts you run directly. Typical flow, in order:
+scripts you run directly.
+
+**Or just run `python scripts/menu.py`** — a single interactive menu over every
+deterministic capability below (scan, validate, audits, determinism score, view),
+with a headless form for scripting (`python scripts/menu.py scan path.pdf`). It's
+a thin dispatcher, not a second implementation — see it as a map of the flow below.
+
+Typical flow, in order:
 
 **1. Scan the source and get a ready-to-approve prompt** — do this before
 anything else, especially for PDFs. Getting the content type wrong (calling a
@@ -155,6 +162,10 @@ python scripts/validate_evolution_audit.py --dir path/to/your-set
 
 # For a video course: rescue frames at visual-reference gaps (dry-run first)
 python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
+
+# Read the finished skill as one page instead of six separate .md files —
+# provenance tags and OBSERVED/INFERRED seals render as colored badges
+python scripts/render_skill_viewer.py path/to/your-skill
 ```
 
 Supported source formats: PDF, EPUB, DOCX, TXT, Markdown, reStructuredText,

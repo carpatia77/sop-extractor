@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scripts/menu.py` — unified `sopx`-style CLI (Item 12 / Item 13.1).** A
+  thin dispatcher over every existing deterministic script: scan, validate,
+  coherence/evolution/Blackhat audits, determinism score, the new HTML viewer,
+  and the run/summary log — one interactive menu (`python scripts/menu.py`) or
+  headless (`python scripts/menu.py scan path.pdf`, byte-identical to the
+  manual command). Greys out any capability whose backing script is missing,
+  never lists a dead option as if it worked.
+- **`scripts/render_skill_viewer.py` — static HTML skill viewer (Item 13.4).**
+  Renders a skill directory (SKILL.md, chapters/, `<system>_architecture.md`,
+  determinism score) into one self-contained HTML page — no server, no
+  dependency — with provenance tags and `[OBSERVED]`/`[INFERRED]` seals
+  rendered as distinct colored badges. Wired into `sopx view <skill_dir>`.
+- **`scripts/format_registry.py` + format-parity test (Item 13.2).** A single
+  source of truth for which formats the pre-flight scanner has real signal
+  for, checked against the extractor's actually-supported formats. Prevents
+  a repeat of the `.srt`/`.vtt` incident (scanner recommended a BOOK_TYPE for
+  a format the extraction pipeline rejected outright) by failing the build if
+  the two ever drift apart again.
+- **`scripts/validate_run_report.py` + `run_report.json` convention (Item
+  13.3).** `SKILL.md` now asks the executor to record, per step, whether it
+  ran or was skipped and why. The validator (wired into `validate_all.py` as
+  an informational check) doesn't judge whether a skip reason is *true* — it
+  only enforces that one was recorded, turning a silent skip into something a
+  human reviewer can catch. Motivated directly by a real incident: an
+  executor skipped video-frame rescue citing "1.6GB", which turned out to be
+  a misread of "1,600 snapshots/second" in the transcript, not a real cost —
+  nothing caught it at the time.
+- Registered **Item 13** in `docs/INFRA_MATURITY_PLAN.md`: a full backend/
+  frontend/UX audit against real production use, isolating four thin-shell
+  gaps (the four above) from what would be premature "perfumaria" (web
+  frontend, vector DB/RAG, multi-user/RBAC) at this project's current scale.
+
 ### Fixed
 - **`analyst_lens` evidence no longer drowns in PT-BR conversational filler.**
   Found running the scanner against a real course transcript: `salient_terms()`

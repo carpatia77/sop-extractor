@@ -767,6 +767,45 @@ If Step 5.5 did not run or found no lineage, skip this step entirely — do not 
 
 ---
 
+## Step 9.8 — Write run_report.json (Item 13.3)
+
+Before cleanup, write `run_report.json` into the skill directory. This is the
+observability record `scripts/validate_run_report.py` checks (wired into
+`validate_all.py` as an informational check) — it exists so a human reviewing
+a finished skill can see which steps ran, which were skipped, and *why*,
+instead of having to re-read the whole agent transcript by hand.
+
+Structure: a `steps` object keyed by step number as a string (`"0"`, `"1.5"`,
+..., `"9"`), each entry `{"status": "ran"}` or `{"status": "skipped", "reason": "<why>"}`.
+Every numbered step in this file is required in the report except **Step 7.5**
+(frame rescue), which is only required if this run was a video-course
+transcript with a video path provided (Step 7.5's own precondition) — for a
+non-video source, simply omit the `"7.5"` key rather than marking it skipped.
+
+**The `reason` for any skipped step must be a real, checkable justification —
+never a guess or an unverified number.** If you are not certain a claimed cost
+or constraint is accurate (e.g. a file size, a token count, a duration),
+either verify it (e.g. `ls -lh` the actual file) before citing it, or state
+the uncertainty explicitly in the reason rather than asserting a specific
+number you have not checked. An empty or fabricated reason defeats the entire
+purpose of this record and will be visible to whoever reviews the skill.
+
+Example:
+```json
+{
+  "steps": {
+    "0": {"status": "ran"}, "1": {"status": "ran"}, "1.5": {"status": "ran"},
+    "2": {"status": "ran"}, "2.5": {"status": "ran"}, "3": {"status": "ran"},
+    "4": {"status": "ran"}, "5": {"status": "ran"}, "5.5": {"status": "ran"},
+    "6": {"status": "ran"}, "7": {"status": "ran"},
+    "7.5": {"status": "skipped", "reason": "no video file path provided by the operator for this source"},
+    "8": {"status": "ran"}, "9": {"status": "ran"}
+  }
+}
+```
+
+---
+
 ## Step 10 — Cleanup and report
 
 ```bash
