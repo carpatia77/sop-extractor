@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Repo organizational cleanup.** Published 5 previously-orphaned docs
+  (`ARCHITECTURE_AUDIT.md`, `INFRA_MATURITY_PLAN.md`, `OPERATING_CONVENTIONS.md`,
+  `PIPELINE_ARCHITECTURE.md`, `EXTRACTION_PREFLIGHT_CHECKLIST.md`) to the
+  `mkdocs.yml` nav so they're actually browsable in the docs site. Retired
+  `docs/ROADMAP.md` (superseded by `INFRA_MATURITY_PLAN.md`), folding its still
+  -relevant "keep source transcripts private" convention into
+  `OPERATING_CONVENTIONS.md` item 6. Added `tests/conftest.py` to remove the
+  `sys.path` boilerplate duplicated across 7 test files. Refactored
+  `scripts/extraction_summary.py` into pure, testable functions with new
+  coverage in `tests/test_extraction_summary.py` — no CLI behavior change.
+
 ### Added
 - **`scripts/merge_architecture_audit.py` — consolidates multi-part Blackhat
   Mode artifacts (Item 14.1).** Processing a course in separate parts produces
