@@ -1,8 +1,3 @@
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-
 from preflight_scan import (
     sample_page_indices,
     score_page_text,

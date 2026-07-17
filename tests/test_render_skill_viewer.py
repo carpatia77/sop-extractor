@@ -1,8 +1,5 @@
-import sys
 import os
 import json
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from render_skill_viewer import (
     markdown_lite_to_html,

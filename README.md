@@ -216,10 +216,11 @@ sop-extractor/
 │   ├── validate_evolution_audit.py     # cross-source 4-gate temporal validator
 │   ├── verify_concept_presence.py      # principle→transcript traceability triage
 │   └── extract_frames_at_timestamps.py # targeted video frame rescue
-├── tests/                   # pytest suite (203 tests)
+├── tests/                   # pytest suite (352 tests)
 └── docs/
     ├── PIPELINE_ARCHITECTURE.md      # end-to-end diagram + how it prevents hallucination
-    └── ROADMAP.md                    # technical backlog
+    ├── ARCHITECTURE_AUDIT.md         # Blackhat Mode artifact grammar + gates
+    └── INFRA_MATURITY_PLAN.md        # maturity backlog (Items 1-14) + design rationale
 ```
 
 > No example skills are committed here: the material this pipeline was validated

@@ -1,8 +1,4 @@
-import sys
-import os
 import json
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from validate_run_report import check_run_report, run_validation, ALWAYS_REQUIRED_STEPS
 

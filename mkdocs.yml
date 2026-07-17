@@ -46,6 +46,11 @@ nav:
   - Home: index.md
   - Guide: guide.md
   - Architecture: ARCHITECTURE.md
+  - Pipeline Architecture (Sets): PIPELINE_ARCHITECTURE.md
+  - Blackhat Mode (Architecture Audit): ARCHITECTURE_AUDIT.md
+  - Extraction Pre-flight Checklist: EXTRACTION_PREFLIGHT_CHECKLIST.md
+  - Infra Maturity Plan: INFRA_MATURITY_PLAN.md
+  - Operating Conventions: OPERATING_CONVENTIONS.md
   - Performance: PERFORMANCE.md
   - Skill Reference: skill-reference.md
 
