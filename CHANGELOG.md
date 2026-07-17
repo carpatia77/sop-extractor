@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-07-17
+
 ### Added
+- **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
+  opt-in fourth audit layer that reconstructs a demonstrated system's backend
+  from its observable frontend, kept walled off from the anti-fabrication core:
+  - `scripts/validate_architecture_audit.py` — deterministic, no-LLM validator
+    for a `<system>_architecture.md` artifact, with four gates: **Seal** (every
+    bulleted claim carries exactly one `[OBSERVED …]`/`[INFERRED …]` seal),
+    **Grounding** (every inference cites ≥1 real observed id; persona-blind, so
+    an expert lens never licenses uncited inference), **Non-Contamination** (no
+    `[INFERRED …]` seal in `SKILL.md`/`first_principles.md`/`sops.md`), and
+    **Intent** (front matter records `intent: reverse-engineering`, an approver,
+    and the confirmed `analyst_lens`).
+  - `scripts/preflight_scan.py` now detects reverse-engineering **candidacy**
+    (`re_candidate`) from on-screen/UI deixis, a repeated named system, and
+    outputs-shown-without-computation, and proposes an evidence-derived
+    `analyst_lens` — surfacing an `[A]` faithful / `[B]` Blackhat Mode choice
+    (`[A]` default; RE mode never auto-selected).
+  - `docs/ARCHITECTURE_AUDIT.md` documents the artifact grammar and gates.
+- **Subtitle transcript (`.srt`/`.vtt`) support, scanner and extractor.**
+  Previously `.srt`/`.vtt` fell through the pre-flight scanner to the generic
+  low-confidence default (no real signal, no reverse-engineering candidacy
+  check) and were rejected outright by the extraction pipeline. Both are now
+  fixed: `preflight_scan.py` strips cue indices/timestamps/WEBVTT headers down
+  to spoken words before sampling and correctly reports `BOOK_TYPE=transcript`;
+  `book_to_skill/parsers/subtitle.py` gives the extractor matching support
+  (`SUBTITLE_EXTENSIONS` in `config.py`, a dispatch branch in
+  `extract_single_file`) so a Full Conversion no longer fails on the same file
+  the scanner just approved.
 - **`scripts/menu.py` — unified `sopx`-style CLI (Item 12 / Item 13.1).** A
   thin dispatcher over every existing deterministic script: scan, validate,
   coherence/evolution/Blackhat audits, determinism score, the new HTML viewer,
@@ -60,49 +89,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   temporal/discourse adverbs. Extended `_STOPWORDS` with these plus the
   immediate same-class neighbors (agora, ainda, depois, antes).
 
-### Added
-- **Subtitle transcript (`.srt`/`.vtt`) support in the extraction pipeline
-  (`book_to_skill/parsers/subtitle.py`).** Found running a real Full Conversion
-  end-to-end: `preflight_scan.py` and SKILL.md Step 1.5 both treat `.srt`/`.vtt`
-  as a first-class `BOOK_TYPE=transcript` source, but `extract.py`/`utils.py`
-  had no matching support — `SUPPORTED_EXTENSIONS` never included them, so
-  Step 2 failed outright with "Unsupported format '.srt'" on every transcript
-  source, book scanned or not. Adds `SUBTITLE_EXTENSIONS` to `config.py`, a
-  `subtitle.py` parser (cue-index/timestamp/WEBVTT stripping — same grammar as
-  `preflight_scan.py`'s `strip_subtitle_markup`, kept in sync intentionally
-  rather than imported, since `preflight_scan.py` is deliberately dependency-free
-  standalone tooling), and a dispatch branch in `extract_single_file`.
-- **Subtitle transcript (`.srt`/`.vtt`) support in `scripts/preflight_scan.py`.**
-  Previously these fell through to the generic low-confidence default (no real
-  signal), so a video-course transcript — exactly the material Item 11 targets
-  — never got the reverse-engineering candidacy check. Cue indices, timestamps,
-  and WEBVTT/NOTE headers are stripped down to spoken words before sampling, so
-  both the tabular/burst heuristics and `re_candidate`/`analyst_lens` now score
-  real signal. `BOOK_TYPE` is correctly reported as `transcript` (SKILL.md Step
-  1.5 option 3), not `text`/`technical`, in both the report and the emitted
-  Full Conversion prompt.
-- **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
-  opt-in fourth audit layer that reconstructs a demonstrated system's backend
-  from its observable frontend, kept walled off from the anti-fabrication core:
-  - `scripts/validate_architecture_audit.py` — deterministic, no-LLM validator
-    for a `<system>_architecture.md` artifact, with four gates: **Seal** (every
-    bulleted claim carries exactly one `[OBSERVED …]`/`[INFERRED …]` seal),
-    **Grounding** (every inference cites ≥1 real observed id; persona-blind, so
-    an expert lens never licenses uncited inference), **Non-Contamination** (no
-    `[INFERRED …]` seal in `SKILL.md`/`first_principles.md`/`sops.md`), and
-    **Intent** (front matter records `intent: reverse-engineering`, an approver,
-    and the confirmed `analyst_lens`).
-  - `scripts/preflight_scan.py` now detects reverse-engineering **candidacy**
-    (`re_candidate`) from on-screen/UI deixis, a repeated named system, and
-    outputs-shown-without-computation, and proposes an evidence-derived
-    `analyst_lens` — surfacing an `[A]` faithful / `[B]` Blackhat Mode choice
-    (`[A]` default; RE mode never auto-selected).
-  - `docs/ARCHITECTURE_AUDIT.md` documents the artifact grammar and gates.
-
 ### Documentation
-- Planned the remaining maturity-plan item: **Item 12 — Unified CLI menu
-  (`sopx`)**, a thin dispatcher over the existing scripts that doubles as 1:1
-  scaffolding for a future frontend (spec only, no pipeline code yet).
+- `docs/ARCHITECTURE.md`'s diagram and component table refreshed: fixed stale
+  `scripts/extractor/*` paths (the real package is `book_to_skill/`, from the
+  1.2.0 packaging refactor) and added everything shipped in Items 11-13 above
+  (pre-flight scan, `.srt`/`.vtt`, `sopx`, Blackhat Mode, `run_report.json`,
+  the full 6-check audit apparatus). Dated at the top so the next refresh
+  doesn't have to guess how stale it is.
 - Clarified the two install paths so they are not confused: **`git clone` into a
   skills folder** registers the `/book-to-skill` agent skill (Copilot
   CLI / Amp / other compatible agents), while **`pip install book-to-skill`** installs only the standalone
@@ -267,6 +260,7 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
+[1.3.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v1.3.0
 [1.2.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.2.0
 [1.1.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.1.0
 [1.0.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.0.0
