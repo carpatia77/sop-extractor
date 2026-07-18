@@ -7,12 +7,12 @@ a user would invoke by hand (`python scripts/<file>.py <args>`), so headless
 use (`python scripts/menu.py scan path.pdf`) is byte-identical to typing the
 underlying command directly.
 
-Today this is invoked as `python scripts/menu.py` (or `python -m menu` from
-inside scripts/), matching how every other script in this project is run —
-not as a pip-installed `sopx` console command. Wiring a true pip console
-script would require packaging scripts/ into the installable wheel (today
-only the `book_to_skill` package is packaged); that's a separate, larger
-packaging decision, out of scope for this thin-dispatcher item.
+After `pip install -e .`, this is also available as the `sopx` console
+command from anywhere (`sopx scan path.pdf --emit-prompt`) — `scripts/` is
+packaged into the wheel alongside `book_to_skill`, and `sopx` is a
+`[project.scripts]` entry point pointing at `scripts.menu:main`. Running it
+as `python scripts/menu.py` from a checkout still works identically; both
+paths dispatch to the exact same sibling scripts.
 """
 
 import os

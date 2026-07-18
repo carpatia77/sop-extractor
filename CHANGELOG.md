@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coverage in `tests/test_extraction_summary.py` — no CLI behavior change.
 
 ### Added
+- **`sopx` console-script entry point.** `pip install -e .` now puts `sopx`
+  on your PATH — `scripts/` is packaged into the wheel alongside
+  `book_to_skill`, and `sopx = "scripts.menu:main"` is registered in
+  `pyproject.toml`'s `[project.scripts]`. Previously `sopx` was only a name
+  used in docs; the actual command was `python scripts/menu.py`, which still
+  works identically for anyone who hasn't (or can't) `pip install`. Verified
+  with a real editable install, a real non-editable wheel install, and
+  running `sopx scan`/`sopx validate`/`sopx view` from outside the repo.
 - **`scripts/merge_architecture_audit.py` — consolidates multi-part Blackhat
   Mode artifacts (Item 14.1).** Processing a course in separate parts produces
   one `<system>_architecture.md` per part, each numbering its `O`/`I` ids from

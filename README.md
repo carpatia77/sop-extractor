@@ -111,23 +111,28 @@ Across a **Set**, two more: `<author>_evolution.md` (the lineage matrix) and
 
 ## 🚀 Usage
 
-> **🆕 Update:** usability just took a real step forward. There's now one
-> entrypoint — `sopx` — instead of having to know which of 14 separate
-> scripts to run. Everything still works standalone if you prefer the old
+> **🆕 Update:** `sopx` is now a real installed command, not just a name —
+> `pip install -e .` and it's on your PATH from any directory. No more
+> having to know which of 14 separate scripts to run, or type `python
+> scripts/menu.py`. Everything still works standalone if you prefer the old
 > way; this is just the simplest path in.
+
+```bash
+pip install -e .
+```
 
 ### The whole flow, 3 commands
 
 ```bash
 # 1. Scan — samples the source and prints a ready-to-approve prompt
-python scripts/menu.py scan path/to/source.pdf --emit-prompt
+sopx scan path/to/source.pdf --emit-prompt
 
 # 2. Copy the printed prompt to your agent (Copilot CLI / Claude / Amp) —
 #    it runs the actual extraction (SKILL.md Steps 0-9) and writes the skill folder
 
 # 3. Validate and read the result
-python scripts/menu.py validate path/to/your-skill
-python scripts/menu.py view     path/to/your-skill   # one readable HTML page
+sopx validate path/to/your-skill
+sopx view     path/to/your-skill   # one readable HTML page
 ```
 
 That covers the common case end to end. Everything past this point is
@@ -136,29 +141,31 @@ optional, for specific situations.
 ### Or skip typing commands — just run the menu
 
 ```bash
-python scripts/menu.py
+sopx
 ```
 Prints a numbered menu of every capability (scan, validate, each audit,
 determinism score, the viewer, run log); pick a number and follow the
-prompts. `python scripts/menu.py <verb> <args>` runs any of them headless,
-identical to calling the underlying script directly — the menu adds no
-capability that isn't already a standalone script.
+prompts. `sopx <verb> <args>` runs any of them headless, identical to
+calling the underlying script directly — the menu adds no capability that
+isn't already a standalone script. Didn't `pip install`? Everything above
+also works as `python scripts/menu.py` (or `python scripts/menu.py <verb>
+<args>`) from a checkout — identical behavior, just not on your PATH.
 
 ### Specific situations
 
 ```bash
 # Multi-part course (2+ files): one scan, one combined prompt for the whole course
-python scripts/menu.py scan part1.srt part2.srt --emit-prompt
+sopx scan part1.srt part2.srt --emit-prompt
 
 # Reverse-engineer a demonstrated system ("Blackhat Mode") — after extracting
 # each part, merge their architecture docs into one, continuously numbered
-python scripts/menu.py merge-arch part1_architecture.md part2_architecture.md --out <system>_architecture.md
+sopx merge-arch part1_architecture.md part2_architecture.md --out <system>_architecture.md
 
 # Just one audit instead of the full `validate` bundle
-python scripts/menu.py coherence <audit_file> --dir path/to/your-skill
-python scripts/menu.py evolution --dir path/to/your-set
-python scripts/menu.py blackhat  <architecture.md> --skill-dir path/to/your-skill
-python scripts/menu.py determinism path/to/your-skill
+sopx coherence <audit_file> --dir path/to/your-skill
+sopx evolution --dir path/to/your-set
+sopx blackhat  <architecture.md> --skill-dir path/to/your-skill
+sopx determinism path/to/your-skill
 
 # Video course: rescue frames at visual-reference gaps (dry-run first)
 python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
