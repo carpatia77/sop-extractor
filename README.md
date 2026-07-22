@@ -255,5 +255,6 @@ When in doubt, follow the source's terms.
 
 ## License
 
-MIT — applies to the code and specs in this repository, **not** to any book,
-course, or document you process with it.
+**Apache 2.0** — applies to the code and specs in this repository (**excluding** `book_to_skill/` which remains under MIT).
+
+See [NOTICES.md](NOTICES.md) for third-party license details.

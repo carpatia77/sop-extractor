@@ -1,9 +1,19 @@
 # Changelog
 
-All notable changes to **book-to-skill** are documented here.
+All notable changes to **sop-extractor** are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.0.0] - 2026-07-19
+
+### Changed
+- **License change:** Switched from MIT to Apache-2.0 for the sop-extractor codebase.
+- **Project renamed:** `book-to-skill` → `sop-extractor` (the upstream MIT code remains in `book_to_skill/` as a vendored dependency).
+- **Third-party attribution:** Added `NOTICES.md` documenting the MIT license for the upstream `book-to-skill` code by virgiliojr94.
+
+### Added
+- `NOTICES.md` — Third-party license documentation for vendored `book_to_skill/` package.
 
 ## [Unreleased]
 
