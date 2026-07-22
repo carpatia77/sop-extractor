@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `NOTICES.md` — Third-party license documentation for vendored `book_to_skill/` package.
 
+## [2.1.1] - 2026-07-22
+
+### Added
+- **PT-BR README (`README-PTBR.md`).** Simplified Portuguese version with
+  3-command quick-start, ASCII pipeline diagram, supported formats table,
+  and generated-skill file reference. Language badge added to EN README
+  linking both versions.
+
 ## [2.1.0] - 2026-07-22
 
 ### Changed
