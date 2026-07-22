@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -43,17 +45,103 @@ def find_binary_safe(name: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# yt-dlp Adapter
+# yt-dlp Adapter — with anti-ban measures
 # ---------------------------------------------------------------------------
 
+# Realistic browser user-agents for request spoofing
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+]
+
+# Minimum delay between consecutive requests (seconds)
+_MIN_DELAY = 2.0
+# Maximum additional random jitter (seconds)
+_MAX_JITTER = 3.0
+# Max retries on transient failures
+_MAX_RETRIES = 3
+# Base delay for exponential backoff (seconds)
+_BACKOFF_BASE = 5.0
+
+
 class YtDlpAdapter:
-    """Download videos and extract metadata via yt-dlp."""
+    """Download videos and extract metadata via yt-dlp.
+
+    Includes anti-ban measures: user-agent spoofing, rate limiting,
+    retry with exponential backoff, and random jitter.
+    """
 
     def __init__(self):
         self.binary = self._find_binary()
+        self._last_request_time = 0.0
 
     def _find_binary(self) -> str:
         return _find_binary("yt-dlp")
+
+    def _rate_limit(self):
+        """Enforce minimum delay between requests with random jitter."""
+        now = time.time()
+        elapsed = now - self._last_request_time
+        delay = _MIN_DELAY + random.uniform(0, _MAX_JITTER)
+        if elapsed < delay:
+            sleep_time = delay - elapsed
+            log.debug("Rate limit: aguardando %.1fs", sleep_time)
+            time.sleep(sleep_time)
+        self._last_request_time = time.time()
+
+    def _get_user_agent(self) -> str:
+        """Return a random user-agent string."""
+        return random.choice(_USER_AGENTS)
+
+    def _run_with_retry(self, cmd: list, timeout: int = 120) -> subprocess.CompletedProcess:
+        """Run a subprocess with retry + exponential backoff."""
+        last_error = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                self._rate_limit()
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=timeout
+                )
+                if result.returncode == 0:
+                    return result
+                # Non-zero returncode — check if retryable
+                stderr = result.stderr.strip().lower()
+                retryable = any(kw in stderr for kw in [
+                    "http error 429", "too many requests",
+                    "http error 503", "service unavailable",
+                    "http error 403", "forbidden",
+                    "timed out", "timeout",
+                    "connection reset", "connection refused",
+                ])
+                if retryable and attempt < _MAX_RETRIES - 1:
+                    backoff = _BACKOFF_BASE * (2 ** attempt) + random.uniform(0, 2)
+                    log.warning(
+                        "yt-dlp erro retryável (tentativa %d/%d), aguardando %.0fs: %s",
+                        attempt + 1, _MAX_RETRIES, backoff, result.stderr.strip()[:200],
+                    )
+                    time.sleep(backoff)
+                    last_error = result
+                    continue
+                # Non-retryable or last attempt
+                return result
+            except subprocess.TimeoutExpired:
+                if attempt < _MAX_RETRIES - 1:
+                    backoff = _BACKOFF_BASE * (2 ** attempt)
+                    log.warning(
+                        "yt-dlp timeout (tentativa %d/%d), aguardando %.0fs",
+                        attempt + 1, _MAX_RETRIES, backoff,
+                    )
+                    time.sleep(backoff)
+                    continue
+                raise RuntimeError(
+                    f"yt-dlp timeout após {_MAX_RETRIES} tentativas"
+                )
+        # Should not reach here, but safety fallback
+        if last_error is not None:
+            return last_error
+        raise RuntimeError("yt-dlp falhou após múltiplas tentativas")
 
     @staticmethod
     def is_url(source: str) -> bool:
@@ -71,11 +159,10 @@ class YtDlpAdapter:
             "--dump-json",
             "--no-download",
             "--no-playlist",
+            "--user-agent", self._get_user_agent(),
             url,
         ]
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120
-        )
+        result = self._run_with_retry(cmd, timeout=120)
         if result.returncode != 0:
             raise RuntimeError(
                 f"yt-dlp falhou ao obter metadata: {result.stderr.strip()}"
@@ -106,12 +193,11 @@ class YtDlpAdapter:
             "--audio-quality", "2",
             "-o", output_template,
             "--no-playlist",
+            "--user-agent", self._get_user_agent(),
             url,
         ]
         log.info("Baixando áudio de %s ...", url)
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600
-        )
+        result = self._run_with_retry(cmd, timeout=600)
         if result.returncode != 0:
             raise RuntimeError(
                 f"yt-dlp falhou ao baixar áudio: {result.stderr.strip()}"

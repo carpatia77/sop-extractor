@@ -39,11 +39,14 @@ def show_status():
     print(f"  {len(entries)} vídeo(s) processado(s):\n")
     for e in entries:
         source = e.get("canonical_id", e.get("key", "?"))
+        title = e.get("title", "")
         words = e.get("word_count", "?")
         ts = e.get("processed_at", "?")
         print(f"    {source}")
+        if title:
+            print(f"      título:   {title}")
         print(f"      palavras: {words}  |  processado: {ts}")
-        print(f"      output: {e.get('output_dir', '?')}")
+        print(f"      output:   {e.get('output_dir', '?')}")
         print()
 
 

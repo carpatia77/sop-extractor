@@ -104,7 +104,13 @@ class IngestPipeline:
             )
 
         # --- Create output directory ---
-        output_dir = output_base / key
+        # When cache is disabled, append timestamp to avoid overwriting
+        cache_enabled = get(self.config, "cache_enabled", True)
+        if not cache_enabled:
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            output_dir = output_base / f"{key}_{ts}"
+        else:
+            output_dir = output_base / key
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # --- Stage 1: audio ---
@@ -179,7 +185,12 @@ class IngestPipeline:
         )
 
         # --- Mark done ---
-        self.cache.mark_done(key, str(output_dir), canonical_id=info.get("canonical_id", ""))
+        self.cache.mark_done(
+            key, str(output_dir),
+            canonical_id=info.get("canonical_id", ""),
+            word_count=word_count,
+            title=info.get("title", ""),
+        )
 
         log.info("Ingestão concluída: %d palavras em %s", word_count, output_dir)
 
