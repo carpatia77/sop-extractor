@@ -15,9 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `NOTICES.md` — Third-party license documentation for vendored `book_to_skill/` package.
 
-## [Unreleased]
+## [2.1.0] - 2026-07-22
 
 ### Changed
+- **PT-BR translation of `preflight_scan.py`.** All user-facing strings
+  translated to Portuguese — warnings, recommendation reasons, prompt draft,
+  batch report. UX rework: aligned columns, confidence icons (●/◐/○),
+  `→` arrow on RECOMENDAÇÃO, condensed warnings, renamed "Linhas curtas"
+  → "Tabelas colapsadas" for clarity. Fixed "não varredura completa"
+  → "varredura parcial".
 - **Repo organizational cleanup.** Published 5 previously-orphaned docs
   (`ARCHITECTURE_AUDIT.md`, `INFRA_MATURITY_PLAN.md`, `OPERATING_CONVENTIONS.md`,
   `PIPELINE_ARCHITECTURE.md`, `EXTRACTION_PREFLIGHT_CHECKLIST.md`) to the
@@ -57,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mode candidate. Single-path invocation is unchanged (no regression).
 - Registered **Item 14** in `docs/INFRA_MATURITY_PLAN.md`.
 
-## [1.3.0] — 2026-07-17
+## [Unreleased]
 
 ### Added
 - **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
