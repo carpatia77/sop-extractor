@@ -158,3 +158,43 @@ def test_pyproject_registers_sopx_console_script():
         content = f.read()
     assert 'sopx = "scripts.menu:main"' in content
     assert os.path.isfile(os.path.join(repo_root, "scripts", "__init__.py"))
+
+
+def test_real_capability_registry_ingest_wires_to_ingest_script():
+    """'ingest' must dispatch to scripts/ingest.py."""
+    cap = find_capability("ingest", CAPABILITIES)
+    assert cap is not None
+    assert cap.script == "ingest.py"
+
+
+def test_is_available_ingest_false_when_binary_missing(monkeypatch):
+    """The menu must not advertise `ingest` as available when yt-dlp/ffmpeg
+    are missing — otherwise a user picks it and it crashes mid-run instead
+    of failing honestly up front."""
+    import shutil as shutil_module
+    cap = find_capability("ingest", CAPABILITIES)
+    monkeypatch.setattr(shutil_module, "which", lambda name: None)
+    ok, reason = is_available(cap)
+    assert not ok
+    assert "não encontrado" in reason
+
+
+def test_is_available_ingest_false_when_faster_whisper_missing(monkeypatch):
+    """Even with yt-dlp/ffmpeg present, missing faster-whisper (a Python
+    dependency shutil.which can't see) must also be caught up front."""
+    import builtins
+    import shutil as shutil_module
+    cap = find_capability("ingest", CAPABILITIES)
+    monkeypatch.setattr(shutil_module, "which", lambda name: f"/usr/bin/{name}")
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "faster_whisper":
+            raise ImportError("no faster_whisper")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    ok, reason = is_available(cap)
+    assert not ok
+    assert "faster-whisper" in reason

@@ -458,7 +458,7 @@ def scan_source(path: str, sample_n: int = 5) -> dict:
 
 def print_report(result: dict, path: str):
     print(f"\n{'─'*50}")
-    print(f"  PRE-FLIGHT SCAN")
+    print("  PRE-FLIGHT SCAN")
     print(f"{'─'*50}")
     print(f"  Arquivo:    {os.path.basename(path)}")
 
@@ -490,26 +490,26 @@ def print_report(result: dict, path: str):
 
     print(f"\n{'─'*50}")
     if result.get("source_kind") == "transcript":
-        print(f"  → RECOMENDAÇÃO: BOOK_TYPE=transcript")
-        print(f"    Fonte é .srt/.vtt — opção 3 do SKILL.md Step 1.5.")
+        print("  → RECOMENDAÇÃO: BOOK_TYPE=transcript")
+        print("    Fonte é .srt/.vtt — opção 3 do SKILL.md Step 1.5.")
     else:
         print(f"  → RECOMENDAÇÃO: BOOK_TYPE={recommendation}")
         reason = result.get('recommendation_reason', '')
         if reason:
             print(f"    {reason}")
     print(f"{'─'*50}")
-    print(f"  Não é automático — revise antes de confirmar.")
+    print("  Não é automático — revise antes de confirmar.")
 
     if result.get("re_candidate"):
         sd = result.get("system_demonstration", {})
         lens = result.get("analyst_lens_suggestion", {})
         print(f"\n{'─'*50}")
-        print(f"  🕶  CANDIDATO A REVERSE-ENGINEERING")
+        print("  🕶  CANDIDATO A REVERSE-ENGINEERING")
         print(f"{'─'*50}")
         sys_name = sd.get('named_system')
         sys_suffix = f" (x{sd.get('named_system_mentions')})" if sys_name else ""
         print(f"  Deixis UI: {sd.get('ui_deixis', 0)} | Sistema: {sys_name or 'nenhum'}{sys_suffix}")
-        print(f"  [A] Doutrina fiel (default)  [B] Blackhat Mode")
+        print("  [A] Doutrina fiel (default)  [B] Blackhat Mode")
         proposed = lens.get("lens", "systems-architect")
         print(f"  Lente proposta: {proposed}")
 
@@ -532,7 +532,6 @@ def build_prompt_draft(result: dict, path: str, depth: str = None,
     approves/overrides rather than filling blanks from scratch."""
     is_transcript = result.get("source_kind") == "transcript"
     recommendation = "transcript" if is_transcript else result.get("recommendation", result.get("suggestion", "text"))
-    reason = result.get("recommendation_reason", "")
     confidence = result.get("confidence", "unknown")
 
     depth = depth or "study"
@@ -541,9 +540,8 @@ def build_prompt_draft(result: dict, path: str, depth: str = None,
     lineage = lineage or "isolada (default)"
 
     if is_transcript:
-        secondary = result.get("recommendation", result.get("suggestion", "text"))
         step_1_5_note = (
-            f"    [medido] Transcript (.srt/.vtt) — opção 3 do Step 1.5."
+            "    [medido] Transcript (.srt/.vtt) — opção 3 do Step 1.5."
         )
     else:
         step_1_5_note = f"    [medido] Confiança: {confidence}"
@@ -681,7 +679,7 @@ if __name__ == "__main__":
 
         if args.emit_prompt:
             print(f"\n{'─'*50}")
-            print(f"  PROMPT DE EXTRAÇÃO — revise e aprove (S/N)")
+            print("  PROMPT DE EXTRAÇÃO — revise e aprove (S/N)")
             print(f"{'─'*50}\n")
             print(build_prompt_draft(
                 out, path,
@@ -695,7 +693,7 @@ if __name__ == "__main__":
         if args.emit_prompt:
             results = [r for _, r in batch]
             print(f"\n{'─'*50}")
-            print(f"  PROMPT DE EXTRAÇÃO (multi-parte) — revise e aprove (S/N)")
+            print("  PROMPT DE EXTRAÇÃO (multi-parte) — revise e aprove (S/N)")
             print(f"{'─'*50}\n")
             print(build_multi_part_prompt_draft(
                 results, args.source_path,

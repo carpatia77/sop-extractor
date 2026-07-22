@@ -16,6 +16,7 @@ paths dispatch to the exact same sibling scripts.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from collections import namedtuple
@@ -55,6 +56,8 @@ CAPABILITIES = [
                "<skill_dir> [--out <path>]", False, False, None),
     Capability("10", "summary", "Summary / run log", "extraction_summary.py",
                "<path>", False, False, None),
+    Capability("11", "ingest", "Ingest video/URL → transcript + text", "ingest.py",
+               "<URL_or_path> [--rescue-frames] [--model base]", False, False, None),
 ]
 
 
@@ -73,7 +76,11 @@ def is_available(cap: Capability, scripts_dir: str = SCRIPTS_DIR):
     if it's marked coming_soon, or its backing script file doesn't exist in
     scripts_dir — honest about what the current install can actually do,
     mirroring extract.py --check. info_only capabilities (no backing script)
-    are always available (they just print instructions)."""
+    are always available (they just print instructions). The `ingest`
+    capability additionally requires yt-dlp/ffmpeg on PATH and faster-whisper
+    importable — checked here so the menu never advertises `ingest` as
+    available only to have it crash mid-run (after audio's already
+    downloaded) on a missing dependency."""
     if cap.coming_soon:
         return False, "coming soon — not yet implemented"
     if cap.info_only:
@@ -81,6 +88,14 @@ def is_available(cap: Capability, scripts_dir: str = SCRIPTS_DIR):
     script_path = os.path.join(scripts_dir, cap.script)
     if not os.path.isfile(script_path):
         return False, f"backing script not found: {cap.script}"
+    if cap.verb == "ingest":
+        for binary in ["yt-dlp", "ffmpeg"]:
+            if not shutil.which(binary):
+                return False, f"{binary} não encontrado"
+        try:
+            import faster_whisper  # noqa: F401
+        except ImportError:
+            return False, "faster-whisper não instalado (pip install faster-whisper)"
     return True, ""
 
 

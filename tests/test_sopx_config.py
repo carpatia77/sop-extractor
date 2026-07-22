@@ -1,4 +1,12 @@
+import pytest
+
 from sopx.config import DEFAULTS, _deep_merge, ensure_config, get, load_config, save_config
+
+# save_config/ensure_config need pyyaml, which is behind the optional
+# [ingest] extra — the plain CI test matrix job installs only pytest, so
+# these two must skip rather than fail there instead of asserting a
+# dependency the bare install never promised.
+pytest.importorskip("yaml")
 
 
 def test_load_config_without_file_returns_defaults(tmp_path):
