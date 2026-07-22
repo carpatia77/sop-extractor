@@ -74,6 +74,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Ingestion module (`sopx/` package + `sopx ingest`).** Versatilizes the
+  input layer: point at a video URL or a local video file and get
+  `output/<id>/{transcript.srt, full_text.txt, metadata.json}`, ready for
+  `sopx scan … --emit-prompt`. `yt-dlp` downloads audio for URLs (video is
+  never kept); `ffmpeg` extracts audio for local files; `faster-whisper`
+  transcribes locally (no API keys — that's the separate, future LLM
+  Router item). Dedup cache keyed by the **canonical video-ID** for URLs
+  (not the raw URL, which would miss `youtu.be` vs `youtube.com` /
+  querystring variants) and by `path:size:mtime` for local files, tracked
+  per-stage (audio, SRT) with an atomic-write + completion-sentinel
+  discipline — a crash mid-download or mid-transcription can never be
+  mistaken for a finished stage on retry. `metadata.json` treats
+  `upload_date`/`canonical_id` as first-class provenance, feeding the same
+  Chronology Gate the temporal evolution audit already relies on. Config at
+  `~/.config/sopx/config.yaml` (XDG) covers only ingestion knobs (language,
+  cache toggle, whisper model size) — deliberately no API-key storage.
+  36 new tests (config, cache, adapters w/ mocked subprocess, pipeline
+  incl. a stage-cache-survives-a-crash regression test); zero regressions
+  in the existing 360. `--rescue-frames` is a documented stub for now
+  (raises `NotImplementedError` with the manual command) rather than a
+  flag that silently does nothing — full integration with
+  `scripts/extract_frames_at_timestamps.py` is a follow-up.
+
 - **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
   opt-in fourth audit layer that reconstructs a demonstrated system's backend
   from its observable frontend, kept walled off from the anti-fabrication core:

@@ -15,7 +15,7 @@ book-to-skill = "book_to_skill.cli:main"
 sopx = "scripts.menu:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["book_to_skill", "scripts"]
+packages = ["book_to_skill", "scripts", "sopx"]
 
 [project.optional-dependencies]
 epub = ["ebooklib", "beautifulsoup4"]
@@ -23,6 +23,7 @@ pdf = ["pypdf", "pdfminer.six"]
 docx = ["python-docx"]
 rtf = ["striprtf"]
 technical = ["docling"]
+ingest = ["yt-dlp>=2024.1.0", "faster-whisper>=1.0.0", "pyyaml>=6.0"]
 all = [
     "ebooklib",
     "beautifulsoup4",
@@ -30,7 +31,10 @@ all = [
     "pdfminer.six",
     "python-docx",
     "striprtf",
-    "docling"
+    "docling",
+    "yt-dlp>=2024.1.0",
+    "faster-whisper>=1.0.0",
+    "pyyaml>=6.0"
 ]
 
 
