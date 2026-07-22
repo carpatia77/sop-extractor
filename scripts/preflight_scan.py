@@ -227,9 +227,7 @@ def scan_pdf(path: str, sample_n: int = 5) -> dict:
         import pypdf
     except ImportError:
         return {
-            "error": "pypdf not installed — cannot auto-scan. Install the 'pdf' extra "
-                     "(pip install '.[pdf]') or inspect the source manually using the "
-                     "checklist in docs/EXTRACTION_PREFLIGHT_CHECKLIST.md.",
+            "error": "pypdf não instalado — instale com: pip install '.[pdf]'",
             "suggestion": None,
             "confidence": "none",
         }
@@ -276,21 +274,11 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     warnings = []
     if pages_with_images > 0:
         warnings.append(
-            f"{pages_with_images}/{len(pages)} sampled pages contain embedded images. "
-            "Verify manually whether these are load-bearing diagrams/tables (central to "
-            "the book's argument) or incidental illustration. If load-bearing, choose "
-            "technical regardless of how prose-heavy the rest of the book reads — a "
-            "plain-text extractor will not preserve them, and if they are rasterized "
-            "images, no BOOK_TYPE recovers them; document that gap upfront."
+            f"{pages_with_images}/{len(pages)} páginas com imagens — verifique se são diagramas essenciais"
         )
     if pages_with_burst > 0:
         warnings.append(
-            f"{pages_with_burst}/{len(pages)} sampled windows contain runs of short, "
-            "single-token lines — the signature of a table whose columns collapsed to "
-            "one cell per line during PDF-to-text conversion (structure lost, content "
-            "intact). If confirmed, choose technical regardless of the overall ratio, "
-            "and treat any reconstructed table as needing a provenance check against "
-            "the raw source before trusting the row/column pairing the extractor infers."
+            f"{pages_with_burst}/{len(pages)} janelas com tabelas colapsadas — revise antes de confiar"
         )
 
     is_technical_signal = avg_tabular_ratio > 0.15 or any_images or avg_burst_ratio > 0.1
@@ -304,9 +292,8 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
 
     if confidence in ("medium", "low"):
         warnings.append(
-            "Signal is not strong either way — this is a heuristic sample, not a full-document "
-            "scan. Confirm by opening a few more pages by hand before committing to BOOK_TYPE, "
-            "especially any pages the table of contents suggests are diagram/exhibit-heavy."
+            "Sinal incerto — amostra heurística, varredura parcial. "
+            "Revise páginas manualmente antes de confirmar BOOK_TYPE."
         )
 
     # The final actionable call is deliberately biased toward `technical` whenever
@@ -320,19 +307,13 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     if suggestion == "text" and localized_hard_evidence:
         recommendation = "technical"
         recommendation_reason = (
-            f"overriding the raw '{suggestion}' suggestion: {pages_with_images} sampled "
-            f"window(s) had embedded images and {pages_with_burst} had collapsed-table "
-            "bursts. In a large, mostly-prose document these can dilute the *average* "
-            "signal below the auto-suggestion threshold while still being real, "
-            "load-bearing content in a minority of the source. Missing that content "
-            "silently costs far more than the extra processing time of technical mode."
+            f"Motivo: {pages_with_images} janela(s) com imagens, "
+            f"{pages_with_burst} com tabelas colapsadas."
         )
     else:
         recommendation = suggestion
         recommendation_reason = (
-            "matches the raw signal — no localized hard evidence (images or collapsed-"
-            "table bursts) was found in the sampled windows beyond what the ratio "
-            "already reflects."
+            "Sinal consistente — sem evidência forte de imagens ou tabelas colapsadas."
         )
 
     return {
@@ -467,72 +448,70 @@ def scan_source(path: str, sample_n: int = 5) -> dict:
         "suggestion": "text",
         "confidence": "low",
         "recommendation": "text",
-        "recommendation_reason": "no scanner coverage for this format — this is an unexamined default, not a finding.",
+        "recommendation_reason": "formato não amostrado — padrão conservador, não um achado.",
         "warnings": [
-            f"'{ext}' sources are not sampled by this tool (only PDF, plain-text "
-            ".txt/.md, and subtitle .srt/.vtt are). If this source has embedded "
-            "tables, code blocks, or diagrams that carry load-bearing content, "
-            "choose technical manually regardless of this default."
+            f"Formato '{ext}' não amostrado (apenas PDF, .txt/.md, .srt/.vtt). "
+            "Se tiver tabelas ou diagramas, escolha technical manualmente."
         ],
     }
 
 
 def print_report(result: dict, path: str):
-    print(f"=== Pre-flight content-type scan: {path} ===")
+    print(f"\n{'─'*50}")
+    print(f"  PRE-FLIGHT SCAN")
+    print(f"{'─'*50}")
+    print(f"  Arquivo:    {os.path.basename(path)}")
+
     if "error" in result:
-        print(f"⚠️  {result['error']}")
+        print(f"  ⚠️  {result['error']}")
         return
+
     if "total_pages" in result:
-        unit = "line" if result.get("unit") == "line-window" else "page"
-        print(f"Sampled {len(result['sampled_pages'])} {unit}-window(s) out of "
-              f"{result['total_pages']} total {unit}s (start indices {result['sampled_pages']}).")
-        print(f"Avg tabular-line ratio: {result['avg_tabular_ratio']*100:.1f}% | "
-              f"Avg short-line burst ratio: {result.get('avg_burst_ratio', 0.0)*100:.1f}% | "
-              f"Pages with embedded images: {sum(1 for p in result['pages'] if p['n_images'] > 0)}")
-    print(f"\nRaw signal suggestion: {result['suggestion']}  (confidence: {result['confidence']})")
+        unit = "páginas" if result.get("unit") != "line-window" else "linhas"
+        n_sampled = len(result['sampled_pages'])
+        total = result['total_pages']
+        print(f"  Amostra:    {n_sampled}/{total} {unit}")
+
+        tabular = result['avg_tabular_ratio'] * 100
+        burst = result.get('avg_burst_ratio', 0.0) * 100
+        images = sum(1 for p in result['pages'] if p['n_images'] > 0)
+        print(f"  Sinais:     Tabelas {tabular:.0f}% │ Tabelas colapsadas {burst:.0f}% │ Imagens {images}")
+
+    suggestion = result['suggestion']
+    confidence = result['confidence']
+    confidence_icon = {"high": "●", "medium": "◐", "low": "○"}.get(confidence, "?")
+    confidence_label = {"high": "alta", "medium": "média", "low": "baixa"}.get(confidence, confidence)
+    print(f"\n  Detecção:   {suggestion}  {confidence_icon} {confidence_label}")
+
     for w in result.get("warnings", []):
-        print(f"⚠️  {w}")
+        print(f"  ⚠  {w}")
 
     recommendation = result.get("recommendation", result["suggestion"])
+
+    print(f"\n{'─'*50}")
     if result.get("source_kind") == "transcript":
-        print(f"\n{'='*60}")
-        print("RECOMMENDATION: BOOK_TYPE=transcript")
-        print(f"{'='*60}")
-        print("This is a subtitle transcript (.srt/.vtt) — SKILL.md Step 1.5 option 3 "
-              "(video course transcript) applies regardless of the technical/text signal "
-              f"above ('{recommendation}'). That signal is a secondary check: rare but real "
-              "cases where the speaker reads out a table/formula that a transcript-mode "
-              "extractor might flatten — note it for the executor if strong, but BOOK_TYPE "
-              "itself is transcript.")
+        print(f"  → RECOMENDAÇÃO: BOOK_TYPE=transcript")
+        print(f"    Fonte é .srt/.vtt — opção 3 do SKILL.md Step 1.5.")
     else:
-        print(f"\n{'='*60}")
-        print(f"RECOMMENDATION: BOOK_TYPE={recommendation}")
-        print(f"Why: {result.get('recommendation_reason', '')}")
-        print(f"{'='*60}")
-    print("\nThis is a recommendation, not an automatic decision — confirm against "
-          "docs/EXTRACTION_PREFLIGHT_CHECKLIST.md before running Full Conversion.")
+        print(f"  → RECOMENDAÇÃO: BOOK_TYPE={recommendation}")
+        reason = result.get('recommendation_reason', '')
+        if reason:
+            print(f"    {reason}")
+    print(f"{'─'*50}")
+    print(f"  Não é automático — revise antes de confirmar.")
 
     if result.get("re_candidate"):
         sd = result.get("system_demonstration", {})
         lens = result.get("analyst_lens_suggestion", {})
-        print(f"\n{'='*60}")
-        print("🕶  REVERSE-ENGINEERING CANDIDATE (Blackhat Mode available)")
-        print(f"{'='*60}")
+        print(f"\n{'─'*50}")
+        print(f"  🕶  CANDIDATO A REVERSE-ENGINEERING")
+        print(f"{'─'*50}")
         sys_name = sd.get('named_system')
         sys_suffix = f" (x{sd.get('named_system_mentions')})" if sys_name else ""
-        print(f"Signals: {sd.get('ui_deixis', 0)} on-screen/UI deixis reference(s), "
-              f"named system: {sys_name or 'none detected'}{sys_suffix}, "
-              f"{sd.get('output_mentions', 0)} output/signal mention(s).")
-        print("This material demonstrates a system — you MAY reverse-engineer its backend from the "
-              "observable frontend. This is opt-in and never assumed; choose:")
-        print("  [A] faithful doctrine only (normal audit -> SKILL.md)          [default]")
-        print("  [B] Blackhat Mode: faithful doctrine + reverse-engineering layer "
-              "(adds <system>_architecture.md with [OBSERVED]/[INFERRED] seals)")
+        print(f"  Deixis UI: {sd.get('ui_deixis', 0)} | Sistema: {sys_name or 'nenhum'}{sys_suffix}")
+        print(f"  [A] Doutrina fiel (default)  [B] Blackhat Mode")
         proposed = lens.get("lens", "systems-architect")
-        evidence = ", ".join(lens.get("evidence", []) or []) or "(no strong vocabulary signal)"
-        print(f"Proposed analyst lens (confirm/override one-key): {proposed}")
-        print(f"  Derived from source vocabulary: {evidence}")
-        print(f"  {lens.get('note', '')}")
+        print(f"  Lente proposta: {proposed}")
 
 
 def slugify_filename(path: str) -> str:
@@ -559,51 +538,40 @@ def build_prompt_draft(result: dict, path: str, depth: str = None,
     depth = depth or "study"
     skill_name = skill_name or slugify_filename(path)
     destino = f"{skills_home.rstrip('/')}/{skill_name}"
-    lineage = lineage or (
-        "isolated extraction (default — no other Set assumed; override explicitly "
-        "if this source belongs to a deliberate lineage/grouping with other sources)"
-    )
+    lineage = lineage or "isolada (default)"
 
     if is_transcript:
         secondary = result.get("recommendation", result.get("suggestion", "text"))
         step_1_5_note = (
-            f"    [medido] Fonte é um transcript (.srt/.vtt) — SKILL.md Step 1.5 opção 3 se aplica "
-            f"independente do sinal técnico secundário ('{secondary}', confidence: {confidence})."
+            f"    [medido] Transcript (.srt/.vtt) — opção 3 do Step 1.5."
         )
     else:
-        step_1_5_note = f"    [medido] Pre-flight scan (confidence: {confidence}). {reason}"
+        step_1_5_note = f"    [medido] Confiança: {confidence}"
 
     lines = [
-        "Execute a skill book-to-skill para realizar a conversão completa (Full Conversion) do seguinte documento:",
-        f'"{path}"',
+        "Extraia o seguinte documento como skill completa:",
+        f'  {path}',
         "",
-        "Respostas (pre-flight scan + defaults — revise antes de aprovar):",
-        f"- Step 1.5 (Content Type): BOOK_TYPE={recommendation}",
-        step_1_5_note,
-        f"- Step 4 (Purpose): DEPTH={depth}",
-        "    [default] Assume \"All of the above\" (Option 4) unless you only want quick reference lookup (Option 3 -> DEPTH=reference).",
-        f"- Step 5 (Skill Name e Destino): nome=\"{skill_name}\", destino=\"{destino}\"",
-        "    [default] Nome derivado do arquivo de origem. Confirme overwrite vs. fold-in/rename se o destino já existir.",
-        f"- Step 5.5 (Lineage): {lineage}",
+        "Configuração (auto-detectado + defaults — revise):",
+        f"  BOOK_TYPE = {recommendation}  ({step_1_5_note.strip()})",
+        f"  DEPTH     = {depth}  [default: study]",
+        f"  Nome      = {skill_name}",
+        f"  Destino   = {destino}",
+        f"  Linhagem  = {lineage}",
     ]
 
     if result.get("re_candidate"):
         lens = result.get("analyst_lens_suggestion", {})
         proposed = lens.get("lens", "systems-architect")
-        evidence = ", ".join(lens.get("evidence", []) or []) or "(no strong vocabulary signal)"
         lines += [
-            "- Item 11 (Reverse-Engineering / Blackhat Mode): material demonstra um sistema (RE-candidate).",
-            "    [A] Doutrina fiel apenas (default) — só SKILL.md.",
-            "    [B] Blackhat Mode — adiciona <system>_architecture.md com selos [OBSERVED]/[INFERRED].",
-            f"    Se [B]: analyst_lens proposta=\"{proposed}\" (derivada do vocabulário: {evidence}) — confirme/ajuste.",
-            "    [default] [A] — o modo RE nunca é assumido; só ligue [B] declarando explicitamente.",
+            "",
+            "  Modo Blackhat disponível (RE-candidate).",
+            f"  [A] Doutrina fiel (default)  [B] Blackhat Mode (lente: {proposed})",
         ]
 
     lines += [
         "",
-        "Assuma o Pre-flight Cost Estimate como aprovado e proceda seguindo as restrições de Token Budget.",
-        "",
-        "Confirma estas escolhas e autoriza a execução? (S/N)",
+        "Confirma? (S/N)",
     ]
     return "\n".join(lines)
 
@@ -634,32 +602,23 @@ def build_multi_part_prompt_draft(results: list, paths: list, depth: str = None,
     depth = depth or "study"
     skill_name = skill_name or slugify_filename(paths[0])
     destino = f"{skills_home.rstrip('/')}/{skill_name}"
-    lineage = lineage or (
-        "isolated extraction (default — no other Set assumed; override explicitly "
-        "if this source belongs to a deliberate lineage/grouping with other sources)"
-    )
+    lineage = lineage or "isolada (default)"
 
-    part_lines = [f'    PART_ID=part{i+1}: "{p}"' for i, p in enumerate(paths)]
+    part_lines = [f'  Parte {i+1}: {p}' for i, p in enumerate(paths)]
 
     lines = [
-        f"Execute a skill book-to-skill para realizar a conversão completa (Full Conversion) de um curso multi-parte ({len(paths)} partes):",
+        f"Extraia curso multi-parte ({len(paths)} partes):",
         *part_lines,
         "",
-        "Respostas (pre-flight scan em lote + defaults — revise antes de aprovar):",
-        f"- Step 1.5 (Content Type): BOOK_TYPE={recommendation}",
-        "    [medido] Recomendação da parte 1; módulos continuam a numeração entre as partes (SKILL.md multi-part).",
+        "Configuração (auto-detectado + defaults — revise):",
+        f"  BOOK_TYPE = {recommendation}",
     ]
     if disagreement:
-        lines.append(
-            f"    ⚠️  As partes divergem na recomendação bruta ({', '.join(recommendations)}) — "
-            "confirme BOOK_TYPE manualmente antes de aprovar."
-        )
+        lines.append(f"  ⚠️  Partes divergem ({', '.join(recommendations)}) — confirme manualmente.")
     lines += [
-        f"- Step 4 (Purpose): DEPTH={depth}",
-        "    [default] Assume \"All of the above\" (Option 4) unless you only want quick reference lookup (Option 3 -> DEPTH=reference).",
-        f"- Step 5 (Skill Name e Destino): nome=\"{skill_name}\", destino=\"{destino}\"",
-        "    [default] Nome derivado do primeiro arquivo; único skill para todas as partes.",
-        f"- Step 5.5 (Lineage): {lineage}",
+        f"  DEPTH     = {depth}  [default: study]",
+        f"  Nome      = {skill_name}",
+        f"  Destino   = {destino}",
     ]
 
     any_re_candidate = any(r.get("re_candidate") for r in results)
@@ -668,19 +627,14 @@ def build_multi_part_prompt_draft(results: list, paths: list, depth: str = None,
         proposed = lens.get("lens", "systems-architect")
         n_candidates = sum(1 for r in results if r.get("re_candidate"))
         lines += [
-            f"- Item 11 (Reverse-Engineering / Blackhat Mode): {n_candidates}/{len(paths)} parte(s) são RE-candidate.",
-            "    [A] Doutrina fiel apenas (default) — só SKILL.md.",
-            "    [B] Blackhat Mode — cada parte gera seu <system>_architecture.md; depois consolide com:",
-            "        python scripts/merge_architecture_audit.py part1_architecture.md part2_architecture.md ... --out <system>_architecture.md",
-            f"    Se [B]: analyst_lens proposta=\"{proposed}\" — confirme/ajuste (mesma lente para todas as partes).",
-            "    [default] [A] — o modo RE nunca é assumido; só ligue [B] declarando explicitamente.",
+            "",
+            f"  Modo Blackhat: {n_candidates}/{len(paths)} partes candidatas.",
+            f"  [A] Doutrina fiel (default)  [B] Blackhat Mode (lente: {proposed})",
         ]
 
     lines += [
         "",
-        "Assuma o Pre-flight Cost Estimate como aprovado e proceda seguindo as restrições de Token Budget.",
-        "",
-        "Confirma estas escolhas e autoriza a execução? (S/N)",
+        "Confirma? (S/N)",
     ]
     return "\n".join(lines)
 
@@ -690,9 +644,9 @@ def print_batch_report(results: list, paths: list):
         print_report(result, path)
         print()
     if len(paths) > 1:
-        print(f"{'='*60}")
-        print(f"BATCH: {len(paths)} sources scanned as a multi-part course")
-        print(f"{'='*60}")
+        print(f"{'─'*50}")
+        print(f"  LOTE: {len(paths)} fontes escaneadas como curso multi-parte")
+        print(f"{'─'*50}")
 
 
 if __name__ == "__main__":
@@ -726,9 +680,9 @@ if __name__ == "__main__":
         print_report(out, path)
 
         if args.emit_prompt:
-            print(f"\n{'='*60}")
-            print("FULL CONVERSION PROMPT — review and approve (S/N)")
-            print(f"{'='*60}\n")
+            print(f"\n{'─'*50}")
+            print(f"  PROMPT DE EXTRAÇÃO — revise e aprove (S/N)")
+            print(f"{'─'*50}\n")
             print(build_prompt_draft(
                 out, path,
                 depth=args.depth, skill_name=args.skill_name,
@@ -740,9 +694,9 @@ if __name__ == "__main__":
 
         if args.emit_prompt:
             results = [r for _, r in batch]
-            print(f"\n{'='*60}")
-            print("FULL CONVERSION PROMPT (multi-part) — review and approve (S/N)")
-            print(f"{'='*60}\n")
+            print(f"\n{'─'*50}")
+            print(f"  PROMPT DE EXTRAÇÃO (multi-parte) — revise e aprove (S/N)")
+            print(f"{'─'*50}\n")
             print(build_multi_part_prompt_draft(
                 results, args.source_path,
                 depth=args.depth, skill_name=args.skill_name,
