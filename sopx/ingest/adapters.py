@@ -11,10 +11,14 @@ from __future__ import annotations
 import json
 import logging
 import random
+import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
+
+from tqdm import tqdm
 
 log = logging.getLogger(__name__)
 
@@ -180,6 +184,7 @@ class YtDlpAdapter:
         """Download audio-only from a URL.
 
         Uses yt-dlp -x which internally calls ffmpeg for extraction.
+        Shows tqdm progress bar during download.
         Returns the path to the downloaded audio file.
         """
         output_dir = Path(output_dir)
@@ -193,14 +198,55 @@ class YtDlpAdapter:
             "--audio-quality", "2",
             "-o", output_template,
             "--no-playlist",
+            "--newline",                    # progress on new lines
             "--user-agent", self._get_user_agent(),
             url,
         ]
         log.info("Baixando áudio de %s ...", url)
-        result = self._run_with_retry(cmd, timeout=600)
-        if result.returncode != 0:
+
+        # Use Popen to parse progress in real-time
+        self._rate_limit()
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+
+        pbar = None
+        # Match yt-dlp progress: [download]  45.2% of ~2.50MiB ...
+        progress_re = re.compile(
+            r"\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)"
+        )
+
+        try:
+            # Read stderr line by line (yt-dlp writes progress there)
+            while True:
+                line = proc.stderr.readline()
+                if not line and proc.poll() is not None:
+                    break
+                if not line:
+                    continue
+                line = line.strip()
+                m = progress_re.search(line)
+                if m:
+                    pct = float(m.group(1))
+                    size = m.group(2)
+                    if pbar is None:
+                        pbar = tqdm(
+                            total=100, unit="%", desc="  Download",
+                            bar_format="{desc}: {n}/{total}{unit} |{bar}| [{elapsed}<{remaining}]",
+                            file=sys.stderr, leave=False,
+                        )
+                    pbar.n = int(pct)
+                    pbar.set_postfix_str(size)
+                    pbar.refresh()
+        finally:
+            if pbar is not None:
+                pbar.close()
+            proc.wait()
+
+        if proc.returncode != 0:
+            stderr = proc.stderr.read() if proc.stderr else ""
             raise RuntimeError(
-                f"yt-dlp falhou ao baixar áudio: {result.stderr.strip()}"
+                f"yt-dlp falhou ao baixar áudio: {stderr.strip()[:500]}"
             )
 
         audio_files = list(output_dir.glob("audio.*"))
@@ -336,6 +382,7 @@ class WhisperAdapter:
     def transcribe_to_srt(self, audio_path: str | Path, output_dir: str | Path) -> Path:
         """Transcribe audio file and save as SRT.
 
+        Shows tqdm progress bar during transcription.
         Returns path to the generated transcript.srt.
         """
         audio_path = Path(audio_path)
@@ -351,7 +398,21 @@ class WhisperAdapter:
             language=None,
         )
 
-        segments = list(segments_iter)
+        # Consume segments with tqdm progress bar
+        total_duration = info.duration if info.duration else 0
+        segments = []
+        pbar = tqdm(
+            total=total_duration, unit="s", desc="  Transcrever",
+            bar_format="{desc}: {n:.0f}/{total:.0f}{unit} |{bar}| [{elapsed}<{remaining}]",
+            file=sys.stderr, leave=False,
+        )
+        try:
+            for seg in segments_iter:
+                segments.append(seg)
+                pbar.n = min(seg.end, total_duration)
+                pbar.refresh()
+        finally:
+            pbar.close()
 
         log.info(
             "Transcrição concluída: %.1fs de áudio, %d segmentos, idioma: %s",

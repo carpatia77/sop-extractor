@@ -76,10 +76,17 @@ class TestYtDlpAdapter:
         with pytest.raises(RuntimeError, match="yt-dlp falhou"):
             adapter.get_info("https://youtube.com/watch?v=bad")
 
-    @patch("sopx.ingest.adapters.subprocess.run")
+    @patch("sopx.ingest.adapters.subprocess.Popen")
     @patch("sopx.ingest.adapters._find_binary", return_value="/usr/bin/yt-dlp")
-    def test_download_audio(self, mock_find, mock_run, tmp_path):
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    def test_download_audio(self, mock_find, mock_popen, tmp_path):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stderr.readline.side_effect = [
+            "[download] 100% of ~1.00MiB\n", "",  # progress line + EOF
+        ]
+        mock_proc.poll.return_value = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
         (tmp_path / "audio.mp3").write_bytes(b"fake audio")
 
         adapter = YtDlpAdapter()

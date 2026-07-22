@@ -2,11 +2,17 @@
 
 Cache is checked per stage: (1) input→audio and (2) audio→SRT are
 separate artifacts, so a whisper crash doesn't re-download audio.
+
+Progress tracking:
+  - Pipeline stage: printed to stderr (Metadata → Download → Transcrever → Salvar)
+  - Download progress: tqdm bar in YtDlpAdapter
+  - Transcription progress: tqdm bar in WhisperAdapter
 """
 from __future__ import annotations
 
 import json
 import logging
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +20,9 @@ from pathlib import Path
 from sopx.cache import CacheManager
 from sopx.config import ensure_config, get
 from sopx.ingest.adapters import FFmpegAdapter, WhisperAdapter, YtDlpAdapter
+
+# Pipeline stage labels
+_STAGES = ["Metadata", "Download", "Transcrever", "Salvar"]
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +66,12 @@ class IngestPipeline:
             self._whisper = WhisperAdapter(model_size=model)
         return self._whisper
 
+    def _print_stage(self, stage: str):
+        """Print pipeline stage indicator to stderr."""
+        idx = _STAGES.index(stage) + 1 if stage in _STAGES else 0
+        total = len(_STAGES)
+        print(f"\n  [{idx}/{total}] {stage} ...", file=sys.stderr)
+
     def ingest(
         self,
         source: str,
@@ -79,9 +94,9 @@ class IngestPipeline:
 
         is_url = YtDlpAdapter.is_url(source)
 
-        # --- Resolve key + cache ---
+        # --- Stage: Metadata ---
+        self._print_stage("Metadata")
         if is_url:
-            # Get canonical video-ID first
             info = self.ytdlp.get_info(source)
             key = CacheManager.key_for_url(info["canonical_id"])
         else:
@@ -95,6 +110,7 @@ class IngestPipeline:
         if get(self.config, "cache_enabled", True) and self.cache.is_done(key):
             output_dir = Path(self.cache.get_output_dir(key))
             log.info("Cache hit para %s", key)
+            print(f"\n  Cache hit — reutilizando output anterior", file=sys.stderr)
             return IngestResult(
                 output_dir=output_dir,
                 srt=output_dir / "transcript.srt",
@@ -104,7 +120,6 @@ class IngestPipeline:
             )
 
         # --- Create output directory ---
-        # When cache is disabled, append timestamp to avoid overwriting
         cache_enabled = get(self.config, "cache_enabled", True)
         if not cache_enabled:
             ts = time.strftime("%Y%m%d_%H%M%S")
@@ -113,14 +128,15 @@ class IngestPipeline:
             output_dir = output_base / key
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # --- Stage 1: audio ---
+        # --- Stage: Download ---
+        self._print_stage("Download")
         audio_path = None
         if get(self.cache, "_index", {}).get(f"{key}:audio"):
-            # Stage cache hit
             audio_dir = self.cache.stage_path(key, "audio")
             audio_files = list(audio_dir.glob("audio.*"))
             if audio_files:
                 audio_path = audio_files[0]
+                print(f"  Audio cache hit", file=sys.stderr)
 
         if audio_path is None:
             if is_url:
@@ -129,7 +145,8 @@ class IngestPipeline:
             else:
                 audio_path = self.ffmpeg.extract_audio(source, output_dir)
 
-        # --- Stage 2: SRT ---
+        # --- Stage: Transcrever ---
+        self._print_stage("Transcrever")
         srt_path = None
         plain_text = None
         if self.cache.is_stage_done(key, "srt"):
@@ -138,21 +155,20 @@ class IngestPipeline:
             if srt_file.exists():
                 srt_path = srt_file
                 plain_text = srt_path.read_text(encoding="utf-8")
+                print(f"  SRT cache hit", file=sys.stderr)
 
         if srt_path is None:
             srt_dir = self.cache.stage_path(key, "srt")
             srt_path, plain_text = self.whisper.transcribe_to_text(audio_path, srt_dir)
 
-        # --- Write outputs ---
-        # Copy SRT to output dir
+        # --- Stage: Salvar ---
+        self._print_stage("Salvar")
         final_srt = output_dir / "transcript.srt"
         final_srt.write_text(srt_path.read_text(encoding="utf-8"), encoding="utf-8")
 
-        # Write full_text.txt
         text_path = output_dir / "full_text.txt"
         text_path.write_text(plain_text, encoding="utf-8")
 
-        # Write metadata.json (schematized provenance)
         duration = 0
         if is_url:
             duration = info.get("duration", 0)
@@ -184,7 +200,6 @@ class IngestPipeline:
             json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-        # --- Mark done ---
         self.cache.mark_done(
             key, str(output_dir),
             canonical_id=info.get("canonical_id", ""),

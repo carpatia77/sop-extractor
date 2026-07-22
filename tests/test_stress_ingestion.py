@@ -356,10 +356,13 @@ class TestAdaptersStress:
         """yt-dlp succeeds but produces no audio file."""
         import sopx.ingest.adapters as mod
 
-        with patch.object(
-            mod.subprocess, "run",
-            return_value=MagicMock(returncode=0, stdout="", stderr="")
-        ):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stderr.readline.side_effect = ["", ""]
+        mock_proc.poll.return_value = 0
+        mock_proc.wait.return_value = 0
+
+        with patch.object(mod.subprocess, "Popen", return_value=mock_proc):
             adapter = YtDlpAdapter()
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(FileNotFoundError, match="não gerou"):
