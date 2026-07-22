@@ -1,7 +1,7 @@
 <h1 align="center">sop-extractor</h1>
 
 <p align="center">
-  <strong>Transforme livros e cursos em video em uma base de conhecimento auditavel que um LLM pode usar.</strong>
+  <strong>Transforme livros e cursos em vídeo em uma base de conhecimento auditável que um LLM pode usar.</strong>
 </p>
 
 <p align="center">
@@ -12,11 +12,11 @@
 
 ---
 
-## O que e
+## O que é
 
-A maioria das ferramentas "converse com seus documentos" faz **busca** (RAG). Este projeto faz **compilacao**: extrai a logica de decisao de um autor como **Primeiros Principios** (verdades irredutiveis) e **SOPs** (procedimentos executaveis), e marca as partes incertas como **Heuristica** em vez de fingir determinismo.
+A maioria das ferramentas "converse com seus documentos" faz **busca** (RAG). Este projeto faz **compilação**: extrai a lógica de decisão de um autor como **Princípios Fundamentais** (verdades irredutíveis) e **SOPs** (procedimentos executáveis), e marca as partes incertas como **Heurística** em vez de fingir determinismo.
 
-Funciona com **uma unica fonte** — um livro, um curso, uma pasta de documentos — e ja entrega uma skill com rastreabilidade completa. Quando voce tem varias obras do mesmo autor, **audita como a doutrina evoluiu ao longo do tempo**.
+Funciona com **uma única fonte** — um livro, um curso, uma pasta de documentos — e já entrega uma skill com rastreabilidade completa. Quando você tem várias obras do mesmo autor, **audita como a doutrina evoluiu ao longo do tempo**.
 
 ---
 
@@ -42,7 +42,7 @@ O scan analisa o PDF e imprime um prompt pronto para copiar e colar no seu agent
 
 ```bash
 sopx validate caminho/para/sua-skill
-sopx view caminho/para/sua-skill    # abre uma pagina HTML legivel
+sopx view caminho/para/sua-skill    # abre uma página HTML legível
 ```
 
 ---
@@ -54,16 +54,16 @@ Seu PDF/curso
     │
     ▼
   ┌─────────────┐
-  │  PRE-FLIGHT  │  scan detecta tipo de conteudo
+  │  PRE-FLIGHT  │  scan detecta tipo de conteúdo
   └──────┬──────┘
          ▼
   ┌─────────────┐
-  │  EXTRACT     │  agente LLM extrai principios e SOPs
+  │  EXTRACT     │  agente LLM extrai princípios e SOPs
   └──────┬──────┘
          ▼
   ┌─────────────┐
-  │  AUDIT       │  validadores deterministicos verificam
-  └──────┬──────┘     coerencia, cronologia, citacoes
+  │  AUDIT       │  validadores determinísticos verificam
+  └──────┬──────┘     coerência, cronologia, citações
          ▼
   ┌─────────────┐
   │  SKILL       │  resultado: skill pronta para usar
@@ -74,55 +74,55 @@ Seu PDF/curso
 
 ## Formatos suportados
 
-PDF, EPUB, DOCX, TXT, Markdown, reStructuredText, AsciiDoc, HTML, RTF, MOBI/AZW — e transcricoes de video **SRT/VTT**.
+PDF, EPUB, DOCX, TXT, Markdown, reStructuredText, AsciiDoc, HTML, RTF, MOBI/AZW — e transcrições de vídeo **SRT/VTT**.
 
 ---
 
-## O que a skill gerada contem
+## O que a skill gerada contém
 
-| Arquivo | O que e |
+| Arquivo | O que é |
 |---------|---------|
-| `SKILL.md` | Primeiros Principios + SOPs + indice |
-| `chapters/ch01-*.md` | Um arquivo por capitulo (livro) ou modulo (curso) |
-| `first_principles.md` | Principios essenciais, cada um com sua causa e fonte |
-| `sops.md` | Procedimentos executaveis e tabelas de decisao |
+| `SKILL.md` | Princípios Fundamentais + SOPs + índice |
+| `chapters/ch01-*.md` | Um arquivo por capítulo (livro) ou módulo (curso) |
+| `first_principles.md` | Princípios essenciais, cada um com sua causa e fonte |
+| `sops.md` | Procedimentos executáveis e tabelas de decisão |
 | `glossary.md` | Termos-chave, ordenados |
 
 ---
 
-## Modo avancado
+## Modo avançado
 
 ```bash
 # Curso multi-parte (2+ arquivos)
 sopx scan parte1.srt parte2.srt --emit-prompt
 
-# Ver todas as opcoes do menu interativo
+# Ver todas as opções do menu interativo
 sopx
 
-# Só uma auditoria especifica
+# Só uma auditoria específica
 sopx coherence arquivo_auditoria --dir caminho/para/sua-skill
 sopx determinism caminho/para/sua-skill
 ```
 
 ---
 
-## Por que nao so...
+## Por que não só...
 
-**...jogar o livro inteiro no contexto?** Voce paga o custo de tokens **em cada turn de cada sessao, para sempre**. Compilacao paga o custo uma vez; cada pergunta posterior carrega apenas o necessario.
+**...jogar o livro inteiro no contexto?** Você paga o custo de tokens **em cada turn de cada sessão, para sempre**. Compilação paga o custo uma vez; cada pergunta posterior carrega apenas o necessário.
 
-**...usar RAG?** RAG indexa uma estante; este projeto domina uma obra. Sao complementares — para duzientos livros use RAG; para um autor com quem voce quer raciocinar, compile.
+**...usar RAG?** RAG indexa uma estante; este projeto domina uma obra. São complementares — para duzentos livros use RAG; para um autor com quem você quer raciocinar, compile.
 
 ---
 
 ## Licenca
 
-**Apache 2.0** — aplicavel ao codigo deste repositorio (excluindo `book_to_skill/` que continua sob MIT).
+**Apache 2.0** — aplicável ao código deste repositório (excluindo `book_to_skill/` que continua sob MIT).
 
-Veja [NOTICES.md](NOTICES.md) para detalhes de licencas de terceiros.
+Veja [NOTICES.md](NOTICES.md) para detalhes de licenças de terceiros.
 
 ---
 
-## Creditos
+## Créditos
 
-- **[book-to-skill](https://github.com/virgiliojr94/book-to-skill)** por **virgiliojr94** (MIT) — motor de extracao e formato de skill.
-- A camada de auditoria (scoring de determinismo, auditoria de coerencia, auditoria temporal com 4 gates, resgate de frames de video) e a adicao deste projeto.
+- **[book-to-skill](https://github.com/virgiliojr94/book-to-skill)** por **virgiliojr94** (MIT) — motor de extração e formato de skill.
+- A camada de auditoria (scoring de determinismo, auditoria de coerência, auditoria temporal com 4 gates, resgate de frames de vídeo) é a adição deste projeto.
