@@ -9,9 +9,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License">
+  <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="Apache 2.0 License">
   <img src="https://img.shields.io/badge/tests-203%20passing-38a169?style=for-the-badge" alt="Tests">
   <img src="https://img.shields.io/badge/PDF%20%E2%80%A2%20EPUB%20%E2%80%A2%20DOCX%20%E2%80%A2%20SRT%2FVTT-supported-d69e2e?style=for-the-badge" alt="Formats supported">
+  <a href="README-PTBR.md"><img src="https://img.shields.io/badge/PT--BR-Leia%20em%20Portugu%C3%AAs-green?style=for-the-badge" alt="Leia em Português"></a>
 </p>
 
 <p align="center">
