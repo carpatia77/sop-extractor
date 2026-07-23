@@ -355,12 +355,15 @@ def _segments_to_srt(segments: list) -> str:
 class WhisperAdapter:
     """Local audio transcription via faster-whisper.
 
+    Uses int8 quantization on CPU for ~1.5x speed + 40% less RAM.
+    Uses BatchedInferencePipeline for ~3x speed over single inference.
     Falls back gracefully with clear error if faster-whisper is not installed.
     """
 
     def __init__(self, model_size: str = "base"):
         self.model_size = model_size
         self._model = None
+        self._batched_model = None
 
     def _load_model(self):
         """Lazy-load the Whisper model (heavy, ~1GB for base)."""
@@ -372,6 +375,7 @@ class WhisperAdapter:
 
         try:
             from faster_whisper import WhisperModel
+            from faster_whisper import BatchedInferencePipeline
         except ImportError:
             raise ImportError(
                 "faster-whisper não encontrado. Instale com:\n"
@@ -380,12 +384,16 @@ class WhisperAdapter:
                 "  pip install faster-whisper[cuda]"
             )
 
-        log.info("Carregando modelo whisper '%s' ...", self.model_size)
-        self._model = WhisperModel(self.model_size, device="cpu")
+        log.info("Carregando modelo whisper '%s' (int8 + batch) ...", self.model_size)
+        self._model = WhisperModel(
+            self.model_size, device="cpu", compute_type="int8"
+        )
+        self._batched_model = BatchedInferencePipeline(model=self._model)
 
     def transcribe_to_srt(self, audio_path: str | Path, output_dir: str | Path) -> Path:
         """Transcribe audio file and save as SRT.
 
+        Uses batched inference for ~3x speed over single.
         Shows tqdm progress bar during transcription.
         Returns path to the generated transcript.srt.
         """
@@ -395,9 +403,10 @@ class WhisperAdapter:
 
         self._load_model()
 
-        log.info("Transcrevendo %s ...", audio_path.name)
-        segments_iter, info = self._model.transcribe(
+        log.info("Transcrevendo %s (batched int8) ...", audio_path.name)
+        segments_iter, info = self._batched_model.transcribe(
             str(audio_path),
+            batch_size=8,
             beam_size=5,
             language=None,
         )

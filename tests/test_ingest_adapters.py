@@ -157,11 +157,12 @@ class TestWhisperAdapter:
         seg2 = MagicMock(start=3.0, end=5.0, text=" Segundo segmento")
         info = MagicMock(duration=5.0, language="pt")
 
-        mock_model = MagicMock()
-        mock_model.transcribe.return_value = ([seg1, seg2], info)
+        mock_batched = MagicMock()
+        mock_batched.transcribe.return_value = ([seg1, seg2], info)
 
         adapter = WhisperAdapter()
-        adapter._model = mock_model
+        adapter._model = MagicMock()
+        adapter._batched_model = mock_batched
 
         audio = tmp_path / "audio.mp3"
         audio.write_bytes(b"fake audio")

@@ -430,11 +430,12 @@ class TestAdaptersStress:
         """Whisper transcribes empty audio — returns empty SRT."""
         segs = []
         info = MagicMock(duration=0.0, language="en")
-        mock_model = MagicMock()
-        mock_model.transcribe.return_value = (segs, info)
+        mock_batched = MagicMock()
+        mock_batched.transcribe.return_value = (segs, info)
 
         adapter = WhisperAdapter()
-        adapter._model = mock_model
+        adapter._model = MagicMock()
+        adapter._batched_model = mock_batched
 
         audio = tmp_path / "empty.mp3"
         audio.write_bytes(b"")
@@ -450,11 +451,12 @@ class TestAdaptersStress:
         seg = MagicMock(start=0.0, end=3600.0, text=long_text)
         info = MagicMock(duration=3600.0, language="en")
 
-        mock_model = MagicMock()
-        mock_model.transcribe.return_value = ([seg], info)
+        mock_batched = MagicMock()
+        mock_batched.transcribe.return_value = ([seg], info)
 
         adapter = WhisperAdapter()
-        adapter._model = mock_model
+        adapter._model = MagicMock()
+        adapter._batched_model = mock_batched
 
         audio = tmp_path / "huge.mp3"
         audio.write_bytes(b"fake")
