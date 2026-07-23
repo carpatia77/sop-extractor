@@ -355,8 +355,9 @@ def _segments_to_srt(segments: list) -> str:
 class WhisperAdapter:
     """Local audio transcription via faster-whisper.
 
-    Uses int8 quantization on CPU for ~1.5x speed + 40% less RAM.
-    Uses BatchedInferencePipeline for ~3x speed over single inference.
+    Uses int8 quantization + batch inference with hardware-adaptive settings.
+    Automatically detects CPU/GPU capabilities and adjusts batch_size, beam_size,
+    and audio segmentation strategy for optimal performance.
     Falls back gracefully with clear error if faster-whisper is not installed.
     """
 
@@ -364,8 +365,23 @@ class WhisperAdapter:
         self.model_size = model_size
         self._model = None
         self._batched_model = None
+        self._profile = None
+        self._settings = None
 
-    def _load_model(self):
+    def _get_profile(self):
+        """Get hardware profile (cached)."""
+        if self._profile is None:
+            from sopx.ingest.hardware import detect_hardware
+            self._profile = detect_hardware()
+        return self._profile
+
+    def _get_settings(self, video_duration_sec: float) -> dict:
+        """Get optimal settings for this hardware and video duration."""
+        from sopx.ingest.hardware import get_optimal_settings
+        profile = self._get_profile()
+        return get_optimal_settings(profile, video_duration_sec)
+
+    def _load_model(self, compute_type: str = "int8"):
         """Lazy-load the Whisper model (heavy, ~1GB for base)."""
         if self._model is not None:
             return
@@ -384,16 +400,82 @@ class WhisperAdapter:
                 "  pip install faster-whisper[cuda]"
             )
 
-        log.info("Carregando modelo whisper '%s' (int8 + batch) ...", self.model_size)
+        profile = self._get_profile()
+        device = "cuda" if profile.has_gpu else "cpu"
+
+        log.info(
+            "Carregando modelo whisper '%s' (%s, %s) ...",
+            self.model_size, device, compute_type,
+        )
         self._model = WhisperModel(
-            self.model_size, device="cpu", compute_type="int8"
+            self.model_size, device=device, compute_type=compute_type
         )
         self._batched_model = BatchedInferencePipeline(model=self._model)
+
+    def _split_audio(self, audio_path: Path, segment_sec: int) -> list[Path]:
+        """Split long audio into segments for safer transcription.
+
+        Returns [audio_path] if duration <= segment_sec (no split needed).
+        """
+        ffmpeg = FFmpegAdapter()
+        duration = ffmpeg.get_duration(audio_path)
+
+        if duration <= segment_sec:
+            return [audio_path]
+
+        segments = []
+        output_dir = audio_path.parent / "segments"
+        output_dir.mkdir(exist_ok=True)
+
+        start = 0.0
+        idx = 0
+        while start < duration:
+            seg_path = output_dir / f"seg_{idx:03d}.mp3"
+            cmd = [
+                ffmpeg.ffmpeg,
+                "-i", str(audio_path),
+                "-ss", str(start),
+                "-t", str(segment_sec),
+                "-acodec", "libmp3lame",
+                "-q:a", "2",
+                "-y", str(seg_path),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode == 0 and seg_path.exists():
+                segments.append(seg_path)
+            else:
+                log.warning("Falha ao segmentar áudio em %.0fs: %s", start, result.stderr[:200])
+            start += segment_sec
+            idx += 1
+
+        log.info("Áudio dividido em %d segments de %ds", len(segments), segment_sec)
+        return segments
+
+    def _transcribe_segment(
+        self, audio_path: Path, batch_size: int, beam_size: int, pbar: tqdm | None = None,
+    ) -> list:
+        """Transcribe a single audio segment and return list of segments."""
+        segments_iter, info = self._batched_model.transcribe(
+            str(audio_path),
+            batch_size=batch_size,
+            beam_size=beam_size,
+            language=None,
+        )
+
+        segments = []
+        for seg in segments_iter:
+            segments.append(seg)
+            if pbar is not None:
+                pbar.n = min(seg.end, pbar.total)
+                pbar.refresh()
+
+        return segments, info
 
     def transcribe_to_srt(self, audio_path: str | Path, output_dir: str | Path) -> Path:
         """Transcribe audio file and save as SRT.
 
-        Uses batched inference for ~3x speed over single.
+        For long videos (>30min), splits audio into segments and transcribes
+        each independently. Uses hardware-adaptive batch_size and beam_size.
         Shows tqdm progress bar during transcription.
         Returns path to the generated transcript.srt.
         """
@@ -401,38 +483,69 @@ class WhisperAdapter:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        self._load_model()
-
-        log.info("Transcrevendo %s (batched int8) ...", audio_path.name)
-        segments_iter, info = self._batched_model.transcribe(
-            str(audio_path),
-            batch_size=8,
-            beam_size=5,
-            language=None,
-        )
-
-        # Consume segments with tqdm progress bar
-        total_duration = info.duration if info.duration else 0
-        segments = []
-        pbar = tqdm(
-            total=total_duration, unit="s", desc="  Transcrever",
-            bar_format="{desc}: {n:.0f}/{total:.0f}{unit} |{bar}| [{elapsed}<{remaining}]",
-            file=sys.stderr, leave=False,
-        )
+        # Get audio duration for settings (handle ffprobe failures gracefully)
+        ffmpeg = FFmpegAdapter()
         try:
-            for seg in segments_iter:
-                segments.append(seg)
-                pbar.n = min(seg.end, total_duration)
-                pbar.refresh()
-        finally:
-            pbar.close()
+            duration = ffmpeg.get_duration(audio_path)
+        except RuntimeError:
+            # ffprobe failed (e.g., invalid/test audio files) - default to no split
+            log.warning("Não foi possível obter duração do áudio, usando configuração padrão")
+            duration = 0.0
+
+        # Get hardware-adaptive settings
+        settings = self._get_settings(duration)
+        log.info(
+            "Settings: batch=%d, beam=%d, split=%s, segment=%ds",
+            settings["batch_size"], settings["beam_size"],
+            settings["split_audio"], settings["max_segment_sec"],
+        )
+
+        # Load model with appropriate compute type
+        self._load_model(compute_type=settings["compute_type"])
+
+        # Split audio if needed
+        if settings["split_audio"]:
+            audio_segments = self._split_audio(audio_path, settings["max_segment_sec"])
+        else:
+            audio_segments = [audio_path]
+
+        # Transcribe each segment
+        all_segments = []
+        total_duration = 0.0
+
+        for i, seg_path in enumerate(audio_segments):
+            if len(audio_segments) > 1:
+                log.info("Transcrevendo segmento %d/%d: %s", i + 1, len(audio_segments), seg_path.name)
+
+            pbar = tqdm(
+                total=duration, unit="s", desc="  Transcrever",
+                bar_format="{desc}: {n:.0f}/{total:.0f}{unit} |{bar}| [{elapsed}<{remaining}]",
+                file=sys.stderr, leave=False,
+            )
+            try:
+                seg_segments, seg_info = self._transcribe_segment(
+                    seg_path,
+                    batch_size=settings["batch_size"],
+                    beam_size=settings["beam_size"],
+                    pbar=pbar,
+                )
+                total_duration = seg_info.duration
+
+                # Adjust timestamps for non-first segments
+                offset = i * settings["max_segment_sec"]
+                for seg in seg_segments:
+                    seg.start += offset
+                    seg.end += offset
+                    all_segments.append(seg)
+            finally:
+                pbar.close()
 
         log.info(
-            "Transcrição concluída: %.1fs de áudio, %d segmentos, idioma: %s",
-            info.duration, len(segments), info.language,
+            "Transcrição concluída: %.1fs de áudio, %d segmentos",
+            total_duration, len(all_segments),
         )
 
-        srt_content = _segments_to_srt(segments)
+        srt_content = _segments_to_srt(all_segments)
         srt_path = output_dir / "transcript.srt"
         srt_path.write_text(srt_content, encoding="utf-8")
 

@@ -24,16 +24,6 @@ from sopx.ingest.adapters import FFmpegAdapter, WhisperAdapter, YtDlpAdapter
 # Pipeline stage labels
 _STAGES = ["Metadata", "Download", "Transcrever", "Salvar"]
 
-# Whisper speed ratios (seconds of audio per second of processing, CPU)
-# Measured on real hardware: base model processes ~0.87s of audio per 1s
-_WHISPER_SPEED = {
-    "tiny": 4.0,
-    "base": 0.87,
-    "small": 0.45,
-    "medium": 0.2,
-    "large-v3": 0.1,
-}
-
 
 def _format_duration(seconds: float) -> str:
     """Format seconds as HH:MM:SS or MM:SS."""
@@ -49,9 +39,13 @@ def _format_duration(seconds: float) -> str:
 
 
 def _estimate_transcription_time(duration: float, model: str) -> float:
-    """Estimate transcription time in seconds based on video duration and model."""
-    speed = _WHISPER_SPEED.get(model, 6.0)
-    return duration / speed
+    """Estimate transcription time in seconds based on video duration and model.
+
+    Uses hardware-aware speed ratios from sopx.ingest.hardware module.
+    """
+    from sopx.ingest.hardware import detect_hardware, estimate_transcription_time as _est
+    profile = detect_hardware()
+    return _est(duration, model, profile)
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +91,8 @@ class IngestPipeline:
         if self._whisper is None:
             model = get(self.config, "whisper.model_size", "base")
             self._whisper = WhisperAdapter(model_size=model)
+            # Eagerly load hardware profile for summary
+            self._whisper._get_profile()
         return self._whisper
 
     def _print_stage(self, stage: str):
@@ -106,7 +102,9 @@ class IngestPipeline:
         print(f"\n  [{idx}/{total}] {stage} ...", file=sys.stderr)
 
     def _print_summary(self, info: dict, source: str):
-        """Print video summary with estimated processing time."""
+        """Print video summary with estimated processing time and hardware info."""
+        from sopx.ingest.hardware import detect_hardware, get_optimal_settings
+
         title = info.get("title", "N/A")
         uploader = info.get("uploader", "")
         duration = info.get("duration", 0)
@@ -115,6 +113,18 @@ class IngestPipeline:
         duration_str = _format_duration(duration)
         est_time = _estimate_transcription_time(duration, model)
         est_str = _format_duration(est_time)
+
+        # Hardware info
+        profile = detect_hardware()
+        settings = get_optimal_settings(profile, duration)
+        tier_names = {"low": "Baixo", "medium": "Médio", "high": "Alto"}
+        gpu_str = " + GPU" if profile.has_gpu else ""
+
+        # Segment info for long videos
+        segment_info = ""
+        if settings["split_audio"]:
+            num_segments = int(duration / settings["max_segment_sec"]) + 1
+            segment_info = f" ({num_segments} segments)"
 
         # Truncate long titles
         if len(title) > 72:
@@ -126,7 +136,9 @@ class IngestPipeline:
             print(f"  │ Canal:      {uploader}", file=sys.stderr)
         print(f"  │ Duração:    {duration_str}", file=sys.stderr)
         print(f"  │ Modelo:     whisper {model}", file=sys.stderr)
-        print(f"  │ ETA:        ~{est_str} de transcrição", file=sys.stderr)
+        print(f"  │ Hardware:   {tier_names.get(profile.tier, '?')} ({profile.cpu_physical} cores, {profile.ram_gb:.0f}GB{gpu_str})", file=sys.stderr)
+        print(f"  │ Batch:      {settings['batch_size']}", file=sys.stderr)
+        print(f"  │ ETA:        ~{est_str} de transcrição{segment_info}", file=sys.stderr)
         print(f"  └──────────────────────────────────────────\n", file=sys.stderr)
 
     def _print_completion(self, info: dict, result: IngestResult):
