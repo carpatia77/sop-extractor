@@ -5,6 +5,21 @@ All notable changes to **sop-extractor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-22
+
+### Added
+- **Ingestion pipeline (`sopx ingest`).** Download/transcribe video from URL
+  or local file → SRT + full_text.txt + metadata.json. Pareto Item 1.
+  - `sopx/` package: Config Manager, Cache Manager, Ingest Pipeline.
+  - `sopx/ingest/adapters.py`: YtDlpAdapter, FFmpegAdapter, WhisperAdapter.
+  - `sopx/ingest/pipeline.py`: Orchestration layer with cache dedup.
+  - `scripts/ingest.py`: CLI entry point for `sopx ingest`.
+  - Dependencies: `yt-dlp`, `ffmpeg` (system), `faster-whisper` (pip).
+  - `sopx ingest --check`: verify all dependencies are installed.
+  - `sopx ingest --status`: show cache of processed videos.
+  - Hash-based cache prevents reprocessing of already-ingested sources.
+  - PT-BR error messages throughout.
+
 ## [2.0.0] - 2026-07-19
 
 ### Changed

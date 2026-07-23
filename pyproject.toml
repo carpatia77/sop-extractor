@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sop-extractor"
-version = "2.1.1"
+version = "1.4.0"
 description = "Compile any author's books and video courses into a provenance-tracked, time-audited doctrine an LLM can reason from."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -15,7 +15,7 @@ book-to-skill = "book_to_skill.cli:main"
 sopx = "scripts.menu:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["book_to_skill", "scripts"]
+packages = ["book_to_skill", "scripts", "sopx"]
 
 [project.optional-dependencies]
 epub = ["ebooklib", "beautifulsoup4"]
@@ -31,6 +31,11 @@ all = [
     "python-docx",
     "striprtf",
     "docling"
+]
+ingest = [
+    "yt-dlp>=2024.1.0",
+    "faster-whisper>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
 

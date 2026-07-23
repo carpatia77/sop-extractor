@@ -16,6 +16,7 @@ paths dispatch to the exact same sibling scripts.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from collections import namedtuple
@@ -27,10 +28,7 @@ Capability = namedtuple(
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Item 12's menu map, flattened (the nested "4) Audits -> a/b/c" submenu from
-# the original spec is presented as separate top-level items here — same
-# acceptance criterion ("every item runs its script or explains why not"),
-# simpler state machine, one fewer layer of menu navigation).
+# Item 12's menu map, flattened
 CAPABILITIES = [
     Capability("1", "scan", "Scan a source (pre-flight)", "preflight_scan.py",
                "<path> [--emit-prompt]", False, False, None),
@@ -55,12 +53,13 @@ CAPABILITIES = [
                "<skill_dir> [--out <path>]", False, False, None),
     Capability("10", "summary", "Summary / run log", "extraction_summary.py",
                "<path>", False, False, None),
+    Capability("11", "ingest", "Ingest video/URL → transcript + text", "ingest.py",
+               "<URL_or_path> [--rescue-frames] [--model base]", False, False, None),
 ]
 
 
 def find_capability(key_or_verb: str, capabilities=None):
-    """Looks up a capability by its menu key ('1') or verb ('scan'). Pure
-    function — no filesystem/subprocess access, fully unit-testable."""
+    """Looks up a capability by its menu key ('1') or verb ('scan')."""
     capabilities = capabilities if capabilities is not None else CAPABILITIES
     for cap in capabilities:
         if key_or_verb == cap.key or key_or_verb == cap.verb:
@@ -69,11 +68,10 @@ def find_capability(key_or_verb: str, capabilities=None):
 
 
 def is_available(cap: Capability, scripts_dir: str = SCRIPTS_DIR):
-    """Returns (available: bool, reason: str). A capability is unavailable
-    if it's marked coming_soon, or its backing script file doesn't exist in
-    scripts_dir — honest about what the current install can actually do,
-    mirroring extract.py --check. info_only capabilities (no backing script)
-    are always available (they just print instructions)."""
+    """Returns (available: bool, reason: str). Checks:
+    - coming_soon flag
+    - backing script existence
+    - required binaries for ingest capability"""
     if cap.coming_soon:
         return False, "coming soon — not yet implemented"
     if cap.info_only:
@@ -81,22 +79,24 @@ def is_available(cap: Capability, scripts_dir: str = SCRIPTS_DIR):
     script_path = os.path.join(scripts_dir, cap.script)
     if not os.path.isfile(script_path):
         return False, f"backing script not found: {cap.script}"
+    # Check binaries for ingest capability
+    if cap.verb == "ingest":
+        for binary in ["yt-dlp", "ffmpeg"]:
+            if not shutil.which(binary):
+                return False, f"{binary} não encontrado"
     return True, ""
 
 
 def build_command(cap: Capability, args: list, scripts_dir: str = SCRIPTS_DIR,
                    python_bin: str = None) -> list:
-    """Pure function: builds the exact subprocess command line for a
-    capability + args, without executing it. Identical to what a user would
-    type by hand (`python scripts/<file>.py <args>`)."""
+    """Pure function: builds the exact subprocess command line."""
     python_bin = python_bin or sys.executable or "python3"
     script_path = os.path.join(scripts_dir, cap.script)
     return [python_bin, script_path] + list(args)
 
 
 def format_menu(capabilities=None, scripts_dir: str = SCRIPTS_DIR) -> str:
-    """Renders the interactive menu text, greying out unavailable items with
-    their reason instead of listing them as if they worked."""
+    """Renders the interactive menu text."""
     capabilities = capabilities if capabilities is not None else CAPABILITIES
     lines = ["  sopx · sop-extractor unified CLI", "  " + "─" * 46]
     for cap in capabilities:
@@ -111,8 +111,7 @@ def format_menu(capabilities=None, scripts_dir: str = SCRIPTS_DIR) -> str:
 
 
 def dispatch(cap: Capability, args: list, scripts_dir: str = SCRIPTS_DIR) -> int:
-    """Runs a capability's backing script as a subprocess (or prints its
-    info text for info_only capabilities), returning the exit code."""
+    """Runs a capability's backing script as a subprocess."""
     available, reason = is_available(cap, scripts_dir)
     if not available:
         print(f"'{cap.label}' is unavailable: {reason}")
@@ -126,8 +125,7 @@ def dispatch(cap: Capability, args: list, scripts_dir: str = SCRIPTS_DIR) -> int
 
 
 def run_interactive(capabilities=None, scripts_dir: str = SCRIPTS_DIR, input_fn=input):
-    """The interactive loop. Exercised in tests via a scripted input_fn
-    sequence, not real stdin."""
+    """The interactive loop."""
     capabilities = capabilities if capabilities is not None else CAPABILITIES
     banner_path = os.path.join(scripts_dir, "banner.txt")
     if os.path.isfile(banner_path):

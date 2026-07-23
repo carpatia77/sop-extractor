@@ -158,3 +158,24 @@ def test_pyproject_registers_sopx_console_script():
         content = f.read()
     assert 'sopx = "scripts.menu:main"' in content
     assert os.path.isfile(os.path.join(repo_root, "scripts", "__init__.py"))
+
+
+def test_real_capability_registry_ingest_is_available():
+    """'ingest' must resolve to ingest.py. Availability depends on binaries."""
+    cap = find_capability("ingest", CAPABILITIES)
+    assert cap is not None
+    assert cap.script == "ingest.py"
+    # Availability depends on yt-dlp/ffmpeg being installed
+    ok, reason = is_available(cap)
+    import shutil
+    if shutil.which("yt-dlp") and shutil.which("ffmpeg"):
+        assert ok, reason
+    else:
+        assert not ok
+
+
+def test_ingest_help_flag():
+    """sopx ingest --check should run without error."""
+    from scripts.ingest import main as ingest_main
+    code = ingest_main(["--check"])
+    assert code in (0, 1)  # 0 if deps present, 1 if missing — both OK
