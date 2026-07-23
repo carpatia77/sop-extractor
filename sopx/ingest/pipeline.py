@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -268,6 +269,28 @@ class IngestPipeline:
         text_path = output_dir / "full_text.txt"
         text_path.write_text(plain_text, encoding="utf-8")
 
+        # --- Stage: Frames (optional) ---
+        frames_dir = None
+        if rescue_frames and is_url:
+            self._print_stage("Frames")
+            try:
+                from scripts.extract_frames_at_timestamps import (
+                    find_gap_timestamps, dedupe_timestamps, extract_frames,
+                )
+                hits = find_gap_timestamps(plain_text)
+                hits = dedupe_timestamps(hits)
+                if hits:
+                    frames_dir = output_dir / "frames"
+                    frames_dir.mkdir(exist_ok=True)
+                    manifest = extract_frames(str(audio_path), hits, str(frames_dir))
+                    log.info("Extraídos %d frames em %s", len(manifest), frames_dir)
+                else:
+                    print("  Nenhum timestamp deictic encontrado", file=sys.stderr)
+            except ImportError:
+                log.warning("scripts/extract_frames_at_timestamps.py não encontrado")
+            except Exception as e:
+                log.warning("Falha na extração de frames: %s", e)
+
         duration = 0
         if is_url:
             duration = info.get("duration", 0)
@@ -322,6 +345,80 @@ class IngestPipeline:
         )
         self._print_completion(info, result)
         return result
+
+    def ingest_playlist(
+        self,
+        playlist_url: str,
+        output_base: str | Path | None = None,
+        max_videos: int | None = None,
+    ) -> list[IngestResult]:
+        """Ingest all videos from a YouTube playlist or channel.
+
+        Args:
+            playlist_url: URL of the playlist or channel.
+            output_base: Base directory for outputs.
+            max_videos: Maximum number of videos to process (None = all).
+
+        Returns:
+            List of IngestResult for each successfully ingested video.
+        """
+        if output_base is None:
+            output_base = get(self.config, "output_dir", "output/")
+        output_base = Path(output_base)
+
+        # Get playlist info
+        print(f"\n  Buscando vídeos do playlist...", file=sys.stderr)
+        cmd = [
+            self.ytdlp.binary,
+            "--flat-playlist",
+            "--dump-json",
+            "--no-download",
+            "--no-playlist",
+            playlist_url,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            raise RuntimeError(f"yt-dlp falhou ao listar playlist: {result.stderr.strip()}")
+
+        # Parse video IDs
+        video_ids = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            info = json.loads(line)
+            video_ids.append(info.get("id", ""))
+
+        if max_videos:
+            video_ids = video_ids[:max_videos]
+
+        total = len(video_ids)
+        print(f"  Encontrados {total} vídeos para processar\n", file=sys.stderr)
+
+        # Process each video
+        results = []
+        for i, video_id in enumerate(video_ids, 1):
+            print(f"\n  ═══════════════════════════════════════════", file=sys.stderr)
+            print(f"  Vídeo {i}/{total}: {video_id}", file=sys.stderr)
+            print(f"  ═══════════════════════════════════════════\n", file=sys.stderr)
+
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            try:
+                result = self.ingest(url, output_base=output_base)
+                results.append(result)
+            except Exception as e:
+                log.warning("Falha ao processar %s: %s", video_id, e)
+                print(f"  ⚠ Erro: {e}", file=sys.stderr)
+                continue
+
+        # Summary
+        print(f"\n  ═══════════════════════════════════════════", file=sys.stderr)
+        print(f"  Resumo do batch:", file=sys.stderr)
+        print(f"  ├─ Total:     {total} vídeos", file=sys.stderr)
+        print(f"  ├─ Sucesso:   {len(results)}", file=sys.stderr)
+        print(f"  └─ Falhas:    {total - len(results)}", file=sys.stderr)
+        print(f"  ═══════════════════════════════════════════\n", file=sys.stderr)
+
+        return results
 
 
 def check_dependencies() -> dict[str, bool]:

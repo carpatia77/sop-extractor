@@ -59,6 +59,7 @@ def main(argv=None):
             "  sopx ingest https://youtube.com/watch?v=ABC123\n"
             "  sopx ingest ./meu-video.mp4\n"
             "  sopx ingest ./video.mp4 --rescue-frames\n"
+            "  sopx ingest --playlist https://youtube.com/playlist?list=XYZ --max 10\n"
             "  sopx ingest --status\n"
             "  sopx ingest --check\n"
         ),
@@ -71,6 +72,8 @@ def main(argv=None):
     parser.add_argument("--no-cache", action="store_true", help="Ignorar cache e reprocessar")
     parser.add_argument("--status", action="store_true", help="Mostrar cache de processados")
     parser.add_argument("--check", action="store_true", help="Verificar dependências instaladas")
+    parser.add_argument("--playlist", default=None, help="URL de playlist/canal para processar em lote")
+    parser.add_argument("--max", type=int, default=None, help="Máximo de vídeos no batch (default: todos)")
 
     args = parser.parse_args(argv)
 
@@ -82,7 +85,7 @@ def main(argv=None):
         show_status()
         return 0
 
-    if not args.source:
+    if not args.source and not args.playlist:
         parser.print_help()
         return 1
 
@@ -98,6 +101,23 @@ def main(argv=None):
 
     cache = CacheManager()
     pipeline = IngestPipeline(config=config, cache=cache)
+
+    # Batch playlist mode
+    if args.playlist:
+        try:
+            results = pipeline.ingest_playlist(
+                args.playlist,
+                output_base=args.output_dir,
+                max_videos=args.max,
+            )
+            print(f"\n  Batch concluído: {len(results)} vídeos processados")
+        except FileNotFoundError as e:
+            print(f"Erro: {e}", file=sys.stderr)
+            return 1
+        except RuntimeError as e:
+            print(f"Erro na ingestão: {e}", file=sys.stderr)
+            return 1
+        return 0
 
     try:
         result = pipeline.ingest(
