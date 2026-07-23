@@ -4,6 +4,7 @@
 Usage:
     sopx ingest <URL_or_path> [--rescue-frames] [--output-dir <dir>]
                               [--model <whisper_model>] [--no-cache]
+                              [--gpu] [--gpu-urls URL...]
                               [--status] [--check]
 """
 import argparse
@@ -60,6 +61,7 @@ def main(argv=None):
             "  sopx ingest ./meu-video.mp4\n"
             "  sopx ingest ./video.mp4 --rescue-frames\n"
             "  sopx ingest --playlist https://youtube.com/playlist?list=XYZ --max 10\n"
+            "  sopx ingest https://youtube.com/watch?v=ABC --gpu  # gera notebook Colab\n"
             "  sopx ingest --status\n"
             "  sopx ingest --check\n"
         ),
@@ -74,6 +76,10 @@ def main(argv=None):
     parser.add_argument("--check", action="store_true", help="Verificar dependências instaladas")
     parser.add_argument("--playlist", default=None, help="URL de playlist/canal para processar em lote")
     parser.add_argument("--max", type=int, default=None, help="Máximo de vídeos no batch (default: todos)")
+    parser.add_argument("--gpu", action="store_true",
+                        help="Gerar notebook Colab para transcrição com GPU")
+    parser.add_argument("--gpu-urls", nargs="+", default=None,
+                        help="URLs extras para incluir no notebook GPU (com --gpu)")
 
     args = parser.parse_args(argv)
 
@@ -83,6 +89,41 @@ def main(argv=None):
 
     if args.status:
         show_status()
+        return 0
+
+    # GPU mode: generate Colab notebook
+    if args.gpu:
+        from sopx.ingest.colab import generate_colab_notebook, open_in_colab
+
+        urls = []
+        if args.source:
+            urls.append(args.source)
+        if args.gpu_urls:
+            urls.extend(args.gpu_urls)
+        if args.playlist:
+            # Extract video IDs from playlist
+            print("  Buscando vídeos do playlist...", file=sys.stderr)
+            import subprocess
+            cmd = ["yt-dlp", "--flat-playlist", "--dump-json", "--no-download", args.playlist]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode == 0:
+                for line in result.stdout.strip().split("\n"):
+                    if line:
+                        import json
+                        info = json.loads(line)
+                        vid = info.get("id", "")
+                        if vid:
+                            urls.append(f"https://www.youtube.com/watch?v={vid}")
+            if args.max:
+                urls = urls[:args.max]
+
+        if not urls:
+            print("  Erro: forneça pelo menos uma URL com --gpu", file=sys.stderr)
+            return 1
+
+        model = args.model or "base"
+        notebook_path = generate_colab_notebook(urls, model=model)
+        open_in_colab(notebook_path)
         return 0
 
     if not args.source and not args.playlist:
