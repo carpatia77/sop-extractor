@@ -77,9 +77,11 @@ def main(argv=None):
     parser.add_argument("--playlist", default=None, help="URL de playlist/canal para processar em lote")
     parser.add_argument("--max", type=int, default=None, help="Máximo de vídeos no batch (default: todos)")
     parser.add_argument("--gpu", action="store_true",
-                        help="Gerar notebook Colab para transcrição com GPU")
+                        help="Forçar geração de notebook Colab (pula roteamento)")
+    parser.add_argument("--local", action="store_true",
+                        help="Forçar execução local (pula roteamento)")
     parser.add_argument("--gpu-urls", nargs="+", default=None,
-                        help="URLs extras para incluir no notebook GPU (com --gpu)")
+                        help="URLs extras para incluir no notebook GPU")
 
     args = parser.parse_args(argv)
 
@@ -129,6 +131,86 @@ def main(argv=None):
     if not args.source and not args.playlist:
         parser.print_help()
         return 1
+
+    # --- Smart routing (unless --gpu or --local forced) ---
+    if not args.gpu and not getattr(args, 'local', False):
+        from sopx.ingest.router import (
+            detect_input_type, check_local_hardware, recommend_approach,
+            estimate_processing_time, print_routing_decision,
+        )
+        from sopx.ingest.colab import generate_colab_notebook, open_in_colab
+
+        # Collect URLs
+        urls = []
+        if args.source:
+            urls.append(args.source)
+        if args.gpu_urls:
+            urls.extend(args.gpu_urls)
+
+        # Detect input type
+        input_type = detect_input_type(args.source, args.playlist, urls if len(urls) > 1 else None)
+
+        # Check hardware
+        hardware = check_local_hardware()
+
+        # Get video count and duration for estimates
+        video_count = len(urls) if urls else 1
+        total_duration = 0
+        if urls:
+            # Quick metadata fetch for duration estimate
+            try:
+                from sopx.ingest.adapters import YtDlpAdapter
+                ytdlp = YtDlpAdapter()
+                for url in urls[:5]:  # Sample first 5
+                    try:
+                        info = ytdlp.get_info(url)
+                        total_duration += info.get("duration", 0)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # Get recommendation
+        recommendation = recommend_approach(input_type, hardware, video_count, total_duration)
+
+        # Get time estimates
+        estimates = None
+        if total_duration > 0:
+            estimates = estimate_processing_time(total_duration, hardware)
+
+        # Print routing decision
+        print_routing_decision(input_type, hardware, recommendation, estimates)
+
+        # If Colab recommended, generate notebook
+        if recommendation["approach"] == "colab":
+            # Collect all URLs for notebook
+            all_urls = list(urls)
+            if args.playlist:
+                print("  Buscando vídeos do playlist...", file=sys.stderr)
+                import subprocess
+                cmd = ["yt-dlp", "--flat-playlist", "--dump-json", "--no-download", args.playlist]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split("\n"):
+                        if line:
+                            info = json.loads(line)
+                            vid = info.get("id", "")
+                            if vid:
+                                all_urls.append(f"https://www.youtube.com/watch?v={vid}")
+                if args.max:
+                    all_urls = all_urls[:args.max]
+
+            if all_urls:
+                model = args.model or "base"
+                notebook_path = generate_colab_notebook(all_urls, model=model)
+                open_in_colab(notebook_path)
+                return 0
+            else:
+                print("  ⚠ Nenhuma URL válida encontrada", file=sys.stderr)
+                return 1
+
+        # If local recommended, continue to local execution
+        print("  ▶ Executando localmente...\n", file=sys.stderr)
 
     from sopx.config import ensure_config, get
     from sopx.cache import CacheManager
