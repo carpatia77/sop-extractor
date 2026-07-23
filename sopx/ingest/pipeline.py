@@ -25,13 +25,13 @@ from sopx.ingest.adapters import FFmpegAdapter, WhisperAdapter, YtDlpAdapter
 _STAGES = ["Metadata", "Download", "Transcrever", "Salvar"]
 
 # Whisper speed ratios (seconds of audio per second of processing, CPU)
-# These are rough estimates for progress ETA calculation
+# Measured on real hardware: base model processes ~0.87s of audio per 1s
 _WHISPER_SPEED = {
-    "tiny": 12.0,
-    "base": 6.0,
-    "small": 3.0,
-    "medium": 1.5,
-    "large-v3": 0.7,
+    "tiny": 4.0,
+    "base": 0.87,
+    "small": 0.45,
+    "medium": 0.2,
+    "large-v3": 0.1,
 }
 
 
@@ -64,6 +64,10 @@ class IngestResult:
     text: Path
     metadata: Path
     cached: bool
+    total_elapsed: float = 0.0
+    word_count: int = 0
+    title: str = ""
+    duration: float = 0.0
 
 
 class IngestPipeline:
@@ -125,6 +129,22 @@ class IngestPipeline:
         print(f"  │ ETA:        ~{est_str} de transcrição", file=sys.stderr)
         print(f"  └──────────────────────────────────────────\n", file=sys.stderr)
 
+    def _print_completion(self, info: dict, result: IngestResult):
+        """Print completion summary with all info and total time."""
+        title = info.get("title", "N/A")
+        if len(title) > 60:
+            title = title[:57] + "..."
+        elapsed = _format_duration(result.total_elapsed)
+        video_dur = _format_duration(result.duration)
+
+        print(f"\n  ┌─ Ingestão Concluída ────────────────────", file=sys.stderr)
+        print(f"  │ Título:      {title}", file=sys.stderr)
+        print(f"  │ Duração:     {video_dur} de vídeo", file=sys.stderr)
+        print(f"  │ Palavras:    {result.word_count}", file=sys.stderr)
+        print(f"  │ Tempo total: {elapsed}", file=sys.stderr)
+        print(f"  │ Output:      {result.output_dir}", file=sys.stderr)
+        print(f"  └──────────────────────────────────────────", file=sys.stderr)
+
     def ingest(
         self,
         source: str,
@@ -146,6 +166,7 @@ class IngestPipeline:
         output_base = Path(output_base)
 
         is_url = YtDlpAdapter.is_url(source)
+        t_start = time.time()
 
         # --- Stage: Metadata ---
         self._print_stage("Metadata")
@@ -171,14 +192,19 @@ class IngestPipeline:
         if get(self.config, "cache_enabled", True) and self.cache.is_done(key):
             output_dir = Path(self.cache.get_output_dir(key))
             log.info("Cache hit para %s", key)
-            print(f"\n  Cache hit — reutilizando output anterior", file=sys.stderr)
-            return IngestResult(
+            elapsed = time.time() - t_start
+            result = IngestResult(
                 output_dir=output_dir,
                 srt=output_dir / "transcript.srt",
                 text=output_dir / "full_text.txt",
                 metadata=output_dir / "metadata.json",
                 cached=True,
+                total_elapsed=elapsed,
+                title=info.get("title", ""),
+                duration=info.get("duration", 0),
             )
+            print(f"\n  Cache hit — reutilizando output anterior", file=sys.stderr)
+            return result
 
         # --- Create output directory ---
         cache_enabled = get(self.config, "cache_enabled", True)
@@ -268,15 +294,22 @@ class IngestPipeline:
             title=info.get("title", ""),
         )
 
-        log.info("Ingestão concluída: %d palavras em %s", word_count, output_dir)
+        elapsed = time.time() - t_start
+        log.info("Ingestão concluída: %d palavras em %s (%.0fs)", word_count, output_dir, elapsed)
 
-        return IngestResult(
+        result = IngestResult(
             output_dir=output_dir,
             srt=final_srt,
             text=text_path,
             metadata=meta_path,
             cached=False,
+            total_elapsed=elapsed,
+            word_count=word_count,
+            title=info.get("title", ""),
+            duration=info.get("duration", 0),
         )
+        self._print_completion(info, result)
+        return result
 
 
 def check_dependencies() -> dict[str, bool]:

@@ -124,8 +124,28 @@ def main(argv=None):
     print(f"    SRT:       {result.srt}")
     print(f"    texto:     {result.text}")
 
-    # Print next command (friction-free handoff)
-    print(f"\n  → Próximo: sopx scan {result.srt} --emit-prompt")
+    # Post-ingestion prompt
+    print(f"\n  O que deseja fazer agora?\n")
+    print(f"    [1] Extrair SOPs e Princípios Fundamentais")
+    print(f"    [2] Gerar Mapa Semântico")
+    print(f"    [3] Gerar Concept Graph do conhecimento")
+    print(f"    [4] Manter apenas transcrições (fim)\n")
+
+    try:
+        choice = input("  Escolha (1-4): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        choice = "4"
+
+    if choice == "1":
+        print(f"\n  → sopx scan {result.srt} --emit-prompt\n")
+    elif choice == "2":
+        print(f"\n  → Mapa Semântico: funcionalidade em desenvolvimento (Fase 1)")
+        print(f"    Transcrição disponível em: {result.text}\n")
+    elif choice == "3":
+        print(f"\n  → Concept Graph: funcionalidade em desenvolvimento (Fase 1)")
+        print(f"    Transcrição disponível em: {result.text}\n")
+    else:
+        print(f"\n  Transcrições salvas em: {result.output_dir}\n")
 
     return 0
 
