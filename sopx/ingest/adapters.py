@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 import re
 import shutil
@@ -365,6 +366,9 @@ class WhisperAdapter:
         """Lazy-load the Whisper model (heavy, ~1GB for base)."""
         if self._model is not None:
             return
+
+        # Suppress ctranslate2 float16→float32 warning (noisy, appears every load)
+        os.environ["CT2_VERBOSE"] = "0"
 
         try:
             from faster_whisper import WhisperModel

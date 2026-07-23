@@ -24,6 +24,35 @@ from sopx.ingest.adapters import FFmpegAdapter, WhisperAdapter, YtDlpAdapter
 # Pipeline stage labels
 _STAGES = ["Metadata", "Download", "Transcrever", "Salvar"]
 
+# Whisper speed ratios (seconds of audio per second of processing, CPU)
+# These are rough estimates for progress ETA calculation
+_WHISPER_SPEED = {
+    "tiny": 12.0,
+    "base": 6.0,
+    "small": 3.0,
+    "medium": 1.5,
+    "large-v3": 0.7,
+}
+
+
+def _format_duration(seconds: float) -> str:
+    """Format seconds as HH:MM:SS or MM:SS."""
+    if seconds <= 0:
+        return "N/A"
+    seconds = int(seconds)
+    if seconds < 3600:
+        m, s = divmod(seconds, 60)
+        return f"{m}:{s:02d}"
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    return f"{h}:{m:02d}:{s:02d}"
+
+
+def _estimate_transcription_time(duration: float, model: str) -> float:
+    """Estimate transcription time in seconds based on video duration and model."""
+    speed = _WHISPER_SPEED.get(model, 6.0)
+    return duration / speed
+
 log = logging.getLogger(__name__)
 
 
@@ -72,6 +101,30 @@ class IngestPipeline:
         total = len(_STAGES)
         print(f"\n  [{idx}/{total}] {stage} ...", file=sys.stderr)
 
+    def _print_summary(self, info: dict, source: str):
+        """Print video summary with estimated processing time."""
+        title = info.get("title", "N/A")
+        uploader = info.get("uploader", "")
+        duration = info.get("duration", 0)
+        model = get(self.config, "whisper.model_size", "base")
+
+        duration_str = _format_duration(duration)
+        est_time = _estimate_transcription_time(duration, model)
+        est_str = _format_duration(est_time)
+
+        # Truncate long titles
+        if len(title) > 72:
+            title = title[:69] + "..."
+
+        print(f"\n  ┌─ Resumo ─────────────────────────────────", file=sys.stderr)
+        print(f"  │ Título:     {title}", file=sys.stderr)
+        if uploader:
+            print(f"  │ Canal:      {uploader}", file=sys.stderr)
+        print(f"  │ Duração:    {duration_str}", file=sys.stderr)
+        print(f"  │ Modelo:     whisper {model}", file=sys.stderr)
+        print(f"  │ ETA:        ~{est_str} de transcrição", file=sys.stderr)
+        print(f"  └──────────────────────────────────────────\n", file=sys.stderr)
+
     def ingest(
         self,
         source: str,
@@ -99,12 +152,20 @@ class IngestPipeline:
         if is_url:
             info = self.ytdlp.get_info(source)
             key = CacheManager.key_for_url(info["canonical_id"])
+            self._print_summary(info, source)
         else:
             path = Path(source)
             if not path.exists():
                 raise FileNotFoundError(f"Arquivo não encontrado: {source}")
             key = CacheManager.key_for_file(path)
             info = {"canonical_id": "", "title": path.stem}
+            # For local files, get duration for summary
+            try:
+                info["duration"] = self.ffmpeg.get_duration(source)
+            except Exception:
+                info["duration"] = 0
+            info["uploader"] = ""
+            self._print_summary(info, source)
 
         # Check full cache
         if get(self.config, "cache_enabled", True) and self.cache.is_done(key):
