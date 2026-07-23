@@ -6,7 +6,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="Apache 2.0">
-  <img src="https://img.shields.io/badge/tests-203%20passing-38a169?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-514%20passing-38a169?style=for-the-badge" alt="Tests">
   <a href="README.md"><img src="https://img.shields.io/badge/EN-English%20Version-blue?style=for-the-badge" alt="English Version"></a>
 </p>
 
@@ -75,6 +75,93 @@ Seu PDF/curso
 ## Formatos suportados
 
 PDF, EPUB, DOCX, TXT, Markdown, reStructuredText, AsciiDoc, HTML, RTF, MOBI/AZW — e transcrições de vídeo **SRT/VTT**.
+
+---
+
+## Transcrição de vídeos do YouTube
+
+O `sopx ingest` baixa e transcreve vídeos do YouTube (ou arquivos de vídeo local) usando Whisper local — **sem custo de API**.
+
+### Instale as dependências
+
+```bash
+pip install -e ".[ingest]"
+# Ou manualmente:
+pip install yt-dlp faster-whisper pyyaml
+# Também precisa de ffmpeg no sistema:
+# apt install ffmpeg  |  brew install ffmpeg
+```
+
+### Transcreva um vídeo
+
+```bash
+# Vídeo do YouTube
+sopx ingest https://www.youtube.com/watch?v=ABC123
+
+# Arquivo local
+sopx ingest ./meu-video.mp4
+
+# Com extração de frames (para conteúdo visual)
+sopx ingest https://www.youtube.com/watch?v=ABC123 --rescue-frames
+```
+
+O comando gera em `output/<video_id>/`:
+- `transcript.srt` — Legendas com timestamps
+- `full_text.txt` — Texto corrido
+- `metadata.json` — Metadados (título, duração, palavras, etc.)
+
+### Transcreva com GPU (Google Colab)
+
+Se seu computador não tem GPU, gere um notebook Colab para processar mais rápido (~100x mais veloz):
+
+```bash
+# Vídeo único
+sopx ingest https://youtube.com/watch?v=ABC --gpu
+
+# Múltiplos vídeos
+sopx ingest https://youtube.com/watch?v=ABC --gpu --gpu-urls https://youtube.com/watch?v=DEF
+
+# Playlist inteira (com limite)
+sopx ingest --playlist https://youtube.com/playlist?list=XYZ --gpu --max 10
+```
+
+O comando:
+1. Gera um notebook Colab com seus links
+2. Abre o Colab no navegador
+3. Você clica **Run All** (com GPU T4 gratuita)
+
+### Processe uma playlist inteira
+
+```bash
+# Todos os vídeos do canal/playlist
+sopx ingest --playlist https://youtube.com/playlist?list=XYZ
+
+# Com limite de vídeos
+sopx ingest --playlist https://youtube.com/playlist?list=XYZ --max 5
+```
+
+### Outros comandos úteis
+
+```bash
+# Verificar dependências
+sopx ingest --check
+
+# Ver vídeos já processados
+sopx ingest --status
+
+# Usar modelo diferente (tiny é mais rápido, large é mais preciso)
+sopx ingest https://youtube.com/watch?v=ABC --model small
+```
+
+### Hardware e performance
+
+| Modelo | CPU (Pentium) | GPU (T4 Colab) |
+|--------|---------------|----------------|
+| tiny | ~10x realtime | ~150x realtime |
+| base | ~2x realtime | ~115x realtime |
+| small | ~1x realtime | ~60x realtime |
+
+O sistema detecta automaticamente seu hardware e ajusta o `batch_size` para performance ideal.
 
 ---
 
