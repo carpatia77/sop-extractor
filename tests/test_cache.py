@@ -15,9 +15,11 @@ class TestCacheManager:
 
     def test_init_loads_existing_index(self, tmp_path):
         cache_dir = tmp_path / "cache"
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
         index_path = cache_dir / "index.json"
         cache_dir.mkdir()
-        index_path.write_text('{"abc123": {"output_dir": "/tmp/out"}}')
+        index_path.write_text(json.dumps({"abc123": {"output_dir": str(output_dir)}}))
         cache = CacheManager(cache_dir)
         assert cache.is_done("abc123")
 
@@ -64,10 +66,12 @@ class TestCacheManager:
 
     def test_mark_done_and_check(self, tmp_path):
         cache = CacheManager(tmp_path / "cache")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
         k = CacheManager.key_for_url("vid123")
         assert cache.is_done(k) is False
 
-        cache.mark_done(k, "/tmp/output", canonical_id="vid123")
+        cache.mark_done(k, str(output_dir), canonical_id="vid123")
         assert cache.is_done(k) is True
 
     def test_get_output_dir(self, tmp_path):
@@ -101,8 +105,8 @@ class TestCacheManager:
     def test_is_stage_done_true(self, tmp_path):
         cache = CacheManager(tmp_path / "cache")
         k = CacheManager.key_for_url("test")
-        stage_dir = cache.stage_path(k, "audio")
-        (stage_dir / "audio.mp3").write_bytes(b"fake")
+        # Use mark_stage_done to create the .done sentinel
+        cache.mark_stage_done(k, "audio")
         assert cache.is_stage_done(k, "audio") is True
 
     def test_clear(self, tmp_path):
@@ -115,10 +119,12 @@ class TestCacheManager:
 
     def test_persistence(self, tmp_path):
         cache_dir = tmp_path / "cache"
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
         k = CacheManager.key_for_url("test")
 
         cache1 = CacheManager(cache_dir)
-        cache1.mark_done(k, "/tmp/output")
+        cache1.mark_done(k, str(output_dir))
 
         cache2 = CacheManager(cache_dir)
         assert cache2.is_done(k) is True

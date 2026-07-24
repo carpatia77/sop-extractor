@@ -148,14 +148,12 @@ class TestCacheStress:
         key = "test_key_123"
 
         # Audio done, SRT not
-        audio_dir = cache.stage_path(key, "audio")
-        (audio_dir / "audio.mp3").write_bytes(b"fake")
+        cache.mark_stage_done(key, "audio")
         assert cache.is_stage_done(key, "audio") is True
         assert cache.is_stage_done(key, "srt") is False
 
         # SRT done
-        srt_dir = cache.stage_path(key, "srt")
-        (srt_dir / "transcript.srt").write_text("1\n00:00 --> 00:01\nhi\n")
+        cache.mark_stage_done(key, "srt")
         assert cache.is_stage_done(key, "srt") is True
 
     def test_cache_clear_and_reuse(self):

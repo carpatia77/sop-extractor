@@ -5,6 +5,7 @@ belong to the future LLM Router item).
 """
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 try:
@@ -42,7 +43,7 @@ def load_config(path: str | Path | None = None) -> dict:
     config_path = Path(path) if path else DEFAULT_CONFIG_PATH
     config_path = config_path.expanduser()
 
-    config = dict(DEFAULTS)
+    config = copy.deepcopy(DEFAULTS)
 
     if config_path.exists() and yaml is not None:
         try:

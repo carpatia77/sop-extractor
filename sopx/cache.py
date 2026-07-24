@@ -70,15 +70,36 @@ class CacheManager:
         return stage_dir
 
     def is_stage_done(self, key: str, stage: str) -> bool:
-        """Check if a specific stage has been completed."""
+        """Check if a specific stage has been completed.
+
+        Uses a .done sentinel file to ensure atomicity — a crash during
+        writes leaves a partial dir without the sentinel, so retries
+        re-process instead of serving corrupted artifacts.
+        """
         stage_dir = self.cache_dir / key / stage
-        return stage_dir.exists() and any(stage_dir.iterdir())
+        return (stage_dir / ".done").exists()
+
+    def mark_stage_done(self, key: str, stage: str) -> None:
+        """Mark a stage as completed by writing a .done sentinel."""
+        stage_dir = self.cache_dir / key / stage
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        (stage_dir / ".done").write_text("ok", encoding="utf-8")
 
     # -- High-level interface ---------------------------------------------
 
     def is_done(self, key: str) -> bool:
-        """Check if a source has been fully processed (all stages)."""
-        return key in self._index
+        """Check if a source has been fully processed (all stages).
+
+        Revalidates that output_dir still exists — if the user deleted it,
+        this returns False so the pipeline re-processes.
+        """
+        entry = self._index.get(key)
+        if not entry:
+            return False
+        output_dir = entry.get("output_dir")
+        if not output_dir:
+            return False
+        return Path(output_dir).exists()
 
     def mark_done(self, key: str, output_dir: str, **metadata) -> None:
         """Mark a source as fully processed and persist the index."""

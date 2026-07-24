@@ -231,7 +231,8 @@ class IngestPipeline:
         # --- Stage: Download ---
         self._print_stage("Download")
         audio_path = None
-        if get(self.cache, "_index", {}).get(f"{key}:audio"):
+        cache_enabled = get(self.config, "cache_enabled", True)
+        if cache_enabled and self.cache.is_stage_done(key, "audio"):
             audio_dir = self.cache.stage_path(key, "audio")
             audio_files = list(audio_dir.glob("audio.*"))
             if audio_files:
@@ -244,6 +245,8 @@ class IngestPipeline:
                 audio_path = self.ytdlp.download_audio(source, audio_dir)
             else:
                 audio_path = self.ffmpeg.extract_audio(source, output_dir)
+            if cache_enabled:
+                self.cache.mark_stage_done(key, "audio")
 
         # --- Stage: Transcrever ---
         self._print_stage("Transcrever")
@@ -260,6 +263,8 @@ class IngestPipeline:
         if srt_path is None:
             srt_dir = self.cache.stage_path(key, "srt")
             srt_path, plain_text = self.whisper.transcribe_to_text(audio_path, srt_dir)
+            if cache_enabled:
+                self.cache.mark_stage_done(key, "srt")
 
         # --- Stage: Salvar ---
         self._print_stage("Salvar")
@@ -270,8 +275,9 @@ class IngestPipeline:
         text_path.write_text(plain_text, encoding="utf-8")
 
         # --- Stage: Frames (optional) ---
+        # Frame extraction only works with LOCAL video files (not audio from URLs)
         frames_dir = None
-        if rescue_frames and is_url:
+        if rescue_frames and not is_url:
             self._print_stage("Frames")
             try:
                 from scripts.extract_frames_at_timestamps import (
@@ -282,7 +288,7 @@ class IngestPipeline:
                 if hits:
                     frames_dir = output_dir / "frames"
                     frames_dir.mkdir(exist_ok=True)
-                    manifest = extract_frames(str(audio_path), hits, str(frames_dir))
+                    manifest = extract_frames(str(source), hits, str(frames_dir))
                     log.info("Extraídos %d frames em %s", len(manifest), frames_dir)
                 else:
                     print("  Nenhum timestamp deictic encontrado", file=sys.stderr)
