@@ -1,5 +1,6 @@
 """Tests for build_set_manifest.py — provenance loop."""
 import json
+from pathlib import Path
 
 
 from scripts.build_set_manifest import (
@@ -318,5 +319,57 @@ class TestValidateManifestData:
         assert any("date" in e.lower() for e in errors)
 
 
-# Need re for some tests
-import re
+class TestSkillsRootCrossTreeResolution:
+    """Regression: skills_root and the output dir are typically unrelated
+    trees (e.g. output/ vs skills/) — Path.relative_to() raises ValueError
+    unless one is an ancestor of the other, crashing build_manifest() on
+    exactly the --skills-root usage the flag exists for. os.path.relpath
+    handles unrelated trees via '..' and must be used instead."""
+
+    def test_existing_skill_dir_in_unrelated_tree_does_not_crash(self, tmp_path):
+        output_dir = tmp_path / "output" / "vid1"
+        output_dir.mkdir(parents=True)
+        (output_dir / "metadata.json").write_text(json.dumps({
+            "canonical_id": "vid1", "upload_date": "2024-01-01",
+        }))
+
+        skills_root = tmp_path / "skills"
+        (skills_root / "vid1").mkdir(parents=True)
+
+        set_dir = tmp_path / "set"
+        set_dir.mkdir()
+
+        manifest = build_manifest(
+            set_id="test-set",
+            entries=[{"output_dir": str(output_dir)}],
+            skills_root=str(skills_root),
+            set_dir=str(set_dir),
+        )
+
+        member = manifest["members"][0]
+        assert member["skill_path"] == "../skills/vid1"
+
+        manifest_path = set_dir / "set_manifest.json"
+        assert validate_manifest_data(manifest, manifest_path=manifest_path) == []
+        # Validating must never write the real manifest file.
+        assert not manifest_path.exists()
+
+
+class TestBuildSetManifestImportHygiene:
+    """Regression: build_set_manifest.py is invoked both as a bare script
+    (python scripts/build_set_manifest.py ..., exactly how menu.py's
+    subprocess dispatch runs it — the primary, no-install-required path
+    this project's README promises) and as an installed package. An
+    unconditional 'from scripts.validate_manifest import ...' only works
+    in the latter case and crashes with ModuleNotFoundError in the former
+    — this asserts the codebase's established try/except sibling-import
+    fallback (used by preflight_scan.py) is present instead."""
+
+    def test_uses_try_except_import_fallback(self):
+        source = Path(__file__).parent.parent / "scripts" / "build_set_manifest.py"
+        text = source.read_text(encoding="utf-8")
+        assert "try:\n        from validate_manifest import validate_manifest" in text
+        assert "except ImportError" in text
+
+
+import re  # noqa: E402

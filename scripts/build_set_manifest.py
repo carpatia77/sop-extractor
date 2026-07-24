@@ -82,6 +82,7 @@ def build_manifest(
     entries: list[dict],
     skills_root: str | Path | None = None,
     existing_manifest: dict | None = None,
+    set_dir: str | Path | None = None,
 ) -> dict:
     """Build set_manifest.json from ingestion entries.
 
@@ -90,6 +91,10 @@ def build_manifest(
         entries: List of dicts with 'output_dir' and optional 'skill_path'
         skills_root: Root directory for skills (for relative paths)
         existing_manifest: Existing manifest to merge with (for idempotent updates)
+        set_dir: Directory the manifest will be written to — skill_path is
+            resolved relative to this (matching how validate_manifest.py
+            interprets it: relative to the manifest's own directory).
+            Defaults to output_dir.parent when not given.
 
     Returns:
         Complete manifest dict ready to write
@@ -132,7 +137,12 @@ def build_manifest(
             # Try to find skill directory
             skill_dir = Path(skills_root) / sid
             if skill_dir.exists():
-                member["skill_path"] = str(skill_dir.relative_to(output_dir.parent))
+                # os.path.relpath (not Path.relative_to) because skills_root
+                # and the manifest's directory are typically unrelated trees
+                # (e.g. output/ vs skills/) — relative_to raises unless one
+                # is an ancestor of the other; relpath handles it via "..".
+                base = Path(set_dir) if set_dir else output_dir.parent
+                member["skill_path"] = os.path.relpath(skill_dir, start=base)
             else:
                 member["skill_path"] = f"../skills/{sid}"
         else:
@@ -171,28 +181,31 @@ def build_manifest(
 def validate_manifest_data(manifest: dict, manifest_path: str | Path | None = None) -> list[str]:
     """Validate manifest using the real validate_manifest.py validator.
 
-    Writes manifest to a temp file if manifest_path not provided,
-    then calls the real validator to ensure consistent rules.
+    Never writes the real manifest_path — validation always goes through a
+    disposable temp file, placed in manifest_path's directory (when given)
+    so relative skill_path entries resolve exactly as they will once the
+    manifest is actually written there. Placing it elsewhere (e.g. the
+    system temp dir) would make skill_path resolve against the wrong base
+    and reject valid manifests. Deleting it afterward keeps --dry-run's
+    "nothing is written" guarantee intact even though validation runs
+    before the dry-run check.
     """
     import tempfile
-    from scripts.validate_manifest import validate_manifest
+    try:
+        from validate_manifest import validate_manifest
+    except ImportError:
+        from scripts.validate_manifest import validate_manifest
 
-    # Write manifest to temp file for validation
-    if manifest_path is None:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False, encoding="utf-8"
-        ) as f:
-            json.dump(manifest, f, indent=2, ensure_ascii=False)
-            temp_path = f.name
-        try:
-            errors = validate_manifest(temp_path)
-        finally:
-            os.unlink(temp_path)
-    else:
-        # Write to the actual path for validation
-        with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump(manifest, f, indent=2, ensure_ascii=False)
-        errors = validate_manifest(str(manifest_path))
+    base_dir = str(Path(manifest_path).parent) if manifest_path else None
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8", dir=base_dir
+    ) as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+        temp_path = f.name
+    try:
+        errors = validate_manifest(temp_path)
+    finally:
+        os.unlink(temp_path)
 
     return errors
 
@@ -292,10 +305,15 @@ def main(argv=None):
         entries=entries,
         skills_root=args.skills_root,
         existing_manifest=existing_manifest,
+        set_dir=set_dir,
     )
 
-    # Validate
-    errors = validate_manifest_data(manifest)
+    # Validate. Needs set_dir to exist so relative skill_path entries can be
+    # resolved against it (via a disposable temp file — see
+    # validate_manifest_data's docstring) — creating an empty directory here
+    # is not "writing the manifest", so --dry-run's guarantee still holds.
+    set_dir.mkdir(parents=True, exist_ok=True)
+    errors = validate_manifest_data(manifest, manifest_path=manifest_path)
     if errors:
         print("  Erros de validação:", file=sys.stderr)
         for e in errors:
@@ -311,7 +329,6 @@ def main(argv=None):
         return 0
 
     # Write manifest
-    set_dir.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
