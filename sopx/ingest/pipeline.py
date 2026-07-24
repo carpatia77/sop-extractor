@@ -240,11 +240,11 @@ class IngestPipeline:
                 print("  Audio cache hit", file=sys.stderr)
 
         if audio_path is None:
+            audio_dir = self.cache.stage_path(key, "audio")
             if is_url:
-                audio_dir = self.cache.stage_path(key, "audio")
                 audio_path = self.ytdlp.download_audio(source, audio_dir)
             else:
-                audio_path = self.ffmpeg.extract_audio(source, output_dir)
+                audio_path = self.ffmpeg.extract_audio(source, audio_dir)
             if cache_enabled:
                 self.cache.mark_stage_done(key, "audio")
 
