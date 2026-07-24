@@ -1,5 +1,4 @@
 """Tests for hardware detection module."""
-from unittest import mock
 
 import pytest
 

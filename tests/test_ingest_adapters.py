@@ -1,6 +1,5 @@
 """Tests for sopx.ingest.adapters — YtDlpAdapter, FFmpegAdapter, WhisperAdapter."""
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

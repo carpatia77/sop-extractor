@@ -1,8 +1,5 @@
 """Tests for sopx.config — Config Manager."""
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from sopx.config import (
     DEFAULTS,
