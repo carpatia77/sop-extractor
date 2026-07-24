@@ -131,7 +131,7 @@ class IngestPipeline:
         if len(title) > 72:
             title = title[:69] + "..."
 
-        print(f"\n  ┌─ Resumo ─────────────────────────────────", file=sys.stderr)
+        print("\n  ┌─ Resumo ─────────────────────────────────", file=sys.stderr)
         print(f"  │ Título:     {title}", file=sys.stderr)
         if uploader:
             print(f"  │ Canal:      {uploader}", file=sys.stderr)
@@ -140,7 +140,7 @@ class IngestPipeline:
         print(f"  │ Hardware:   {tier_names.get(profile.tier, '?')} ({profile.cpu_physical} cores, {profile.ram_gb:.0f}GB{gpu_str})", file=sys.stderr)
         print(f"  │ Batch:      {settings['batch_size']}", file=sys.stderr)
         print(f"  │ ETA:        ~{est_str} de transcrição{segment_info}", file=sys.stderr)
-        print(f"  └──────────────────────────────────────────\n", file=sys.stderr)
+        print("  └──────────────────────────────────────────\n", file=sys.stderr)
 
     def _print_completion(self, info: dict, result: IngestResult):
         """Print completion summary with all info and total time."""
@@ -150,13 +150,13 @@ class IngestPipeline:
         elapsed = _format_duration(result.total_elapsed)
         video_dur = _format_duration(result.duration)
 
-        print(f"\n  ┌─ Ingestão Concluída ────────────────────", file=sys.stderr)
+        print("\n  ┌─ Ingestão Concluída ────────────────────", file=sys.stderr)
         print(f"  │ Título:      {title}", file=sys.stderr)
         print(f"  │ Duração:     {video_dur} de vídeo", file=sys.stderr)
         print(f"  │ Palavras:    {result.word_count}", file=sys.stderr)
         print(f"  │ Tempo total: {elapsed}", file=sys.stderr)
         print(f"  │ Output:      {result.output_dir}", file=sys.stderr)
-        print(f"  └──────────────────────────────────────────", file=sys.stderr)
+        print("  └──────────────────────────────────────────", file=sys.stderr)
 
     def ingest(
         self,
@@ -216,7 +216,7 @@ class IngestPipeline:
                 title=info.get("title", ""),
                 duration=info.get("duration", 0),
             )
-            print(f"\n  Cache hit — reutilizando output anterior", file=sys.stderr)
+            print("\n  Cache hit — reutilizando output anterior", file=sys.stderr)
             return result
 
         # --- Create output directory ---
@@ -231,12 +231,13 @@ class IngestPipeline:
         # --- Stage: Download ---
         self._print_stage("Download")
         audio_path = None
-        if get(self.cache, "_index", {}).get(f"{key}:audio"):
+        cache_enabled = get(self.config, "cache_enabled", True)
+        if cache_enabled and self.cache.is_stage_done(key, "audio"):
             audio_dir = self.cache.stage_path(key, "audio")
             audio_files = list(audio_dir.glob("audio.*"))
             if audio_files:
                 audio_path = audio_files[0]
-                print(f"  Audio cache hit", file=sys.stderr)
+                print("  Audio cache hit", file=sys.stderr)
 
         if audio_path is None:
             if is_url:
@@ -244,6 +245,8 @@ class IngestPipeline:
                 audio_path = self.ytdlp.download_audio(source, audio_dir)
             else:
                 audio_path = self.ffmpeg.extract_audio(source, output_dir)
+            if cache_enabled:
+                self.cache.mark_stage_done(key, "audio")
 
         # --- Stage: Transcrever ---
         self._print_stage("Transcrever")
@@ -255,11 +258,13 @@ class IngestPipeline:
             if srt_file.exists():
                 srt_path = srt_file
                 plain_text = srt_path.read_text(encoding="utf-8")
-                print(f"  SRT cache hit", file=sys.stderr)
+                print("  SRT cache hit", file=sys.stderr)
 
         if srt_path is None:
             srt_dir = self.cache.stage_path(key, "srt")
             srt_path, plain_text = self.whisper.transcribe_to_text(audio_path, srt_dir)
+            if cache_enabled:
+                self.cache.mark_stage_done(key, "srt")
 
         # --- Stage: Salvar ---
         self._print_stage("Salvar")
@@ -270,19 +275,22 @@ class IngestPipeline:
         text_path.write_text(plain_text, encoding="utf-8")
 
         # --- Stage: Frames (optional) ---
+        # Frame extraction only works with LOCAL video files (not audio from URLs)
         frames_dir = None
-        if rescue_frames and is_url:
+        if rescue_frames and not is_url:
             self._print_stage("Frames")
             try:
                 from scripts.extract_frames_at_timestamps import (
                     find_gap_timestamps, dedupe_timestamps, extract_frames,
                 )
-                hits = find_gap_timestamps(plain_text)
+                # Use SRT content (with timestamps) not plain_text (without timestamps)
+                srt_content = srt_path.read_text(encoding="utf-8") if srt_path else ""
+                hits = find_gap_timestamps(srt_content)
                 hits = dedupe_timestamps(hits)
                 if hits:
                     frames_dir = output_dir / "frames"
                     frames_dir.mkdir(exist_ok=True)
-                    manifest = extract_frames(str(audio_path), hits, str(frames_dir))
+                    manifest = extract_frames(str(source), hits, str(frames_dir))
                     log.info("Extraídos %d frames em %s", len(manifest), frames_dir)
                 else:
                     print("  Nenhum timestamp deictic encontrado", file=sys.stderr)
@@ -367,7 +375,7 @@ class IngestPipeline:
         output_base = Path(output_base)
 
         # Get playlist info
-        print(f"\n  Buscando vídeos do playlist...", file=sys.stderr)
+        print("\n  Buscando vídeos do playlist...", file=sys.stderr)
         cmd = [
             self.ytdlp.binary,
             "--flat-playlist",
@@ -397,9 +405,9 @@ class IngestPipeline:
         # Process each video
         results = []
         for i, video_id in enumerate(video_ids, 1):
-            print(f"\n  ═══════════════════════════════════════════", file=sys.stderr)
+            print("\n  ═══════════════════════════════════════════", file=sys.stderr)
             print(f"  Vídeo {i}/{total}: {video_id}", file=sys.stderr)
-            print(f"  ═══════════════════════════════════════════\n", file=sys.stderr)
+            print("  ═══════════════════════════════════════════\n", file=sys.stderr)
 
             url = f"https://www.youtube.com/watch?v={video_id}"
             try:
@@ -411,12 +419,12 @@ class IngestPipeline:
                 continue
 
         # Summary
-        print(f"\n  ═══════════════════════════════════════════", file=sys.stderr)
-        print(f"  Resumo do batch:", file=sys.stderr)
+        print("\n  ═══════════════════════════════════════════", file=sys.stderr)
+        print("  Resumo do batch:", file=sys.stderr)
         print(f"  ├─ Total:     {total} vídeos", file=sys.stderr)
         print(f"  ├─ Sucesso:   {len(results)}", file=sys.stderr)
         print(f"  └─ Falhas:    {total - len(results)}", file=sys.stderr)
-        print(f"  ═══════════════════════════════════════════\n", file=sys.stderr)
+        print("  ═══════════════════════════════════════════\n", file=sys.stderr)
 
         return results
 

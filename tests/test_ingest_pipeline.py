@@ -1,6 +1,5 @@
 """Tests for sopx.ingest.pipeline — IngestPipeline."""
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest

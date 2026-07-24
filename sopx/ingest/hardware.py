@@ -6,7 +6,6 @@ transcription configuration (batch_size, segment length, speed estimates).
 from __future__ import annotations
 
 import os
-import platform
 import subprocess
 import sys
 from dataclasses import dataclass

@@ -138,6 +138,9 @@ def generate_colab_notebook(urls: list[str], model: str = "base") -> Path:
         "    text = '\\n'.join(s.text.strip() for s in segs)\n",
         "    (out / 'full_text.txt').write_text(text, encoding='utf-8')\n",
         "    \n",
+        "    # Calculate speedup BEFORE meta dict\n",
+        "    speedup = info.duration / elapsed if elapsed > 0 else 0\n",
+        "    \n",
         "    # Metadata\n",
         "    meta = {\n",
         "        'video_id': video_id,\n",
@@ -146,11 +149,11 @@ def generate_colab_notebook(urls: list[str], model: str = "base") -> Path:
         "        'word_count': len(text.split()),\n",
         "        'segments': len(segs),\n",
         "        'gpu_time': elapsed,\n",
+        "        'speedup': round(speedup, 1),\n",
         "    }\n",
         "    (out / 'metadata.json').write_text(json.dumps(meta, indent=2), encoding='utf-8')\n",
         "    \n",
         "    audio.unlink(missing_ok=True)\n",
-        "    speedup = info.duration / elapsed if elapsed > 0 else 0\n",
         "    print(f'  ✅ {len(text.split())} palavras em {elapsed:.1f}s ({speedup:.0f}x)')\n",
         "    return meta\n",
         "\n",
@@ -270,16 +273,16 @@ def open_in_colab(notebook_path: Path) -> bool:
     colab_url = "https://colab.research.google.com/"
 
     print(f"\n  📓 Notebook gerado: {notebook_path}", file=sys.stderr)
-    print(f"\n  Para usar no Colab:", file=sys.stderr)
+    print("\n  Para usar no Colab:", file=sys.stderr)
     print(f"  1. Abra: {colab_url}", file=sys.stderr)
-    print(f"  2. Arquivo → Abrir → Upload → selecione o notebook", file=sys.stderr)
-    print(f"  3. Runtime → Change runtime type → T4 GPU", file=sys.stderr)
-    print(f"  4. Runtime → Run all", file=sys.stderr)
+    print("  2. Arquivo → Abrir → Upload → selecione o notebook", file=sys.stderr)
+    print("  3. Runtime → Change runtime type → T4 GPU", file=sys.stderr)
+    print("  4. Runtime → Run all", file=sys.stderr)
 
     try:
         webbrowser.open(colab_url)
-        print(f"\n  🌐 Colab aberto no navegador!", file=sys.stderr)
+        print("\n  🌐 Colab aberto no navegador!", file=sys.stderr)
         return True
     except Exception:
-        print(f"\n  ⚠ Não foi possível abrir o navegador automaticamente", file=sys.stderr)
+        print("\n  ⚠ Não foi possível abrir o navegador automaticamente", file=sys.stderr)
         return False

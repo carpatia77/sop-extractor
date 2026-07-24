@@ -21,7 +21,6 @@ def validate_output_dir(video_dir: Path) -> dict | None:
     Returns metadata dict if valid, None if invalid.
     """
     srt_file = video_dir / "transcript.srt"
-    text_file = video_dir / "full_text.txt"
     meta_file = video_dir / "metadata.json"
 
     if not srt_file.exists():
@@ -58,13 +57,16 @@ def import_zip(zip_path: Path, output_base: Path | None = None) -> list[dict]:
     if not zip_path.exists():
         raise FileNotFoundError(f"ZIP não encontrado: {zip_path}")
 
+    # Ensure output_base is a Path (CLI passes string)
     if output_base is None:
         config = ensure_config()
         output_base = Path(get(config, "output_dir", "output/"))
+    else:
+        output_base = Path(output_base)
 
-    # Extract ZIP to temp directory
-    temp_dir = Path("/tmp/sopx_import_temp")
-    temp_dir.mkdir(exist_ok=True)
+    # Extract ZIP to temp directory (use mkdtemp for isolation)
+    import tempfile
+    temp_dir = Path(tempfile.mkdtemp(prefix="sopx_import_"))
 
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -88,6 +90,8 @@ def import_zip(zip_path: Path, output_base: Path | None = None) -> list[dict]:
 
         for video_dir, metadata in imported:
             video_id = metadata.get("video_id", video_dir.name)
+            # Use consistent cache key with pipeline (sha256 hash)
+            cache_key = CacheManager.key_for_url(video_id)
             dest = output_base / video_id
             dest.mkdir(parents=True, exist_ok=True)
 
@@ -96,9 +100,9 @@ def import_zip(zip_path: Path, output_base: Path | None = None) -> list[dict]:
                 if f.is_file():
                     shutil.copy2(f, dest / f.name)
 
-            # Register in cache
+            # Register in cache with consistent key
             cache.mark_done(
-                key=video_id,
+                key=cache_key,
                 output_dir=str(dest),
                 canonical_id=video_id,
                 word_count=metadata.get("word_count", 0),
@@ -128,9 +132,12 @@ def import_directory(dir_path: Path, output_base: Path | None = None) -> list[di
     if not dir_path.exists():
         raise FileNotFoundError(f"Diretório não encontrado: {dir_path}")
 
+    # Ensure output_base is a Path (CLI passes string)
     if output_base is None:
         config = ensure_config()
         output_base = Path(get(config, "output_dir", "output/"))
+    else:
+        output_base = Path(output_base)
 
     # Find video directories
     imported = []
@@ -156,6 +163,8 @@ def import_directory(dir_path: Path, output_base: Path | None = None) -> list[di
 
     for video_dir, metadata in imported:
         video_id = metadata.get("video_id", video_dir.name)
+        # Use consistent cache key with pipeline (sha256 hash)
+        cache_key = CacheManager.key_for_url(video_id)
         dest = output_base / video_id
         dest.mkdir(parents=True, exist_ok=True)
 
@@ -164,9 +173,9 @@ def import_directory(dir_path: Path, output_base: Path | None = None) -> list[di
             if f.is_file():
                 shutil.copy2(f, dest / f.name)
 
-        # Register in cache
+        # Register in cache with consistent key
         cache.mark_done(
-            key=video_id,
+            key=cache_key,
             output_dir=str(dest),
             canonical_id=video_id,
             word_count=metadata.get("word_count", 0),
@@ -189,11 +198,11 @@ def print_import_summary(results: list[dict]):
     total_duration = sum(r.get("duration", 0) for r in results)
 
     print(f"\n  {'='*50}", file=sys.stderr)
-    print(f"  IMPORTAÇÃO CONCLUÍDA", file=sys.stderr)
+    print("  IMPORTAÇÃO CONCLUÍDA", file=sys.stderr)
     print(f"  {'='*50}", file=sys.stderr)
     print(f"  Vídeos:    {len(results)}", file=sys.stderr)
     print(f"  Palavras:  {total_words}", file=sys.stderr)
     print(f"  Duração:   {total_duration/60:.1f} min", file=sys.stderr)
     print(f"  {'='*50}", file=sys.stderr)
-    print(f"\n  Próximo passo:", file=sys.stderr)
-    print(f"  sopx scan output/<video_id>/transcript.srt --emit-prompt", file=sys.stderr)
+    print("\n  Próximo passo:", file=sys.stderr)
+    print("  sopx scan output/<video_id>/transcript.srt --emit-prompt", file=sys.stderr)
