@@ -62,6 +62,8 @@ def main(argv=None):
             "  sopx ingest ./video.mp4 --rescue-frames\n"
             "  sopx ingest --playlist https://youtube.com/playlist?list=XYZ --max 10\n"
             "  sopx ingest https://youtube.com/watch?v=ABC --gpu  # gera notebook Colab\n"
+            "  sopx ingest --import-zip ~/Downloads/transcriptions.zip\n"
+            "  sopx ingest --import-dir ~/Downloads/mYDSSRS-B5U/\n"
             "  sopx ingest --status\n"
             "  sopx ingest --check\n"
         ),
@@ -82,6 +84,10 @@ def main(argv=None):
                         help="Forçar execução local (pula roteamento)")
     parser.add_argument("--gpu-urls", nargs="+", default=None,
                         help="URLs extras para incluir no notebook GPU")
+    parser.add_argument("--import-zip", default=None, metavar="ZIP",
+                        help="Importar ZIP do Colab para o pipeline local")
+    parser.add_argument("--import-dir", default=None, metavar="DIR",
+                        help="Importar pasta do Colab para o pipeline local")
 
     args = parser.parse_args(argv)
 
@@ -91,6 +97,31 @@ def main(argv=None):
 
     if args.status:
         show_status()
+        return 0
+
+    # Import mode: import Colab output
+    if args.import_zip or args.import_dir:
+        from sopx.ingest.importer import import_zip, import_directory, print_import_summary
+        from pathlib import Path
+
+        try:
+            if args.import_zip:
+                zip_path = Path(args.import_zip)
+                print(f"\n  Importando ZIP: {zip_path}", file=sys.stderr)
+                results = import_zip(zip_path, output_base=args.output_dir)
+            else:
+                dir_path = Path(args.import_dir)
+                print(f"\n  Importando diretório: {dir_path}", file=sys.stderr)
+                results = import_directory(dir_path, output_base=args.output_dir)
+
+            print_import_summary(results)
+        except FileNotFoundError as e:
+            print(f"  Erro: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"  Erro na importação: {e}", file=sys.stderr)
+            return 1
+
         return 0
 
     # GPU mode: generate Colab notebook
