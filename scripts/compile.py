@@ -439,6 +439,32 @@ def cache_key(filepath: Path, input_root: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Source metadata reader (§2.2) — propagates upload_date into provenance
+# ---------------------------------------------------------------------------
+
+def read_source_metadata(filepath: Path) -> dict:
+    """Read metadata.json from the source file's parent directory.
+
+    Ingestion writes metadata.json with upload_date, title, uploader, etc.
+    Returns a dict with provenance-relevant fields, or empty dict if not found.
+    """
+    meta_path = filepath.parent / "metadata.json"
+    if not meta_path.exists():
+        return {}
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    provenance = {}
+    for key in ("upload_date", "title", "uploader", "canonical_id", "language"):
+        if key in meta and meta[key]:
+            provenance[key] = meta[key]
+    return provenance
+
+
+# ---------------------------------------------------------------------------
 # Output writing with provenance (§2.2) — atomic writes
 # ---------------------------------------------------------------------------
 
@@ -452,6 +478,7 @@ def write_compilation(
     model: str,
     source_hash: str,
     key: str,
+    source_metadata: dict | None = None,
 ):
     """Write compilation output for a single source file.
 
@@ -477,6 +504,12 @@ def write_compilation(
         "references": sections["references"],
     }
 
+    # Propagate source ingestion metadata (§2.2)
+    if source_metadata:
+        data["source_metadata"] = source_metadata
+
+    meta = source_metadata or {}
+
     # Atomic JSON write (write tmp, then rename)
     json_path = out_dir / f"{key}.json"
     tmp_json = out_dir / f"{key}.json.tmp"
@@ -490,6 +523,10 @@ def write_compilation(
     with open(tmp_md, "w", encoding="utf-8") as f:
         f.write(f"# Knowledge Compilation: {filepath.name}\n\n")
         f.write(f"**Source**: {filepath.name}\n")
+        if meta.get("upload_date"):
+            f.write(f"**Source date**: {meta['upload_date']}\n")
+        if meta.get("title"):
+            f.write(f"**Title**: {meta['title']}\n")
         f.write(f"**Compiled**: {now}\n")
         f.write(f"**Agent**: {agent}\n")
         f.write(f"**Model**: {model or 'default'}\n")
@@ -767,9 +804,11 @@ def main():
             grounding_flagged = flagged
 
         # Write output (§2.1 + §2.2) with collision-safe key
+        source_metadata = read_source_metadata(filepath)
         write_compilation(
             filepath, prompt, combined_response, all_sections,
             output_dir, args.agent, args.model, source_hash, key,
+            source_metadata=source_metadata,
         )
 
         print(f"  OK: {len(combined_response):,} chars, "

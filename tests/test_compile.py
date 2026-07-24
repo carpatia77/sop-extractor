@@ -29,6 +29,7 @@ from compile import (
     _deduplicate,
     main,
     grounding_check,
+    read_source_metadata,
 )
 
 
@@ -419,6 +420,53 @@ class TestDeduplicate:
 
 
 # ---------------------------------------------------------------------------
+# Source metadata reader (§2.2)
+# ---------------------------------------------------------------------------
+
+class TestReadSourceMetadata:
+    def test_reads_upload_date(self, tmp_path):
+        meta = {"upload_date": "2026-01-15", "title": "Test Video", "uploader": "channel"}
+        (tmp_path / "metadata.json").write_text(json.dumps(meta))
+        source = tmp_path / "transcript.txt"
+        source.write_text("content")
+        result = read_source_metadata(source)
+        assert result["upload_date"] == "2026-01-15"
+        assert result["title"] == "Test Video"
+        assert result["uploader"] == "channel"
+
+    def test_no_metadata_returns_empty(self, tmp_path):
+        source = tmp_path / "transcript.txt"
+        source.write_text("content")
+        result = read_source_metadata(source)
+        assert result == {}
+
+    def test_corrupted_json_returns_empty(self, tmp_path):
+        (tmp_path / "metadata.json").write_text("{corrupted!!!")
+        source = tmp_path / "transcript.txt"
+        source.write_text("content")
+        result = read_source_metadata(source)
+        assert result == {}
+
+    def test_empty_upload_date_excluded(self, tmp_path):
+        meta = {"upload_date": "", "title": "Test"}
+        (tmp_path / "metadata.json").write_text(json.dumps(meta))
+        source = tmp_path / "transcript.txt"
+        source.write_text("content")
+        result = read_source_metadata(source)
+        assert "upload_date" not in result
+        assert result["title"] == "Test"
+
+    def test_includes_canonical_id(self, tmp_path):
+        meta = {"upload_date": "2026-03-01", "canonical_id": "abc123", "language": "en"}
+        (tmp_path / "metadata.json").write_text(json.dumps(meta))
+        source = tmp_path / "transcript.txt"
+        source.write_text("content")
+        result = read_source_metadata(source)
+        assert result["canonical_id"] == "abc123"
+        assert result["language"] == "en"
+
+
+# ---------------------------------------------------------------------------
 # Output writing
 # ---------------------------------------------------------------------------
 
@@ -453,6 +501,41 @@ class TestWriteCompilation:
         md = (tmp_path / "compilation" / "test_video.md").read_text()
         assert "Agent**: claude" in md
         assert "hash123" in md
+
+    def test_source_metadata_in_json(self, sample_source, tmp_path):
+        sections = {"sops": [], "principles": [], "concepts": [], "references": []}
+        meta = {"upload_date": "2026-01-15", "title": "My Video"}
+        write_compilation(
+            sample_source, "prompt", "response text", sections,
+            tmp_path, "claude", None, "hash123", "test_video",
+            source_metadata=meta,
+        )
+        data = json.loads((tmp_path / "compilation" / "test_video.json").read_text())
+        assert data["source_metadata"]["upload_date"] == "2026-01-15"
+        assert data["source_metadata"]["title"] == "My Video"
+
+    def test_source_metadata_in_md(self, sample_source, tmp_path):
+        sections = {"sops": [], "principles": [], "concepts": [], "references": []}
+        meta = {"upload_date": "2026-01-15", "title": "My Video"}
+        write_compilation(
+            sample_source, "prompt", "response text", sections,
+            tmp_path, "claude", None, "hash123", "test_video",
+            source_metadata=meta,
+        )
+        md = (tmp_path / "compilation" / "test_video.md").read_text()
+        assert "Source date**: 2026-01-15" in md
+        assert "Title**: My Video" in md
+
+    def test_no_metadata_no_source_date(self, sample_source, tmp_path):
+        sections = {"sops": [], "principles": [], "concepts": [], "references": []}
+        write_compilation(
+            sample_source, "prompt", "response text", sections,
+            tmp_path, "claude", None, "hash123", "test_video",
+        )
+        data = json.loads((tmp_path / "compilation" / "test_video.json").read_text())
+        assert "source_metadata" not in data
+        md = (tmp_path / "compilation" / "test_video.md").read_text()
+        assert "Source date" not in md
 
 
 class TestWriteBatchSummary:
