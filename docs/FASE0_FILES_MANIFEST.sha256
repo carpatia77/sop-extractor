@@ -1,0 +1,32 @@
+# Fase 0 — Manifest de Arquivos (SHA256)
+# Data: 2026-07-24
+# Commit: a0a1ba2
+
+# === Código Principal ===
+8e4538d144a2f92779d23b7c51379984634ad1a6fe05a434a98ae36db1e90ede  sopx/ingest/pipeline.py
+95e6506d9f953645954664921a1deb44f8dc0928e87cc74045dea040b4ec0966  sopx/ingest/adapters.py
+961553058a9c5a1320889cb7056027e88b6c41d4751b2835a541749143184e57  sopx/ingest/hardware.py
+73d514ec6fbf65b71a31a85a7362e26fe513d741399730293a1d6765c1cefd81  sopx/ingest/colab.py
+593169d819a6879eef29526a8760828465c4f729cc331dfe913756f38d7c3f0b  sopx/ingest/importer.py
+b0f194b6f9602eb5f26181054c2f85e6d70261c2efd249c0605c31ed9e492bc9  scripts/ingest.py
+
+# === Documentação ===
+297ade4cef9fa279529bd16e5dedb3a4c20af4fee09acd7a51b277b7845cdf7e  docs/ingestion_plan_revised.md
+0726da26f486e4f82811825643a43575b1a033b5d969a5d2e2f418e499f5ec1b  docs/COLAB_GUIDE.md
+4a22937ce240ab989e9d3acf051b93cad191108dcb7f2cf9f5e80551fb6750d6  docs/COLAB_SCRIPT_INCIDENTS.md
+2de2fc41d0fed15a74d24d8fdcca02d076a622c4989899d0907fe82b5cdf2062  docs/FASE0_INGESTION_SUMMARY.md
+1d33faea996f6f62c9ad98d17aab3d11f2569a069c00156260424fd654043560  README-PTBR.md
+
+# === Notebooks ===
+2b4072633e92b57408cf881a7f52d2757d3e58824cc285512d240eef1b624d23  examples/colab_transcribe.ipynb
+dd1eafedafc9b6c9d50c7951559c437fcb9962fe53e19f497f8ac129bb9ae19f  examples/colab_transcribe_verified.ipynb
+7ea14452f1bf21acbe10aab3100fb4fba65d6183f05005bd650bf8d742eec33c  examples/colab_validate_fase0.ipynb
+
+# === Testes ===
+0e29a2868a8404b1ec176bb0569d2b03d023830e676eaa80969ebd03fdbf122c  tests/test_hardware.py
+d715dcf15fc6bdea0df5d09d6d26fbaf05550820036afd9926e59dc296f3fe41  tests/test_ingest_adapters.py
+7de527f67d65c52a34be3b136f7ddab6e747bf559989e978b0750da3e85f8490  tests/test_ingest_pipeline.py
+56c1a9d0748636087351331280427771a27c365d1c3e11a15c9f91b4303f4bb7  tests/test_stress_ingestion.py
+
+# === Verificação ===
+# Para verificar: sha256sum -c docs/FASE0_FILES_MANIFEST.sha256
