@@ -5,11 +5,11 @@ All notable changes to **sop-extractor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - 2026-07-22
+## [2.2.0] - 2026-07-24
 
 ### Added
 - **Ingestion pipeline (`sopx ingest`).** Download/transcribe video from URL
-  or local file → SRT + full_text.txt + metadata.json. Pareto Item 1.
+  or local file → SRT + full_text.txt + metadata.json.
   - `sopx/` package: Config Manager, Cache Manager, Ingest Pipeline.
   - `sopx/ingest/adapters.py`: YtDlpAdapter, FFmpegAdapter, WhisperAdapter.
   - `sopx/ingest/pipeline.py`: Orchestration layer with cache dedup.
@@ -19,16 +19,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sopx ingest --status`: show cache of processed videos.
   - Hash-based cache prevents reprocessing of already-ingested sources.
   - PT-BR error messages throughout.
+- **Hardware-adaptive transcription.** Hardware detection (CPU/RAM/GPU tier)
+  drives batch size, beam size, and audio-segmentation settings; int8
+  quantization + batched inference for roughly 3x faster transcription;
+  long videos are segmented for safer processing. Real-time `tqdm` progress
+  per pipeline stage, a pre-flight video summary, and a completion summary
+  with a next-step prompt.
+- **Google Colab GPU integration.** `sopx ingest <url> --gpu` generates a
+  ready-to-run Colab notebook (GPU transcription for users without local
+  GPU access); smart routing (`sopx/ingest/router.py`) recommends local vs.
+  Colab based on detected hardware and input type (single video / multiple
+  URLs / playlist); playlist batch ingestion with frame-extraction
+  integration; `sopx ingest --import-zip/--import-dir` imports Colab output
+  back into the local pipeline and cache.
+- **Provenance loop closure.** `sopx set-build` auto-populates
+  `set_manifest.json` from ingestion metadata (`upload_date`,
+  `canonical_id`) as a labeled, confirmable proposal — never silently
+  authoritative, never fabricated when a date is unavailable (`needs_date`
+  flag + fail-fast via the real `validate_manifest.py`). `SOURCE_DATE` is
+  now auto-detected in `preflight_scan.py`'s extraction prompt when
+  ingestion metadata sits alongside the source. Idempotent merge preserves
+  human date corrections on re-run. Design rationale in
+  `docs/PROVENANCE_LOOP_PLAN.md`.
 
-## [2.0.0] - 2026-07-19
+### Fixed
+- **Critical regressions found reviewing the ingestion work:** the stage
+  cache now uses a completion sentinel + atomic writes (a crash mid-write
+  could no longer be mistaken for a finished stage), `config.py` deep-copies
+  its defaults (a caller mutating its config could no longer poison every
+  other caller in the process), and the pipeline's stage-cache check/wiring
+  was corrected (it was silently a permanent cache miss, re-downloading and
+  re-transcribing on every run).
+- **CI governance:** the push trigger targeted a `master` branch that
+  doesn't exist (the default is `main`, so pushes to `main` never ran CI);
+  `sopx/` was missing from the lint scope; the test matrix now installs the
+  `[ingest]` extra and system `ffmpeg` so ingestion tests actually exercise
+  real dependencies instead of only mocks.
+- **Colab notebook generation bugs**, each found by actually running a
+  generated notebook end-to-end: `BatchedInferencePipeline`'s `batch_size`
+  parameter passed to the wrong call, a Python syntax error and mixed
+  f-string/`.format()` usage in generated cells, download errors hidden by
+  a redirected stderr, and a ZIP archive created before its source files
+  were fully written. Documented as ground truth in
+  `docs/COLAB_SCRIPT_INCIDENTS.md`.
+- `word_count` cache accounting, `--no-cache` timestamp handling, and
+  yt-dlp anti-throttling measures for playlist ingestion.
+- Several edge cases found via targeted stress-testing of the ingestion
+  module (`tests/test_stress_ingestion.py`).
+- **`build_set_manifest.py` hardening**, found in review: the manifest
+  validator now calls the real `validate_manifest.py` instead of a
+  reimplementation that had already silently diverged (accepting an empty
+  date the real validator rejects); a bare-script invocation
+  (`python scripts/build_set_manifest.py ...`, the same path `menu.py`'s
+  subprocess dispatch uses) no longer crashes with `ModuleNotFoundError`
+  when the package isn't `pip install`ed; `--skills-root` no longer crashes
+  when the skill directory and the output directory are unrelated trees;
+  `--dry-run` no longer risks writing the real manifest file as a side
+  effect of validation.
 
 ### Changed
-- **License change:** Switched from MIT to Apache-2.0 for the sop-extractor codebase.
-- **Project renamed:** `book-to-skill` → `sop-extractor` (the upstream MIT code remains in `book_to_skill/` as a vendored dependency).
-- **Third-party attribution:** Added `NOTICES.md` documenting the MIT license for the upstream `book-to-skill` code by virgiliojr94.
-
-### Added
-- `NOTICES.md` — Third-party license documentation for vendored `book_to_skill/` package.
+- Local file ingestion now reuses the stage cache for audio extraction
+  (was re-extracting on every run, unlike the URL-download path).
 
 ## [2.1.1] - 2026-07-22
 
@@ -86,22 +137,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mode candidate. Single-path invocation is unchanged (no regression).
 - Registered **Item 14** in `docs/INFRA_MATURITY_PLAN.md`.
 
-## [Unreleased]
+## [2.0.0] - 2026-07-19
+
+### Changed
+- **License change:** Switched from MIT to Apache-2.0 for the sop-extractor codebase.
+- **Project renamed:** `book-to-skill` → `sop-extractor` (the upstream MIT code remains in `book_to_skill/` as a vendored dependency).
+- **Third-party attribution:** Added `NOTICES.md` documenting the MIT license for the upstream `book-to-skill` code by virgiliojr94.
 
 ### Added
-- **`docs/PROVENANCE_LOOP_PLAN.md`** — implementation plan to close the
-  provenance loop between ingestion and the temporal evolution audit.
-  `output/<id>/metadata.json` already captures `upload_date`/`canonical_id`
-  from ingestion, but nothing feeds it into `set_manifest.json` — today
-  100% hand-typed, and the sole source of dates the Chronology Gate
-  (`validate_evolution_audit.py`) audits against. A hand-typed date means
-  the gate can validate against an unverified truth. Plan: a new
-  `scripts/build_set_manifest.py` auto-populates the manifest from ingested
-  metadata as a labeled, confirmable proposal (never silently authoritative,
-  never fabricated when a date is unavailable), with idempotent merge that
-  preserves human corrections. Doc-only in this change; implementation is
-  tracked as follow-up work.
+- `NOTICES.md` — Third-party license documentation for vendored `book_to_skill/` package.
 
+## [1.3.0] - 2026-07-17
+
+### Added
 - **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
   opt-in fourth audit layer that reconstructs a demonstrated system's backend
   from its observable frontend, kept walled off from the anti-fabrication core:
@@ -352,6 +400,8 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
+[2.1.1]: https://github.com/carpatia77/sop-extractor/releases/tag/v2.1.1
+[2.1.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v2.1.0
 [1.3.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v1.3.0
 [1.2.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.2.0
 [1.1.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.1.0

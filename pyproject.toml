@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sop-extractor"
-version = "1.4.0"
+version = "2.2.0"
 description = "Compile any author's books and video courses into a provenance-tracked, time-audited doctrine an LLM can reason from."
 readme = "README.md"
 requires-python = ">=3.9"
