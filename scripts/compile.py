@@ -718,6 +718,16 @@ def main():
     results = []
     review_log = []
     skipped = 0
+
+    # Pre-compute sample indices for review gate (§2.5)
+    sample_indices = set()
+    if batch_mode and not args.dry_run and args.review_sample_rate > 0:
+        sample_indices = set(compute_sample_indices(
+            len(sources), sample_rate=args.review_sample_rate,
+        ))
+        print(f"Review gate: {len(sample_indices)}/{len(sources)} items sampled "
+              f"(rate={args.review_sample_rate:.0%})")
+
     for i, filepath in enumerate(sources, 1):
         # Collision-safe key from relative path
         key = cache_key(filepath, input_path)
@@ -850,55 +860,13 @@ def main():
             "elapsed": total_elapsed,
         })
 
-        # Rate limit between files
-        if i < len(sources) and not args.dry_run:
-            time.sleep(args.delay)
-
-    # ---------------------------------------------------------------------------
-    # Batch review gate (§2.5) — risk-weighted sampling
-    # ---------------------------------------------------------------------------
-    if batch_mode and not args.dry_run and args.review_sample_rate > 0:
-        sample_indices = compute_sample_indices(
-            len(sources), sample_rate=args.review_sample_rate,
-        )
-        print(f"\n{'='*50}")
-        print(f"Review gate: {len(sample_indices)}/{len(sources)} items sampled "
-              f"(rate={args.review_sample_rate:.0%})")
-
-        for idx in sample_indices:
-            filepath = sources[idx]
-            key = cache_key(filepath, input_path)
-
-            # Read the compiled output
-            json_path = output_dir / "compilation" / f"{key}.json"
-            if not json_path.exists():
-                continue
-            try:
-                with open(json_path, encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                continue
-
-            sections = {
-                "sops": data.get("sops", []),
-                "principles": data.get("principles", []),
-                "concepts": data.get("concepts", []),
-                "references": data.get("references", []),
-            }
-
-            # Read source for excerpt
-            try:
-                src_content = filepath.read_text(encoding="utf-8")
-                if filepath.suffix.lower() == ".srt":
-                    src_content = strip_srt(src_content)
-            except Exception:
-                src_content = ""
-
+        # Review gate (§2.5) — inline, after each item, before next
+        batch_idx = i - 1  # 0-based
+        if batch_idx in sample_indices:
             decision = prompt_operator(
-                idx, len(sources), filepath.name, sections, src_content,
+                batch_idx, len(sources), filepath.name, all_sections, content,
             )
-            record_review(review_log, idx, filepath.name, decision)
-
+            record_review(review_log, batch_idx, filepath.name, decision)
             if decision["verdict"] == "reject":
                 if should_abort_batch(review_log, args.continue_on_reject):
                     print("\n  REJECTED — aborting remaining batch "
@@ -906,12 +874,14 @@ def main():
                     break
                 else:
                     print("  REJECTED — continuing (--continue-on-reject)")
-        else:
-            # Loop completed without break — all sampled items reviewed
-            pass
 
-        # Record items that were not sampled
-        sampled_set = {r["index"] for r in review_log if r.get("sampled")}
+        # Rate limit between files
+        if i < len(sources) and not args.dry_run:
+            time.sleep(args.delay)
+
+    # Record items that were not sampled (§2.5 provenance)
+    if batch_mode and sample_indices:
+        sampled_set = {r["index"] for r in review_log}
         for idx in range(len(sources)):
             if idx not in sampled_set:
                 record_not_reviewed(review_log, idx, sources[idx].name)

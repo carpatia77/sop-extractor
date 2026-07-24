@@ -379,6 +379,45 @@ class TestCacheKey:
         assert vid1["source_path"] == str(root / "vid1" / "transcript.srt")
         assert vid2["source_path"] == str(root / "vid2" / "transcript.srt")
 
+    def test_review_reject_stops_compilation(self, tmp_path):
+        """§2.5 regression: reject must abort compilation of remaining items,
+        not just stop reviewing already-compiled output."""
+        root = tmp_path / "output"
+        for vid in ("vid1", "vid2", "vid3"):
+            (root / vid).mkdir(parents=True)
+            (root / vid / "transcript.txt").write_text(f"content-{vid}")
+
+        call_count = 0
+        def counting_agent(prompt, *a, **kw):
+            nonlocal call_count
+            call_count += 1
+            return "## SOPs\n\n### Name: SOP\nSteps:\n1. Do it\nWhen to use: always"
+
+        reject_on_first = {"call": 0}
+        def rejecting_operator(*a, **kw):
+            reject_on_first["call"] += 1
+            if reject_on_first["call"] == 1:
+                return {"verdict": "reject", "timestamp": "t", "editor": "test"}
+            return {"verdict": "approve", "timestamp": "t", "editor": "test"}
+
+        argv = sys.argv
+        try:
+            # review-sample-rate 1.0 = review ALL items, first one rejected
+            sys.argv = ["compile.py", str(root), "--batch",
+                        "--review-sample-rate", "1.0"]
+            with mock.patch("compile.call_agent", side_effect=counting_agent), \
+                 mock.patch("compile.prompt_operator", side_effect=rejecting_operator):
+                main()
+        finally:
+            sys.argv = argv
+
+        # Only vid1 should have been compiled (rejected on first review)
+        comp_dir = root / "compilation"
+        written = {p.stem for p in comp_dir.glob("*.json") if p.stem != "run"}
+        assert len(written) == 1, f"Expected 1 file compiled, got: {written}"
+        assert "vid1" in written.pop(), f"Expected vid1, got: {written}"
+        assert call_count == 1, f"Agent called {call_count} times, expected 1"
+
 
 # ---------------------------------------------------------------------------
 # Deduplication
