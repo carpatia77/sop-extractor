@@ -1,4 +1,4 @@
-# Release v1.5.0 — Fechamento do Loop de Proveniência
+# Release v2.2.0 — Fechamento do Loop de Proveniência
 
 **Data:** 2026-07-24
 **Tipo:** Feature release (minor)

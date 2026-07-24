@@ -1,4 +1,4 @@
-# Release v1.5.0 — Provenance Loop Closure
+# Release v2.2.0 — Provenance Loop Closure
 
 **Date:** 2026-07-24
 **Type:** Feature release (minor)
