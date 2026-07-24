@@ -8,10 +8,7 @@ Flow:
 """
 from __future__ import annotations
 
-import json
-import subprocess
 import sys
-from pathlib import Path
 
 
 def detect_input_type(source: str | None, playlist: str | None, urls: list[str] | None) -> str:
@@ -160,7 +157,7 @@ def recommend_approach(input_type: str, hardware: dict, video_count: int = 1, to
 def print_routing_decision(input_type: str, hardware: dict, recommendation: dict, estimates: dict | None = None):
     """Print the routing decision to stderr."""
     print(f"\n  {'='*60}", file=sys.stderr)
-    print(f"  ANÁLISE INTELIGENTE DE ROTEAMENTO", file=sys.stderr)
+    print("  ANÁLISE INTELIGENTE DE ROTEAMENTO", file=sys.stderr)
     print(f"  {'='*60}", file=sys.stderr)
 
     # Input type
@@ -183,7 +180,7 @@ def print_routing_decision(input_type: str, hardware: dict, recommendation: dict
 
     # Estimates if available
     if estimates:
-        print(f"\n  ⏱️  Tempo estimado:", file=sys.stderr)
+        print("\n  ⏱️  Tempo estimado:", file=sys.stderr)
         print(f"     Local:  ~{estimates['local_minutes']}", file=sys.stderr)
         print(f"     Colab:  ~{estimates['colab_minutes']}", file=sys.stderr)
         print(f"     Speedup: {estimates['speedup']:.0f}x mais rápido no Colab", file=sys.stderr)

@@ -3,21 +3,18 @@
 Tests every possible failure mode, boundary condition, and adversarial input.
 Run: python -m pytest tests/test_stress_ingestion.py -v --tb=short
 """
-import hashlib
 import json
 import os
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from sopx.cache import CacheManager
 from sopx.config import (
-    DEFAULTS,
     _deep_merge,
-    ensure_config,
     get,
     load_config,
     save_config,
@@ -31,7 +28,7 @@ from sopx.ingest.adapters import (
     _segments_to_srt,
     find_binary_safe,
 )
-from sopx.ingest.pipeline import IngestPipeline, IngestResult, check_dependencies
+from sopx.ingest.pipeline import IngestPipeline, check_dependencies
 
 
 # ============================================================================
@@ -312,8 +309,6 @@ class TestAdaptersStress:
     def test_ytdlp_get_info_timeout(self, mock_find):
         """yt-dlp subprocess timeout is handled."""
         import sopx.ingest.adapters as mod
-
-        original_run = mod.subprocess.run
 
         def timeout_run(*args, **kwargs):
             raise mod.subprocess.TimeoutExpired(cmd=args[0] if args else "", timeout=120)

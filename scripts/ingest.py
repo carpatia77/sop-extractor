@@ -8,7 +8,6 @@ Usage:
                               [--status] [--check]
 """
 import argparse
-import json
 import sys
 import os
 
@@ -243,7 +242,7 @@ def main(argv=None):
         # If local recommended, continue to local execution
         print("  ▶ Executando localmente...\n", file=sys.stderr)
 
-    from sopx.config import ensure_config, get
+    from sopx.config import ensure_config
     from sopx.cache import CacheManager
     from sopx.ingest.pipeline import IngestPipeline
 
@@ -290,20 +289,20 @@ def main(argv=None):
         return 1
 
     if result.cached:
-        print(f"  Cache hit — reutilizando output anterior")
+        print("  Cache hit — reutilizando output anterior")
     else:
-        print(f"  Ingestão concluída!")
+        print("  Ingestão concluída!")
 
     print(f"    output:    {result.output_dir}")
     print(f"    SRT:       {result.srt}")
     print(f"    texto:     {result.text}")
 
     # Post-ingestion prompt
-    print(f"\n  O que deseja fazer agora?\n")
-    print(f"    [1] Extrair SOPs e Princípios Fundamentais")
-    print(f"    [2] Gerar Mapa Semântico")
-    print(f"    [3] Gerar Concept Graph do conhecimento")
-    print(f"    [4] Manter apenas transcrições (fim)\n")
+    print("\n  O que deseja fazer agora?\n")
+    print("    [1] Extrair SOPs e Princípios Fundamentais")
+    print("    [2] Gerar Mapa Semântico")
+    print("    [3] Gerar Concept Graph do conhecimento")
+    print("    [4] Manter apenas transcrições (fim)\n")
 
     try:
         choice = input("  Escolha (1-4): ").strip()
@@ -313,10 +312,10 @@ def main(argv=None):
     if choice == "1":
         print(f"\n  → sopx scan {result.srt} --emit-prompt\n")
     elif choice == "2":
-        print(f"\n  → Mapa Semântico: funcionalidade em desenvolvimento (Fase 1)")
+        print("\n  → Mapa Semântico: funcionalidade em desenvolvimento (Fase 1)")
         print(f"    Transcrição disponível em: {result.text}\n")
     elif choice == "3":
-        print(f"\n  → Concept Graph: funcionalidade em desenvolvimento (Fase 1)")
+        print("\n  → Concept Graph: funcionalidade em desenvolvimento (Fase 1)")
         print(f"    Transcrição disponível em: {result.text}\n")
     else:
         print(f"\n  Transcrições salvas em: {result.output_dir}\n")

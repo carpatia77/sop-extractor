@@ -1,8 +1,6 @@
 """Tests for sopx.cache — Cache Manager."""
 import json
-from pathlib import Path
 
-import pytest
 
 from sopx.cache import CacheManager
 

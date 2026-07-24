@@ -273,16 +273,16 @@ def open_in_colab(notebook_path: Path) -> bool:
     colab_url = "https://colab.research.google.com/"
 
     print(f"\n  📓 Notebook gerado: {notebook_path}", file=sys.stderr)
-    print(f"\n  Para usar no Colab:", file=sys.stderr)
+    print("\n  Para usar no Colab:", file=sys.stderr)
     print(f"  1. Abra: {colab_url}", file=sys.stderr)
-    print(f"  2. Arquivo → Abrir → Upload → selecione o notebook", file=sys.stderr)
-    print(f"  3. Runtime → Change runtime type → T4 GPU", file=sys.stderr)
-    print(f"  4. Runtime → Run all", file=sys.stderr)
+    print("  2. Arquivo → Abrir → Upload → selecione o notebook", file=sys.stderr)
+    print("  3. Runtime → Change runtime type → T4 GPU", file=sys.stderr)
+    print("  4. Runtime → Run all", file=sys.stderr)
 
     try:
         webbrowser.open(colab_url)
-        print(f"\n  🌐 Colab aberto no navegador!", file=sys.stderr)
+        print("\n  🌐 Colab aberto no navegador!", file=sys.stderr)
         return True
     except Exception:
-        print(f"\n  ⚠ Não foi possível abrir o navegador automaticamente", file=sys.stderr)
+        print("\n  ⚠ Não foi possível abrir o navegador automaticamente", file=sys.stderr)
         return False

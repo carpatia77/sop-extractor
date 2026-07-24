@@ -21,7 +21,6 @@ def validate_output_dir(video_dir: Path) -> dict | None:
     Returns metadata dict if valid, None if invalid.
     """
     srt_file = video_dir / "transcript.srt"
-    text_file = video_dir / "full_text.txt"
     meta_file = video_dir / "metadata.json"
 
     if not srt_file.exists():
@@ -199,11 +198,11 @@ def print_import_summary(results: list[dict]):
     total_duration = sum(r.get("duration", 0) for r in results)
 
     print(f"\n  {'='*50}", file=sys.stderr)
-    print(f"  IMPORTAÇÃO CONCLUÍDA", file=sys.stderr)
+    print("  IMPORTAÇÃO CONCLUÍDA", file=sys.stderr)
     print(f"  {'='*50}", file=sys.stderr)
     print(f"  Vídeos:    {len(results)}", file=sys.stderr)
     print(f"  Palavras:  {total_words}", file=sys.stderr)
     print(f"  Duração:   {total_duration/60:.1f} min", file=sys.stderr)
     print(f"  {'='*50}", file=sys.stderr)
-    print(f"\n  Próximo passo:", file=sys.stderr)
-    print(f"  sopx scan output/<video_id>/transcript.srt --emit-prompt", file=sys.stderr)
+    print("\n  Próximo passo:", file=sys.stderr)
+    print("  sopx scan output/<video_id>/transcript.srt --emit-prompt", file=sys.stderr)
