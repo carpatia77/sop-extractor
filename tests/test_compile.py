@@ -25,6 +25,8 @@ from compile import (
     chunk_content,
     sha256_file,
     is_compiled,
+    cache_key,
+    _deduplicate,
 )
 
 
@@ -296,8 +298,86 @@ class TestCache:
     def test_compiled_after_write(self, tmp_path):
         out_dir = tmp_path / "compilation"
         out_dir.mkdir()
-        (out_dir / "video1.json").write_text("{}")
+        (out_dir / "video1.json").write_text('{"valid": true}')
         assert is_compiled("video1", tmp_path)
+
+    def test_corrupted_json_not_cached(self, tmp_path):
+        out_dir = tmp_path / "compilation"
+        out_dir.mkdir()
+        (out_dir / "broken.json").write_text("{corrupted json!!!")
+        assert not is_compiled("broken", tmp_path)
+        # Corrupted file should have been cleaned up
+        assert not (out_dir / "broken.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Cache key — collision safety
+# ---------------------------------------------------------------------------
+
+class TestCacheKey:
+    def test_flat_file(self, tmp_path):
+        f = tmp_path / "video.txt"
+        assert cache_key(f, tmp_path) == "video.txt"
+
+    def test_nested_file(self, tmp_path):
+        f = tmp_path / "output" / "abc123" / "transcript.srt"
+        assert cache_key(f, tmp_path) == "output__abc123__transcript.srt"
+
+    def test_deeply_nested(self, tmp_path):
+        f = tmp_path / "a" / "b" / "c" / "file.txt"
+        assert cache_key(f, tmp_path) == "a__b__c__file.txt"
+
+    def test_different_roots_same_name(self, tmp_path):
+        f1 = tmp_path / "vid1" / "transcript.srt"
+        f2 = tmp_path / "vid2" / "transcript.srt"
+        assert cache_key(f1, tmp_path) != cache_key(f2, tmp_path)
+
+    def test_single_file_not_batch(self, tmp_path):
+        f = tmp_path / "anything.txt"
+        key = cache_key(f, tmp_path)
+        assert key  # non-empty
+        assert "anything" in key
+
+
+# ---------------------------------------------------------------------------
+# Deduplication
+# ---------------------------------------------------------------------------
+
+class TestDeduplicate:
+    def test_dedup_sops(self):
+        items = [
+            {"name": "SOP A", "steps": []},
+            {"name": "SOP B", "steps": []},
+            {"name": "SOP A", "steps": []},  # duplicate
+        ]
+        result = _deduplicate(items, "sops")
+        assert len(result) == 2
+
+    def test_dedup_principles(self):
+        items = [
+            {"statement": "Rule 1", "epistemic_status": "certain"},
+            {"statement": "Rule 1", "epistemic_status": "certain"},  # duplicate
+            {"statement": "Rule 2", "epistemic_status": "probable"},
+        ]
+        result = _deduplicate(items, "principles")
+        assert len(result) == 2
+
+    def test_dedup_concepts(self):
+        items = [
+            {"term": "Sharpe", "definition": "A"},
+            {"term": "Sharpe", "definition": "B"},  # duplicate by term
+            {"term": "Sortino", "definition": "C"},
+        ]
+        result = _deduplicate(items, "concepts")
+        assert len(result) == 2
+
+    def test_dedup_references(self):
+        items = ["Black-Scholes", "CAPM", "Black-Scholes"]  # duplicate
+        result = _deduplicate(items, "references")
+        assert len(result) == 2
+
+    def test_empty_input(self):
+        assert _deduplicate([], "sops") == []
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +394,7 @@ class TestWriteCompilation:
         }
         write_compilation(
             sample_source, "prompt", "response text", sections,
-            tmp_path, "claude", "sonnet", "abc123hash",
+            tmp_path, "claude", "sonnet", "abc123hash", "test_video",
         )
         json_path = tmp_path / "compilation" / "test_video.json"
         assert json_path.exists()
@@ -330,7 +410,7 @@ class TestWriteCompilation:
         sections = {"sops": [], "principles": [], "concepts": [], "references": []}
         write_compilation(
             sample_source, "prompt", "response text", sections,
-            tmp_path, "claude", None, "hash123",
+            tmp_path, "claude", None, "hash123", "test_video",
         )
         md = (tmp_path / "compilation" / "test_video.md").read_text()
         assert "Agent**: claude" in md

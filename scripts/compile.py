@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -304,6 +305,33 @@ def _parse_references(text: str) -> list[str]:
     return refs
 
 
+def _deduplicate(items: list, kind: str) -> list:
+    """Remove duplicate entries across chunk boundaries."""
+    if kind == "references":
+        seen = set()
+        unique = []
+        for item in items:
+            normalized = item.strip().lower()
+            if normalized not in seen:
+                seen.add(normalized)
+                unique.append(item)
+        return unique
+    # For sops/principles/concepts: dedupe by name/term/statement
+    key_field = {"sops": "name", "principles": "statement", "concepts": "term"}.get(kind)
+    if not key_field:
+        return items
+    seen = set()
+    unique = []
+    for item in items:
+        k = item.get(key_field, "").strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            unique.append(item)
+        elif not k:
+            unique.append(item)
+    return unique
+
+
 # ---------------------------------------------------------------------------
 # Batch discovery — RECURSIVE (§2.1 blocker fix)
 # ---------------------------------------------------------------------------
@@ -331,7 +359,24 @@ def discover_sources(directory: Path) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Output writing with provenance (§2.2)
+# Safe cache/output key — uses relative path, not bare stem
+# ---------------------------------------------------------------------------
+
+def cache_key(filepath: Path, input_root: Path) -> str:
+    """Generate a collision-safe key from the file's relative path.
+
+    output/<id>/transcript.srt → "output__<id>__transcript"
+    flat_file.txt              → "flat_file"
+    """
+    try:
+        rel = filepath.relative_to(input_root)
+    except ValueError:
+        rel = filepath.name
+    return str(rel).replace("/", "__").replace(os.sep, "__")
+
+
+# ---------------------------------------------------------------------------
+# Output writing with provenance (§2.2) — atomic writes
 # ---------------------------------------------------------------------------
 
 def write_compilation(
@@ -343,35 +388,43 @@ def write_compilation(
     agent: str,
     model: str,
     source_hash: str,
+    key: str,
 ):
-    """Write compilation output for a single source file."""
-    stem = filepath.stem
+    """Write compilation output for a single source file.
+
+    Uses atomic writes (write to .tmp, then rename) to prevent corrupted
+    JSON from being treated as a cache hit on resume.
+    """
     out_dir = output_dir / "compilation"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc).isoformat()
+    data = {
+        "source": filepath.name,
+        "source_path": str(filepath),
+        "source_sha256": source_hash,
+        "compiled_at": now,
+        "agent": agent,
+        "model": model or "default",
+        "prompt_chars": len(prompt),
+        "response_chars": len(response),
+        "sops": sections["sops"],
+        "principles": sections["principles"],
+        "concepts": sections["concepts"],
+        "references": sections["references"],
+    }
 
-    # Structured JSON (§2.1)
-    json_path = out_dir / f"{stem}.json"
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "source": filepath.name,
-            "source_path": str(filepath),
-            "source_sha256": source_hash,
-            "compiled_at": now,
-            "agent": agent,
-            "model": model or "default",
-            "prompt_chars": len(prompt),
-            "response_chars": len(response),
-            "sops": sections["sops"],
-            "principles": sections["principles"],
-            "concepts": sections["concepts"],
-            "references": sections["references"],
-        }, f, indent=2, ensure_ascii=False)
+    # Atomic JSON write (write tmp, then rename)
+    json_path = out_dir / f"{key}.json"
+    tmp_json = out_dir / f"{key}.json.tmp"
+    with open(tmp_json, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    tmp_json.rename(json_path)
 
-    # Human-readable markdown
-    md_path = out_dir / f"{stem}.md"
-    with open(md_path, "w", encoding="utf-8") as f:
+    # Atomic markdown write
+    md_path = out_dir / f"{key}.md"
+    tmp_md = out_dir / f"{key}.md.tmp"
+    with open(tmp_md, "w", encoding="utf-8") as f:
         f.write(f"# Knowledge Compilation: {filepath.name}\n\n")
         f.write(f"**Source**: {filepath.name}\n")
         f.write(f"**Compiled**: {now}\n")
@@ -379,6 +432,7 @@ def write_compilation(
         f.write(f"**Model**: {model or 'default'}\n")
         f.write(f"**Source SHA-256**: {source_hash[:16]}...\n\n---\n\n")
         f.write(response)
+    tmp_md.rename(md_path)
 
     print(f"  Written: {json_path.name}")
 
@@ -449,10 +503,23 @@ def write_batch_summary(results: list, output_dir: Path):
 # Cache check for batch resume (§2.4)
 # ---------------------------------------------------------------------------
 
-def is_compiled(stem: str, output_dir: Path) -> bool:
-    """Check if a source was already compiled (cache sentinel)."""
-    json_path = output_dir / "compilation" / f"{stem}.json"
-    return json_path.exists()
+def is_compiled(key: str, output_dir: Path) -> bool:
+    """Check if a source was already compiled (cache sentinel).
+
+    Checks for valid JSON (not just file existence) to handle corrupted
+    writes from crashes.
+    """
+    json_path = output_dir / "compilation" / f"{key}.json"
+    if not json_path.exists():
+        return False
+    # Validate JSON is not corrupted (crash during write)
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            json.load(f)
+        return True
+    except (json.JSONDecodeError, OSError):
+        json_path.unlink(missing_ok=True)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -517,14 +584,15 @@ def main():
     results = []
     skipped = 0
     for i, filepath in enumerate(sources, 1):
-        stem = filepath.stem
+        # Collision-safe key from relative path
+        key = cache_key(filepath, input_path)
 
         # Cache check (§2.4)
-        if not args.dry_run and is_compiled(stem, output_dir):
+        if not args.dry_run and is_compiled(key, output_dir):
             skipped += 1
             continue
 
-        print(f"\n[{i}/{len(sources)}] {filepath.name}")
+        print(f"\n[{i}/{len(sources)}] {filepath.name}  [{key}]")
 
         # Read source
         try:
@@ -601,10 +669,14 @@ def main():
         # Combine chunks
         combined_response = "\n\n".join(all_response_parts)
 
-        # Write output (§2.1 + §2.2)
+        # Deduplicate SOPs/principles across chunk boundaries
+        for key_name in all_sections:
+            all_sections[key_name] = _deduplicate(all_sections[key_name], key_name)
+
+        # Write output (§2.1 + §2.2) with collision-safe key
         write_compilation(
             filepath, prompt, combined_response, all_sections,
-            output_dir, args.agent, args.model, source_hash,
+            output_dir, args.agent, args.model, source_hash, key,
         )
 
         print(f"  OK: {len(combined_response):,} chars, "
