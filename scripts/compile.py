@@ -2,25 +2,60 @@
 """Knowledge compilation pipeline — automated hand-off from scan to agent.
 
 Closes the hand-off gap: reads source files, generates a compilation prompt,
-calls claude CLI via subprocess, parses the response, and writes structured
+calls agent CLI via subprocess, parses the response, and writes structured
 output (SOPs, principles, concepts, cross-analysis).
 
 Usage:
     python scripts/compile.py <path>                    # single file
-    python scripts/compile.py <dir> --batch             # all .txt in dir
+    python scripts/compile.py <dir> --batch             # all .txt/.srt recursively
     python scripts/compile.py <path> --dry-run          # prompt preview only
     python scripts/compile.py <path> --model sonnet     # override model
+    python scripts/compile.py <path> --agent copilot    # use copilot instead
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import subprocess
 import sys
 import textwrap
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# SRT stripping
+# ---------------------------------------------------------------------------
+
+_SRT_CUE_RE = re.compile(
+    r"^\d+\s*\n"                              # cue number
+    r"\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*"  # timestamps
+    r"\d{2}:\d{2}:\d{2}[,.]\d{3}\s*\n",      # timestamps
+    re.MULTILINE,
+)
+
+
+def strip_srt(text: str) -> str:
+    """Strip SRT markup: cue numbers, timestamps, blank lines between cues."""
+    text = _SRT_CUE_RE.sub("", text)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return " ".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Source hash
+# ---------------------------------------------------------------------------
+
+def sha256_file(path: Path) -> str:
+    """SHA-256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Compilation prompt template
@@ -68,6 +103,32 @@ CONTENT:
 
 
 # ---------------------------------------------------------------------------
+# Chunking for large sources
+# ---------------------------------------------------------------------------
+
+MAX_CHARS_PER_CHUNK = 120_000  # ~30K tokens, safe for most context windows
+
+
+def chunk_content(content: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list[str]:
+    """Split content into chunks that fit within context window."""
+    if len(content) <= max_chars:
+        return [content]
+    chunks = []
+    sentences = re.split(r"(?<=[.!?])\s+", content)
+    current = ""
+    for sentence in sentences:
+        if len(current) + len(sentence) + 1 > max_chars:
+            if current:
+                chunks.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip() if current else sentence
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+# ---------------------------------------------------------------------------
 # Prompt generation
 # ---------------------------------------------------------------------------
 
@@ -83,15 +144,29 @@ def generate_prompt(filepath: Path, content: str) -> str:
 # Agent CLI invocation (subprocess)
 # ---------------------------------------------------------------------------
 
-def call_agent(prompt: str, model: str = None, timeout: int = 300) -> str:
-    """Call claude CLI via subprocess in print mode.
+AGENT_COMMANDS = {
+    "claude": ["claude", "-p", "--allowedTools", "Read"],
+    "copilot": ["copilot", "ask", "--stdio"],
+    "amp": ["amp", "-p"],
+}
 
-    Uses -p (print mode) for non-interactive output.
-    Restricts tools to Read only — agent can read but not write.
+
+def call_agent(
+    prompt: str,
+    agent: str = "claude",
+    model: str = None,
+    timeout: int = 300,
+) -> str:
+    """Call agent CLI via subprocess in print mode.
+
+    Raises RuntimeError on non-zero exit (never silently returns partial output).
     """
-    cmd = ["claude", "-p", "--allowedTools", "Read"]
+    if agent not in AGENT_COMMANDS:
+        raise ValueError(f"Unknown agent: {agent}. Supported: {list(AGENT_COMMANDS)}")
 
-    if model:
+    cmd = list(AGENT_COMMANDS[agent])
+
+    if agent == "claude" and model:
         cmd.extend(["--model", model])
 
     try:
@@ -104,59 +179,221 @@ def call_agent(prompt: str, model: str = None, timeout: int = 300) -> str:
         )
         if result.returncode != 0:
             stderr = result.stderr.strip()
-            if stderr:
-                print(f"  Agent error: {stderr[:200]}", file=sys.stderr)
-            return result.stdout.strip()
+            stdout = result.stdout.strip()
+            detail = stderr[:300] if stderr else stdout[:300]
+            raise RuntimeError(
+                f"Agent '{agent}' failed (exit {result.returncode}): {detail}"
+            )
         return result.stdout.strip()
     except subprocess.TimeoutExpired:
-        print(f"  Agent timed out after {timeout}s", file=sys.stderr)
-        return ""
+        raise RuntimeError(f"Agent '{agent}' timed out after {timeout}s")
     except FileNotFoundError:
-        print("  Error: 'claude' CLI not found. Install with: npm install -g @anthropic-ai/claude-code", file=sys.stderr)
-        return ""
+        raise RuntimeError(
+            f"Agent '{agent}' CLI not found. "
+            f"Install: npm install -g @anthropic-ai/claude-code"
+        )
 
 
 # ---------------------------------------------------------------------------
-# Output writing
+# Structured parse (§2.1)
 # ---------------------------------------------------------------------------
 
-def write_compilation(filepath: Path, prompt: str, response: str, output_dir: Path):
+def parse_compilation(text: str) -> dict:
+    """Parse agent output into structured sections."""
+    sections = {"sops": [], "principles": [], "concepts": [], "references": []}
+
+    # Split by ## headers
+    parts = re.split(r"^## ", text, flags=re.MULTILINE)
+
+    for part in parts:
+        header = part.split("\n", 1)[0].strip().lower()
+        body = part.split("\n", 1)[1] if "\n" in part else ""
+
+        if "sop" in header or "procedure" in header:
+            sections["sops"] = _parse_sops(body)
+        elif "principle" in header or "fundamental" in header:
+            sections["principles"] = _parse_principles(body)
+        elif "concept" in header or "key" in header:
+            sections["concepts"] = _parse_concepts(body)
+        elif "reference" in header or "named" in header:
+            sections["references"] = _parse_references(body)
+
+    return sections
+
+
+def _parse_sops(text: str) -> list[dict]:
+    sops = []
+    # Split on ### Name: or **Name**: patterns
+    blocks = re.split(r"\n#{2,3}\s+\*{0,2}Name\*{0,2}\s*:\s*|\n\*{0,2}Name\*{0,2}\s*:\s*", text)
+    for block in blocks[1:]:  # skip preamble
+        name_match = re.match(r"\s*(.+?)(?:\n|$)", block)
+        name = name_match.group(1).strip().rstrip("*") if name_match else ""
+
+        steps = []
+        for m in re.finditer(r"\d+\.\s+(.+?)(?=\n\d+\.|\n\*{0,2}When|\Z)", block, re.DOTALL):
+            steps.append(m.group(1).strip())
+
+        when = ""
+        when_match = re.search(r"\*{0,2}When to use\*{0,2}:\s*(.+?)(?=\n#{2,3}\s|\n\*{0,2}Name|\Z)", block, re.DOTALL)
+        if when_match:
+            when = when_match.group(1).strip()
+
+        if name:
+            sops.append({"name": name, "steps": steps, "when_to_use": when})
+    return sops
+
+
+def _parse_principles(text: str) -> list[dict]:
+    principles = []
+    blocks = re.split(r"\n-\s+\*{0,2}Statement\*{0,2}:", text)
+    for block in blocks[1:]:
+        statement = re.match(r"\s*(.+?)(?:\n|$)", block)
+        statement = statement.group(1).strip() if statement else ""
+
+        epistemic = ""
+        ep_match = re.search(r"\*{0,2}Epistemic status\*{0,2}:\s*(\w+)", block)
+        if ep_match:
+            epistemic = ep_match.group(1).strip()
+
+        evidence = ""
+        ev_match = re.search(r"\*{0,2}Evidence\*{0,2}:\s*(.+?)(?=\n-\s|\Z)", block, re.DOTALL)
+        if ev_match:
+            evidence = ev_match.group(1).strip()
+
+        if statement:
+            principles.append({
+                "statement": statement,
+                "epistemic_status": epistemic,
+                "evidence": evidence,
+            })
+    return principles
+
+
+def _parse_concepts(text: str) -> list[dict]:
+    concepts = []
+    blocks = re.split(r"\n-\s+\*{0,2}Term\*{0,2}:", text)
+    for block in blocks[1:]:
+        term = re.match(r"\s*(.+?)(?:\n|$)", block)
+        term = term.group(1).strip() if term else ""
+
+        definition = ""
+        def_match = re.search(r"\*{0,2}Definition\*{0,2}:\s*(.+?)(?:\n|$)", block)
+        if def_match:
+            definition = def_match.group(1).strip()
+
+        used_in = ""
+        ui_match = re.search(r"\*{0,2}Used in\*{0,2}:\s*(.+?)(?:\n|$)", block)
+        if ui_match:
+            used_in = ui_match.group(1).strip()
+
+        if term:
+            concepts.append({
+                "term": term,
+                "definition": definition,
+                "used_in": used_in,
+            })
+    return concepts
+
+
+def _parse_references(text: str) -> list[str]:
+    refs = []
+    for line in text.strip().splitlines():
+        line = line.strip().lstrip("-*").strip()
+        if line and not line.startswith("#"):
+            refs.append(line)
+    return refs
+
+
+# ---------------------------------------------------------------------------
+# Batch discovery — RECURSIVE (§2.1 blocker fix)
+# ---------------------------------------------------------------------------
+
+def discover_sources(directory: Path) -> list[Path]:
+    """Find all compilable source files recursively.
+
+    Searches subdirectories to handle ingestion output structure:
+      output/<video_id>/transcript.srt
+      output/<video_id>/full_text.txt
+    """
+    extensions = {".txt", ".srt", ".md"}
+    sources = []
+    for f in sorted(directory.rglob("*")):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in extensions:
+            continue
+        if f.name.startswith("_"):
+            continue
+        if "_metadata.json" in f.name:
+            continue
+        sources.append(f)
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# Output writing with provenance (§2.2)
+# ---------------------------------------------------------------------------
+
+def write_compilation(
+    filepath: Path,
+    prompt: str,
+    response: str,
+    sections: dict,
+    output_dir: Path,
+    agent: str,
+    model: str,
+    source_hash: str,
+):
     """Write compilation output for a single source file."""
     stem = filepath.stem
     out_dir = output_dir / "compilation"
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Structured JSON (§2.1)
+    json_path = out_dir / f"{stem}.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "source": filepath.name,
+            "source_path": str(filepath),
+            "source_sha256": source_hash,
+            "compiled_at": now,
+            "agent": agent,
+            "model": model or "default",
+            "prompt_chars": len(prompt),
+            "response_chars": len(response),
+            "sops": sections["sops"],
+            "principles": sections["principles"],
+            "concepts": sections["concepts"],
+            "references": sections["references"],
+        }, f, indent=2, ensure_ascii=False)
 
     # Human-readable markdown
     md_path = out_dir / f"{stem}.md"
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(f"# Knowledge Compilation: {filepath.name}\n\n")
         f.write(f"**Source**: {filepath.name}\n")
-        f.write(f"**Compiled**: {datetime.now(timezone.utc).isoformat()}\n\n---\n\n")
+        f.write(f"**Compiled**: {now}\n")
+        f.write(f"**Agent**: {agent}\n")
+        f.write(f"**Model**: {model or 'default'}\n")
+        f.write(f"**Source SHA-256**: {source_hash[:16]}...\n\n---\n\n")
         f.write(response)
-    print(f"  Written: {md_path}")
 
-    # Prompt + response as JSON (provenance)
-    meta_path = out_dir / f"{stem}.json"
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "source": filepath.name,
-            "source_path": str(filepath),
-            "compiled_at": datetime.now(timezone.utc).isoformat(),
-            "prompt_chars": len(prompt),
-            "response_chars": len(response),
-            "response_lines": response.count("\n") + 1,
-        }, f, indent=2)
+    print(f"  Written: {json_path.name}")
 
 
 def write_batch_summary(results: list, output_dir: Path):
-    """Write batch compilation summary."""
+    """Write batch compilation summary with provenance."""
     out_dir = output_dir / "compilation"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     total_files = len(results)
     successful = sum(1 for r in results if r["success"])
     failed = total_files - successful
-    total_chars = sum(r["response_chars"] for r in results)
+    total_chars = sum(r.get("response_chars", 0) for r in results)
+    total_principles = sum(r.get("principles_count", 0) for r in results)
+    total_sops = sum(r.get("sops_count", 0) for r in results)
 
     summary = f"""# Batch Compilation Summary
 
@@ -165,21 +402,28 @@ def write_batch_summary(results: list, output_dir: Path):
 **Successful**: {successful}
 **Failed**: {failed}
 **Total output**: {total_chars:,} characters
+**Total SOPs**: {total_sops}
+**Total principles**: {total_principles}
 
 ## Per-file results
 
-| File | Status | Output (chars) | Time (s) |
-|---|---|---|---|
+| File | Status | SOPs | Principles | Concepts | Chars | Time (s) |
+|---|---|---|---|---|---|---|
 """
     for r in results:
         status = "OK" if r["success"] else "FAILED"
-        summary += f"| {r['filename']} | {status} | {r['response_chars']:,} | {r['elapsed']:.1f} |\n"
+        sops = r.get("sops_count", 0)
+        prins = r.get("principles_count", 0)
+        cons = r.get("concepts_count", 0)
+        chars = r.get("response_chars", 0)
+        t = r.get("elapsed", 0)
+        summary += f"| {r['filename']} | {status} | {sops} | {prins} | {cons} | {chars:,} | {t:.1f} |\n"
 
     if failed > 0:
         summary += "\n## Failed files\n\n"
         for r in results:
             if not r["success"]:
-                summary += f"- {r['filename']}: {r.get('error', 'unknown')}\n"
+                summary += f"- `{r['filename']}`: {r.get('error', 'unknown')}\n"
 
     summary_path = out_dir / "batch_summary.md"
     with open(summary_path, "w", encoding="utf-8") as f:
@@ -195,25 +439,20 @@ def write_batch_summary(results: list, output_dir: Path):
             "successful": successful,
             "failed": failed,
             "total_chars": total_chars,
+            "total_sops": total_sops,
+            "total_principles": total_principles,
             "results": results,
         }, f, indent=2)
 
 
 # ---------------------------------------------------------------------------
-# Batch discovery
+# Cache check for batch resume (§2.4)
 # ---------------------------------------------------------------------------
 
-def discover_sources(directory: Path) -> list[Path]:
-    """Find all compilable source files in a directory."""
-    extensions = {".txt", ".srt", ".md"}
-    sources = []
-    for f in sorted(directory.iterdir()):
-        if f.is_file() and f.suffix.lower() in extensions and not f.name.startswith("_"):
-            # Skip metadata files
-            if "_metadata.json" in f.name:
-                continue
-            sources.append(f)
-    return sources
+def is_compiled(stem: str, output_dir: Path) -> bool:
+    """Check if a source was already compiled (cache sentinel)."""
+    json_path = output_dir / "compilation" / f"{stem}.json"
+    return json_path.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -226,19 +465,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
-              sopx compile transcript.txt           # single file
-              sopx compile transcripts/ --batch     # all files in dir
-              sopx compile transcript.txt --dry-run  # preview prompt only
-              sopx compile transcripts/ --model sonnet  # override model
+              sopx compile transcript.txt              # single file
+              sopx compile output/ --batch             # recursive batch
+              sopx compile transcript.txt --dry-run    # preview prompt only
+              sopx compile output/ --model sonnet      # override model
+              sopx compile output/ --agent copilot     # use copilot CLI
         """),
     )
     parser.add_argument("path", help="Source file or directory")
     parser.add_argument("--batch", action="store_true",
-                        help="Process all .txt/.srt/.md files in directory")
+                        help="Recursively process all .txt/.srt/.md files")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show prompt without calling agent")
     parser.add_argument("--model", default=None,
                         help="Override default model (e.g., sonnet, haiku)")
+    parser.add_argument("--agent", default="claude", choices=list(AGENT_COMMANDS),
+                        help="Agent CLI to use (default: claude)")
     parser.add_argument("--output", "-o", default=None,
                         help="Output directory (default: same as input)")
     parser.add_argument("--timeout", type=int, default=300,
@@ -273,7 +515,15 @@ def main():
 
     # Compile
     results = []
+    skipped = 0
     for i, filepath in enumerate(sources, 1):
+        stem = filepath.stem
+
+        # Cache check (§2.4)
+        if not args.dry_run and is_compiled(stem, output_dir):
+            skipped += 1
+            continue
+
         print(f"\n[{i}/{len(sources)}] {filepath.name}")
 
         # Read source
@@ -290,15 +540,56 @@ def main():
             })
             continue
 
-        # Generate prompt
-        prompt = generate_prompt(filepath, content)
-        print(f"  Prompt: {len(prompt):,} chars")
+        # Strip SRT if needed
+        if filepath.suffix.lower() == ".srt":
+            content = strip_srt(content)
+
+        # Source hash for provenance
+        source_hash = sha256_file(filepath)
+
+        # Chunk if too large
+        chunks = chunk_content(content)
+        if len(chunks) > 1:
+            print(f"  Large source: {len(content):,} chars → {len(chunks)} chunks")
+
+        all_response_parts = []
+        all_sections = {"sops": [], "principles": [], "concepts": [], "references": []}
+        total_elapsed = 0
+
+        for ci, chunk in enumerate(chunks):
+            if len(chunks) > 1:
+                print(f"  Chunk {ci+1}/{len(chunks)}: {len(chunk):,} chars")
+
+            prompt = generate_prompt(filepath, chunk)
+            print(f"  Prompt: {len(prompt):,} chars")
+
+            if args.dry_run:
+                print("\n--- DRY RUN: Prompt preview ---\n")
+                print(prompt[:2000])
+                if len(prompt) > 2000:
+                    print(f"\n... ({len(prompt) - 2000} more chars)")
+                all_response_parts.append("[dry-run]")
+                continue
+
+            # Call agent (§blocker #2: raises on error)
+            t0 = time.time()
+            response = call_agent(
+                prompt, agent=args.agent, model=args.model, timeout=args.timeout,
+            )
+            elapsed = time.time() - t0
+            total_elapsed += elapsed
+
+            if not response:
+                raise RuntimeError("Empty response from agent")
+
+            all_response_parts.append(response)
+
+            # Parse structured output (§2.1)
+            sections = parse_compilation(response)
+            for key in all_sections:
+                all_sections[key].extend(sections[key])
 
         if args.dry_run:
-            print("\n--- DRY RUN: Prompt preview ---\n")
-            print(prompt[:2000])
-            if len(prompt) > 2000:
-                print(f"\n... ({len(prompt) - 2000} more chars)")
             results.append({
                 "filename": filepath.name,
                 "success": True,
@@ -307,31 +598,28 @@ def main():
             })
             continue
 
-        # Call agent
-        t0 = time.time()
-        response = call_agent(prompt, model=args.model, timeout=args.timeout)
-        elapsed = time.time() - t0
+        # Combine chunks
+        combined_response = "\n\n".join(all_response_parts)
 
-        if not response:
-            print("  FAILED: empty response from agent")
-            results.append({
-                "filename": filepath.name,
-                "success": False,
-                "error": "empty agent response",
-                "response_chars": 0,
-                "elapsed": elapsed,
-            })
-            continue
+        # Write output (§2.1 + §2.2)
+        write_compilation(
+            filepath, prompt, combined_response, all_sections,
+            output_dir, args.agent, args.model, source_hash,
+        )
 
-        # Write output
-        write_compilation(filepath, prompt, response, output_dir)
+        print(f"  OK: {len(combined_response):,} chars, "
+              f"{len(all_sections['sops'])} SOPs, "
+              f"{len(all_sections['principles'])} principles, "
+              f"{total_elapsed:.1f}s")
 
-        print(f"  OK: {len(response):,} chars, {elapsed:.1f}s")
         results.append({
             "filename": filepath.name,
             "success": True,
-            "response_chars": len(response),
-            "elapsed": elapsed,
+            "response_chars": len(combined_response),
+            "sops_count": len(all_sections["sops"]),
+            "principles_count": len(all_sections["principles"]),
+            "concepts_count": len(all_sections["concepts"]),
+            "elapsed": total_elapsed,
         })
 
         # Rate limit between files
@@ -339,15 +627,18 @@ def main():
             time.sleep(args.delay)
 
     # Batch summary
-    if len(sources) > 1:
+    if skipped > 0:
+        print(f"\n  Skipped {skipped} already-compiled files (cache hit)")
+    if len(results) > 0:
         write_batch_summary(results, output_dir)
 
     # Final stats
     successful = sum(1 for r in results if r["success"])
-    total_chars = sum(r["response_chars"] for r in results)
-    total_time = sum(r["elapsed"] for r in results)
+    total_chars = sum(r.get("response_chars", 0) for r in results)
+    total_time = sum(r.get("elapsed", 0) for r in results)
     print(f"\n{'='*50}")
-    print(f"Done: {successful}/{len(sources)} files, {total_chars:,} chars, {total_time:.1f}s")
+    print(f"Done: {successful}/{len(results)} compiled, {skipped} cached, "
+          f"{total_chars:,} chars, {total_time:.1f}s")
 
 
 if __name__ == "__main__":
