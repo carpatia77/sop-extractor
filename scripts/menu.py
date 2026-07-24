@@ -57,6 +57,8 @@ CAPABILITIES = [
                "<URL_or_path> [--rescue-frames] [--model base]", False, False, None),
     Capability("12", "set-build", "Build set manifest from ingested metadata", "build_set_manifest.py",
                "<set_dir> --source <output_dir> [--dry-run]", False, False, None),
+    Capability("13", "compile", "Compile knowledge (SOPs/principles/concepts)", "compile.py",
+               "<path> [--batch] [--dry-run] [--model MODEL]", False, False, None),
 ]
 
 
