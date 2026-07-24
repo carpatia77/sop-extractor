@@ -89,6 +89,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`docs/PROVENANCE_LOOP_PLAN.md`** — implementation plan to close the
+  provenance loop between ingestion and the temporal evolution audit.
+  `output/<id>/metadata.json` already captures `upload_date`/`canonical_id`
+  from ingestion, but nothing feeds it into `set_manifest.json` — today
+  100% hand-typed, and the sole source of dates the Chronology Gate
+  (`validate_evolution_audit.py`) audits against. A hand-typed date means
+  the gate can validate against an unverified truth. Plan: a new
+  `scripts/build_set_manifest.py` auto-populates the manifest from ingested
+  metadata as a labeled, confirmable proposal (never silently authoritative,
+  never fabricated when a date is unavailable), with idempotent merge that
+  preserves human corrections. Doc-only in this change; implementation is
+  tracked as follow-up work.
+
 - **Architecture Reverse-Engineering Audit — "Blackhat Mode" (Item 11).** An
   opt-in fourth audit layer that reconstructs a demonstrated system's backend
   from its observable frontend, kept walled off from the anti-fabrication core:
