@@ -561,3 +561,17 @@ def test_build_multi_part_prompt_draft_omits_blackhat_when_no_candidacy():
     paths = ["/path/part1.srt", "/path/part2.srt"]
     prompt = build_multi_part_prompt_draft(results, paths)
     assert "merge_architecture_audit.py" not in prompt
+
+
+def test_build_prompt_draft_with_source_date():
+    result = {"recommendation": "text", "confidence": "high"}
+    prompt = build_prompt_draft(result, "/path/to/book.pdf", source_date="2019-03-12")
+    assert "SOURCE_DATE = 2019-03-12" in prompt
+    assert "medido da ingestão" in prompt
+
+
+def test_build_prompt_draft_without_source_date():
+    result = {"recommendation": "text", "confidence": "high"}
+    prompt = build_prompt_draft(result, "/path/to/book.pdf")
+    assert "SOURCE_DATE = <preencher>" in prompt
+    assert "não detectado" in prompt

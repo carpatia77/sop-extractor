@@ -55,6 +55,8 @@ CAPABILITIES = [
                "<path>", False, False, None),
     Capability("11", "ingest", "Ingest video/URL → transcript + text", "ingest.py",
                "<URL_or_path> [--rescue-frames] [--model base]", False, False, None),
+    Capability("12", "set-build", "Build set manifest from ingested metadata", "build_set_manifest.py",
+               "<set_dir> --source <output_dir> [--dry-run]", False, False, None),
 ]
 
 
