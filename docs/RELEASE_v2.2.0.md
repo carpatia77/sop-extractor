@@ -156,6 +156,6 @@ Ambos corrigidos antes do merge.
 
 ## Próximos Passos
 
-- v1.6.0: Batch channel ingestion (processar playlists inteiras)
-- v1.7.0: Frame extraction com VLM (análise visual)
-- v2.0.0: Teach Mode (Fase 1)
+- v2.3.0: Batch channel ingestion (processar playlists inteiras)
+- v2.4.0: Frame extraction com VLM (análise visual)
+- v3.0.0: Teach Mode (Fase 1)
