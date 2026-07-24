@@ -189,6 +189,17 @@ Content: {content}
   - Every SOP must have ≥2 steps
   - Every concept must have a definition
   - Cross-video: flag contradictions between videos (same channel, different claims)
+- **Mandatory sampling review gate (`--batch` only, hard MVP requirement — see
+  `SOPX_COMPILE_PLAN_REVIEW.md` §2.5).** Automated gates above only catch the
+  failure modes they were built for (ungrounded claims, cross-video
+  contradictions) — not a claim that's grounded in real source text but
+  *misread*. Risk-weighted sample (first item + low-confidence items +
+  `re_candidate` items + longest sources) pauses the batch for operator
+  approve/reject/edit before continuing; reject aborts the remaining batch by
+  default. Default rate `max(1, ceil(10% of batch))` via
+  `--review-sample-rate`; disabling requires the explicit
+  `--review-sample-rate 0`, never a default. The review decision itself is
+  recorded in `run.json` (sampled?, by whom, when, verdict).
 
 ### Phase 6: Output
 
@@ -231,6 +242,15 @@ sopx compile output/quantguild_transcripts/LX4Ugaxx9n0.txt --dry-run
 
 # Cross-analysis only (after batch compile)
 sopx compile output/quantguild/ --cross-analysis
+
+# Batch with a custom sampling rate for the mandatory review gate (default: 10%)
+sopx compile output/quantguild/ --batch --review-sample-rate 0.2
+
+# Batch: don't abort the run when a sampled item is rejected (opt-in override)
+sopx compile output/quantguild/ --batch --continue-on-reject
+
+# Batch with review disabled — must be explicit, never the default
+sopx compile output/quantguild/ --batch --review-sample-rate 0
 ```
 
 ## 5. Implementation Order
@@ -279,6 +299,7 @@ sopx compile output/quantguild/ --cross-analysis
 | LLM output format inconsistency | High | Parser with retry + fallback to manual review prompt |
 | Cost runaway on large batches | Medium | Budget caps per batch, cost estimation before run |
 | Hallucinated SOPs/principles | High | Coherence audit + concept grounding check |
+| Grounded-but-misread claim (real source words, wrong meaning attributed) — automated gates cannot catch this class; already happened once in this codebase (the "1.6GB"/"1,600 snapshots/sec" incident behind `run_report.json`) | High | Mandatory risk-weighted sampling review gate in batch mode (§Phase 5, `SOPX_COMPILE_PLAN_REVIEW.md` §2.5) — reject aborts by default, review recorded in provenance |
 | Source > context window | Medium | Auto-chunk at 40K tokens, cross-reference chunks |
 | API key exposure | Critical | Never in logs, env vars only, config.yaml with 0600 perms |
 
@@ -318,10 +339,12 @@ sopx/compile/
 ├── prompt_gen.py       # Generate compilation prompts
 ├── chunker.py          # Split large sources for context window
 ├── validator.py        # Post-compilation validation
+├── review_gate.py       # Mandatory batch sampling review (§Phase 5 / REVIEW §2.5)
 └── output.py           # Write structured output files
 
 tests/test_compile.py   # Unit tests
 tests/test_compile_e2e.py  # End-to-end with mock LLM
+tests/test_review_gate.py  # Sampling selection, reject-aborts, provenance recording
 ```
 
 ## Appendix B: Config Additions
