@@ -36,12 +36,26 @@ try:
         REVIEW_FLOOR as _REVIEW_FLOOR,
     )
     from scripts.domain_synonyms import load_domain_synonyms, normalize_text
+    from scripts.review_gate import (
+        compute_sample_indices,
+        prompt_operator,
+        record_review,
+        record_not_reviewed,
+        should_abort_batch,
+    )
 except ImportError:
     from verify_concept_presence import (
         score_principle as _score_principle,
         REVIEW_FLOOR as _REVIEW_FLOOR,
     )
     from domain_synonyms import load_domain_synonyms, normalize_text
+    from review_gate import (
+        compute_sample_indices,
+        prompt_operator,
+        record_review,
+        record_not_reviewed,
+        should_abort_batch,
+    )
 
 # ---------------------------------------------------------------------------
 # SRT stripping
@@ -537,7 +551,7 @@ def write_compilation(
     print(f"  Written: {json_path.name}")
 
 
-def write_batch_summary(results: list, output_dir: Path):
+def write_batch_summary(results: list, output_dir: Path, review_log: list | None = None):
     """Write batch compilation summary with provenance."""
     out_dir = output_dir / "compilation"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -589,18 +603,21 @@ def write_batch_summary(results: list, output_dir: Path):
 
     # Provenance
     run_path = out_dir / "run.json"
+    provenance = {
+        "compiled_at": datetime.now(timezone.utc).isoformat(),
+        "total_files": total_files,
+        "successful": successful,
+        "failed": failed,
+        "total_chars": total_chars,
+        "total_sops": total_sops,
+        "total_principles": total_principles,
+        "total_grounding_flagged": total_grounding_flagged,
+        "results": results,
+    }
+    if review_log is not None:
+        provenance["review_gate"] = review_log
     with open(run_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "compiled_at": datetime.now(timezone.utc).isoformat(),
-            "total_files": total_files,
-            "successful": successful,
-            "failed": failed,
-            "total_chars": total_chars,
-            "total_sops": total_sops,
-            "total_principles": total_principles,
-            "total_grounding_flagged": total_grounding_flagged,
-            "results": results,
-        }, f, indent=2)
+        json.dump(provenance, f, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -666,6 +683,10 @@ def main():
                         help=f"Minimum grounding score to keep a principle (default: {_REVIEW_FLOOR})")
     parser.add_argument("--domain", default=None,
                         help="Domain ID for synonym expansion during grounding check")
+    parser.add_argument("--review-sample-rate", type=float, default=0.10,
+                        help="Fraction of batch items to sample for human review (default: 0.10). Set to 0 to disable.")
+    parser.add_argument("--continue-on-reject", action="store_true",
+                        help="Continue batch after a sampled item is rejected (default: abort)")
 
     args = parser.parse_args()
     input_path = Path(args.path)
@@ -683,7 +704,8 @@ def main():
         output_dir = input_path.parent
 
     # Discover sources
-    if args.batch or input_path.is_dir():
+    batch_mode = args.batch or input_path.is_dir()
+    if batch_mode:
         sources = discover_sources(input_path)
         if not sources:
             print(f"No compilable files found in {input_path}", file=sys.stderr)
@@ -694,6 +716,7 @@ def main():
 
     # Compile
     results = []
+    review_log = []
     skipped = 0
     for i, filepath in enumerate(sources, 1):
         # Collision-safe key from relative path
@@ -831,11 +854,73 @@ def main():
         if i < len(sources) and not args.dry_run:
             time.sleep(args.delay)
 
+    # ---------------------------------------------------------------------------
+    # Batch review gate (§2.5) — risk-weighted sampling
+    # ---------------------------------------------------------------------------
+    if batch_mode and not args.dry_run and args.review_sample_rate > 0:
+        sample_indices = compute_sample_indices(
+            len(sources), sample_rate=args.review_sample_rate,
+        )
+        print(f"\n{'='*50}")
+        print(f"Review gate: {len(sample_indices)}/{len(sources)} items sampled "
+              f"(rate={args.review_sample_rate:.0%})")
+
+        for idx in sample_indices:
+            filepath = sources[idx]
+            key = cache_key(filepath, input_path)
+
+            # Read the compiled output
+            json_path = output_dir / "compilation" / f"{key}.json"
+            if not json_path.exists():
+                continue
+            try:
+                with open(json_path, encoding="utf-8") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            sections = {
+                "sops": data.get("sops", []),
+                "principles": data.get("principles", []),
+                "concepts": data.get("concepts", []),
+                "references": data.get("references", []),
+            }
+
+            # Read source for excerpt
+            try:
+                src_content = filepath.read_text(encoding="utf-8")
+                if filepath.suffix.lower() == ".srt":
+                    src_content = strip_srt(src_content)
+            except Exception:
+                src_content = ""
+
+            decision = prompt_operator(
+                idx, len(sources), filepath.name, sections, src_content,
+            )
+            record_review(review_log, idx, filepath.name, decision)
+
+            if decision["verdict"] == "reject":
+                if should_abort_batch(review_log, args.continue_on_reject):
+                    print("\n  REJECTED — aborting remaining batch "
+                          "(use --continue-on-reject to override)")
+                    break
+                else:
+                    print("  REJECTED — continuing (--continue-on-reject)")
+        else:
+            # Loop completed without break — all sampled items reviewed
+            pass
+
+        # Record items that were not sampled
+        sampled_set = {r["index"] for r in review_log if r.get("sampled")}
+        for idx in range(len(sources)):
+            if idx not in sampled_set:
+                record_not_reviewed(review_log, idx, sources[idx].name)
+
     # Batch summary
     if skipped > 0:
         print(f"\n  Skipped {skipped} already-compiled files (cache hit)")
     if len(results) > 0:
-        write_batch_summary(results, output_dir)
+        write_batch_summary(results, output_dir, review_log=review_log)
 
     # Final stats
     successful = sum(1 for r in results if r["success"])

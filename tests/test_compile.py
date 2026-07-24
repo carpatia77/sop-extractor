@@ -363,7 +363,9 @@ class TestCacheKey:
         argv = sys.argv
         try:
             sys.argv = ["compile.py", str(root), "--batch"]
-            with mock.patch("compile.call_agent", side_effect=fake_call_agent):
+            fake_decision = {"verdict": "approve", "timestamp": "t", "editor": "test"}
+            with mock.patch("compile.call_agent", side_effect=fake_call_agent), \
+                 mock.patch("compile.prompt_operator", return_value=fake_decision):
                 main()
         finally:
             sys.argv = argv
