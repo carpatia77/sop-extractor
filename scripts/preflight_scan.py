@@ -16,9 +16,11 @@ or the source isn't a PDF.
 """
 
 import argparse
+import json
 import os
 import re
 import sys
+from pathlib import Path
 
 try:
     from format_registry import SCANNED_TEXT_EXTENSIONS, SCANNED_SUBTITLE_EXTENSIONS
@@ -689,6 +691,18 @@ if __name__ == "__main__":
         print_report(out, path)
 
         if args.emit_prompt:
+            # Try to read source_date from metadata.json
+            source_date = None
+            source_dir = Path(path).parent
+            meta_path = source_dir / "metadata.json"
+            if meta_path.exists():
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    source_date = meta.get("upload_date")
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
             print(f"\n{'─'*50}")
             print("  PROMPT DE EXTRAÇÃO — revise e aprove (S/N)")
             print(f"{'─'*50}\n")
@@ -696,6 +710,7 @@ if __name__ == "__main__":
                 out, path,
                 depth=args.depth, skill_name=args.skill_name,
                 skills_home=args.skills_home, lineage=args.lineage,
+                source_date=source_date,
             ))
     else:
         batch = scan_batch(args.source_path, sample_n=args.sample_n)

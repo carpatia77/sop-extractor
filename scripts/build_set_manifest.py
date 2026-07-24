@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -167,56 +168,31 @@ def build_manifest(
     return manifest
 
 
-def validate_manifest_data(manifest: dict) -> list[str]:
-    """Validate manifest data structure (same rules as validate_manifest.py).
+def validate_manifest_data(manifest: dict, manifest_path: str | Path | None = None) -> list[str]:
+    """Validate manifest using the real validate_manifest.py validator.
 
-    Returns list of error strings. Empty list means valid.
+    Writes manifest to a temp file if manifest_path not provided,
+    then calls the real validator to ensure consistent rules.
     """
-    errors = []
+    import tempfile
+    from scripts.validate_manifest import validate_manifest
 
-    if not isinstance(manifest, dict):
-        return ["Root must be a JSON object."]
-
-    # Check set_id
-    if "set_id" not in manifest or not isinstance(manifest["set_id"], str):
-        errors.append("'set_id' is required and must be a string.")
-
-    # Check members
-    members = manifest.get("members")
-    if not isinstance(members, list) or len(members) == 0:
-        errors.append("'members' is required and must be a non-empty array.")
-        return errors
-
-    seen_sources = set()
-    for i, m in enumerate(members):
-        if not isinstance(m, dict):
-            errors.append(f"Member at index {i} must be an object.")
-            continue
-
-        # source_id
-        sid = m.get("source_id")
-        if not isinstance(sid, str) or not re.match(r"^[a-z0-9][a-z0-9_-]*$", sid):
-            errors.append(
-                f"Member at index {i} has invalid 'source_id': '{sid}'. "
-                f"Must match ^[a-z0-9][a-z0-9_-]*$"
-            )
-        else:
-            if sid in seen_sources:
-                errors.append(f"Duplicate 'source_id' found: '{sid}'")
-            seen_sources.add(sid)
-
-        # date (must be valid format if present)
-        date_val = m.get("date")
-        if date_val and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(date_val)):
-            errors.append(
-                f"Member '{sid or i}' has invalid 'date': '{date_val}'. "
-                f"Must be YYYY-MM-DD."
-            )
-
-        # skill_path
-        skill_path = m.get("skill_path")
-        if not isinstance(skill_path, str) or not skill_path.strip():
-            errors.append(f"Member '{sid or i}' is missing 'skill_path' string.")
+    # Write manifest to temp file for validation
+    if manifest_path is None:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+            temp_path = f.name
+        try:
+            errors = validate_manifest(temp_path)
+        finally:
+            os.unlink(temp_path)
+    else:
+        # Write to the actual path for validation
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+        errors = validate_manifest(str(manifest_path))
 
     return errors
 

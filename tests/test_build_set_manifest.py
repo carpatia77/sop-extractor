@@ -161,10 +161,10 @@ class TestBuildManifest:
             entries=[{"output_dir": str(out1)}],
         )
 
-        # Date is empty, which is allowed (not None, just empty string)
-        # The validate_manifest.py would reject this, but our validator is lenient
-        # This is intentional - the manifest can be incomplete, fail-fast happens at validate time
-        validate_manifest_data(manifest)  # Should not error on empty date
+        # Real validator rejects empty dates — fail-fast as per plan
+        errors = validate_manifest_data(manifest)
+        assert len(errors) > 0
+        assert any("date" in e.lower() for e in errors)
 
     def test_merge_preserves_manual_dates(self, tmp_path):
         out1 = tmp_path / "vid1"
@@ -227,18 +227,25 @@ class TestBuildManifest:
 
 
 class TestValidateManifestData:
-    def test_valid_manifest(self):
+    def test_valid_manifest(self, tmp_path):
+        # Create skill directory for validation
+        skill_dir = tmp_path / "skills" / "vid001"
+        skill_dir.mkdir(parents=True)
+
         manifest = {
             "set_id": "test",
             "members": [
                 {
                     "source_id": "vid001",
                     "date": "2024-01-15",
-                    "skill_path": "../skills/vid001",
+                    "skill_path": "skills/vid001",  # relative to manifest dir
                 }
             ],
         }
-        assert validate_manifest_data(manifest) == []
+        # Write manifest to tmp_path so relative paths resolve correctly
+        manifest_path = tmp_path / "set_manifest.json"
+        errors = validate_manifest_data(manifest, manifest_path)
+        assert errors == []
 
     def test_invalid_source_id(self):
         manifest = {
@@ -293,8 +300,8 @@ class TestValidateManifestData:
         assert len(errors) > 0
         assert any("skill_path" in e for e in errors)
 
-    def test_empty_date_allowed(self):
-        """Empty date is allowed in build output (fail-fast at validate time)."""
+    def test_empty_date_rejected_by_real_validator(self):
+        """Empty date is rejected by real validator — fail-fast as per plan."""
         manifest = {
             "set_id": "test",
             "members": [
@@ -305,9 +312,10 @@ class TestValidateManifestData:
                 }
             ],
         }
-        # Our validator allows empty dates (the official validate_manifest.py will reject)
+        # Real validator rejects empty dates — this is the fail-fast behavior
         errors = validate_manifest_data(manifest)
-        assert errors == []  # No errors from our validator
+        assert len(errors) > 0
+        assert any("date" in e.lower() for e in errors)
 
 
 # Need re for some tests
