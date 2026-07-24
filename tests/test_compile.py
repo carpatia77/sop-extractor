@@ -28,6 +28,7 @@ from compile import (
     cache_key,
     _deduplicate,
     main,
+    grounding_check,
 )
 
 
@@ -508,6 +509,102 @@ class TestCallAgent:
 
 
 # ---------------------------------------------------------------------------
+# Grounding check (§2.3)
+# ---------------------------------------------------------------------------
+
+class TestGroundingCheck:
+    def test_grounded_principle_kept(self):
+        """A principle whose terms appear in the source is kept."""
+        source = "Volatility drag compounds against you. Higher returns require higher risk."
+        principles = [
+            {"statement": "Higher returns require higher risk", "epistemic_status": "certain"},
+        ]
+        kept, flagged = grounding_check(principles, source, floor=0.34)
+        assert len(kept) == 1
+        assert len(flagged) == 0
+        assert kept[0]["_grounding_score"] >= 0.34
+
+    def test_ungrounded_principle_flagged(self):
+        """A principle with terms absent from source is flagged."""
+        source = "The weather is sunny today."
+        principles = [
+            {"statement": "Quantum entanglement governs portfolio correlation",
+             "epistemic_status": "speculative"},
+        ]
+        kept, flagged = grounding_check(principles, source, floor=0.34)
+        assert len(kept) == 0
+        assert len(flagged) == 1
+        assert flagged[0]["_grounding_score"] < 0.34
+
+    def test_mixed_principles(self):
+        """Mix of grounded and ungrounded principles splits correctly."""
+        source = "Volatility drag compounds against you. Nobody knows the outcome."
+        principles = [
+            {"statement": "Volatility drag compounds against you", "epistemic_status": "certain"},
+            {"statement": "Quantum teleportation enables instant settlement",
+             "epistemic_status": "speculative"},
+        ]
+        kept, flagged = grounding_check(principles, source, floor=0.34)
+        assert len(kept) == 1
+        assert len(flagged) == 1
+        assert "volatility" in kept[0]["statement"].lower()
+
+    def test_empty_principles(self):
+        """No principles returns empty lists."""
+        kept, flagged = grounding_check([], "any source", floor=0.34)
+        assert kept == []
+        assert flagged == []
+
+    def test_empty_statement_kept(self):
+        """Principle with empty statement is kept (nothing to check)."""
+        principles = [{"statement": "", "epistemic_status": ""}]
+        kept, flagged = grounding_check(principles, "source text", floor=0.34)
+        assert len(kept) == 1
+        assert len(flagged) == 0
+
+    def test_score_metadata_attached(self):
+        """Kept principles have _grounding_score and _absent_terms metadata."""
+        source = "Risk management is essential for survival."
+        principles = [
+            {"statement": "Risk management is essential", "epistemic_status": "certain"},
+        ]
+        kept, _ = grounding_check(principles, source, floor=0.34)
+        assert "_grounding_score" in kept[0]
+        assert "_absent_terms" in kept[0]
+        assert isinstance(kept[0]["_absent_terms"], list)
+
+    def test_custom_floor(self):
+        """Custom floor changes which principles are kept."""
+        source = "A B C D E"
+        principles = [
+            {"statement": "A B C", "epistemic_status": "certain"},  # ~100% with stopwords
+        ]
+        # Very high floor — should flag
+        kept_high, flagged_high = grounding_check(principles, source, floor=0.99)
+        # Very low floor — should keep
+        kept_low, flagged_low = grounding_check(principles, source, floor=0.01)
+        assert len(flagged_low) == 0
+
+    def test_synonym_expansion(self):
+        """Synonym map can help match terms."""
+        source = "The portfolio has significant volatility."
+        principles = [
+            {"statement": "The portfolio has significant variance", "epistemic_status": "certain"},
+        ]
+        # Without synonyms: "variance" absent
+        kept_no, flagged_no = grounding_check(principles, source, floor=0.34)
+        # With synonyms mapping variance -> volatility
+        synonym_map = {"variance": "volatility"}
+        kept_yes, flagged_yes = grounding_check(
+            principles, source, floor=0.34, synonym_map=synonym_map,
+        )
+        # Synonym should improve the score
+        score_no = kept_no[0]["_grounding_score"] if kept_no else flagged_no[0]["_grounding_score"]
+        score_yes = kept_yes[0]["_grounding_score"] if kept_yes else flagged_yes[0]["_grounding_score"]
+        assert score_yes >= score_no
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -529,3 +626,15 @@ class TestCLI:
             "python3 scripts/compile.py /nonexistent/path.txt 2>&1"
         ).read()
         assert "not found" in result.lower() or "error" in result.lower()
+
+    def test_grounding_check_in_help(self):
+        result = os.popen("python3 scripts/compile.py --help").read()
+        assert "--grounding-check" in result
+        assert "--grounding-floor" in result
+        assert "--domain" in result
+
+    def test_no_grounding_check_flag(self, sample_source):
+        result = os.popen(
+            f"python3 scripts/compile.py {sample_source} --dry-run --no-grounding-check 2>&1"
+        ).read()
+        assert "DRY RUN" in result

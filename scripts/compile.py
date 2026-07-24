@@ -27,6 +27,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
+# Grounding check — reuse verify_concept_presence functions (§2.3)
+# ---------------------------------------------------------------------------
+
+try:
+    from scripts.verify_concept_presence import (
+        score_principle as _score_principle,
+        REVIEW_FLOOR as _REVIEW_FLOOR,
+    )
+    from scripts.domain_synonyms import load_domain_synonyms, normalize_text
+except ImportError:
+    from verify_concept_presence import (
+        score_principle as _score_principle,
+        REVIEW_FLOOR as _REVIEW_FLOOR,
+    )
+    from domain_synonyms import load_domain_synonyms, normalize_text
+
+# ---------------------------------------------------------------------------
 # SRT stripping
 # ---------------------------------------------------------------------------
 
@@ -333,6 +350,52 @@ def _deduplicate(items: list, kind: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Grounding check (§2.3) — anti-hallucination gate
+# ---------------------------------------------------------------------------
+
+def grounding_check(
+    principles: list[dict],
+    source_content: str,
+    floor: float = _REVIEW_FLOOR,
+    synonym_map: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Score each principle against the source corpus and filter ungrounded ones.
+
+    Returns (kept, flagged) where:
+      - kept: principles with score >= floor (written to output)
+      - flagged: principles with score < floor (logged, not written)
+
+    Reuses salient_terms + score_principle from verify_concept_presence.py.
+    """
+    if not principles:
+        return [], []
+
+    # Build corpus from source content (lowercased, hyphen-split)
+    corpus = source_content.lower()
+    corpus = re.sub(r'[-/]', ' ', corpus)
+    if synonym_map:
+        corpus = normalize_text(corpus, synonym_map)
+
+    kept = []
+    flagged = []
+    for p in principles:
+        statement = p.get("statement", "")
+        if not statement:
+            kept.append(p)
+            continue
+
+        r = _score_principle(statement, corpus, synonym_map)
+        p_with_meta = {**p, "_grounding_score": r["score"], "_absent_terms": r["absent"]}
+
+        if r["score"] < floor:
+            flagged.append(p_with_meta)
+        else:
+            kept.append(p_with_meta)
+
+    return kept, flagged
+
+
+# ---------------------------------------------------------------------------
 # Batch discovery — RECURSIVE (§2.1 blocker fix)
 # ---------------------------------------------------------------------------
 
@@ -448,6 +511,7 @@ def write_batch_summary(results: list, output_dir: Path):
     total_chars = sum(r.get("response_chars", 0) for r in results)
     total_principles = sum(r.get("principles_count", 0) for r in results)
     total_sops = sum(r.get("sops_count", 0) for r in results)
+    total_grounding_flagged = sum(r.get("grounding_flagged", 0) for r in results)
 
     summary = f"""# Batch Compilation Summary
 
@@ -458,20 +522,22 @@ def write_batch_summary(results: list, output_dir: Path):
 **Total output**: {total_chars:,} characters
 **Total SOPs**: {total_sops}
 **Total principles**: {total_principles}
+**Grounding flagged**: {total_grounding_flagged} (dropped, score < floor)
 
 ## Per-file results
 
-| File | Status | SOPs | Principles | Concepts | Chars | Time (s) |
-|---|---|---|---|---|---|---|
+| File | Status | SOPs | Principles | Concepts | Flagged | Chars | Time (s) |
+|---|---|---|---|---|---|---|---|
 """
     for r in results:
         status = "OK" if r["success"] else "FAILED"
         sops = r.get("sops_count", 0)
         prins = r.get("principles_count", 0)
         cons = r.get("concepts_count", 0)
+        flagged = r.get("grounding_flagged", 0)
         chars = r.get("response_chars", 0)
         t = r.get("elapsed", 0)
-        summary += f"| {r['filename']} | {status} | {sops} | {prins} | {cons} | {chars:,} | {t:.1f} |\n"
+        summary += f"| {r['filename']} | {status} | {sops} | {prins} | {cons} | {flagged} | {chars:,} | {t:.1f} |\n"
 
     if failed > 0:
         summary += "\n## Failed files\n\n"
@@ -495,6 +561,7 @@ def write_batch_summary(results: list, output_dir: Path):
             "total_chars": total_chars,
             "total_sops": total_sops,
             "total_principles": total_principles,
+            "total_grounding_flagged": total_grounding_flagged,
             "results": results,
         }, f, indent=2)
 
@@ -554,6 +621,14 @@ def main():
                         help="Agent timeout in seconds (default: 300)")
     parser.add_argument("--delay", type=float, default=2.0,
                         help="Delay between files in batch mode (default: 2.0s)")
+    parser.add_argument("--grounding-check", action="store_true", default=True,
+                        help="Run grounding check on principles before writing (default: on)")
+    parser.add_argument("--no-grounding-check", dest="grounding_check", action="store_false",
+                        help="Disable grounding check (principles written as-is)")
+    parser.add_argument("--grounding-floor", type=float, default=_REVIEW_FLOOR,
+                        help=f"Minimum grounding score to keep a principle (default: {_REVIEW_FLOOR})")
+    parser.add_argument("--domain", default=None,
+                        help="Domain ID for synonym expansion during grounding check")
 
     args = parser.parse_args()
     input_path = Path(args.path)
@@ -673,6 +748,24 @@ def main():
         for key_name in all_sections:
             all_sections[key_name] = _deduplicate(all_sections[key_name], key_name)
 
+        # Grounding check (§2.3) — anti-hallucination gate
+        grounding_flagged = []
+        if args.grounding_check and all_sections["principles"]:
+            synonym_map = load_domain_synonyms(args.domain) if args.domain else None
+            kept, flagged = grounding_check(
+                all_sections["principles"], content,
+                floor=args.grounding_floor, synonym_map=synonym_map,
+            )
+            if flagged:
+                print(f"  Grounding: {len(flagged)} principles flagged "
+                      f"(score < {args.grounding_floor}), {len(kept)} kept")
+                for fp in flagged:
+                    print(f"    DROPPED: {fp['statement'][:60]}  "
+                          f"score={fp['_grounding_score']:.2f}  "
+                          f"absent={fp['_absent_terms'][:5]}")
+            all_sections["principles"] = kept
+            grounding_flagged = flagged
+
         # Write output (§2.1 + §2.2) with collision-safe key
         write_compilation(
             filepath, prompt, combined_response, all_sections,
@@ -691,6 +784,7 @@ def main():
             "sops_count": len(all_sections["sops"]),
             "principles_count": len(all_sections["principles"]),
             "concepts_count": len(all_sections["concepts"]),
+            "grounding_flagged": len(grounding_flagged),
             "elapsed": total_elapsed,
         })
 
@@ -708,9 +802,12 @@ def main():
     successful = sum(1 for r in results if r["success"])
     total_chars = sum(r.get("response_chars", 0) for r in results)
     total_time = sum(r.get("elapsed", 0) for r in results)
+    total_flagged = sum(r.get("grounding_flagged", 0) for r in results)
     print(f"\n{'='*50}")
     print(f"Done: {successful}/{len(results)} compiled, {skipped} cached, "
           f"{total_chars:,} chars, {total_time:.1f}s")
+    if total_flagged > 0:
+        print(f"Grounding: {total_flagged} principles dropped (ungrounded)")
 
 
 if __name__ == "__main__":
