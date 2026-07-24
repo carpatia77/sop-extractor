@@ -27,6 +27,7 @@ from compile import (
     is_compiled,
     cache_key,
     _deduplicate,
+    main,
 )
 
 
@@ -337,6 +338,42 @@ class TestCacheKey:
         key = cache_key(f, tmp_path)
         assert key  # non-empty
         assert "anything" in key
+
+    def test_batch_main_writes_distinct_files_for_same_stem(self, tmp_path):
+        """Regression: main()'s per-chunk section loop must not shadow the
+        outer cache_key() variable used for the output filename — otherwise
+        two same-named sources (e.g. output/<id>/transcript.srt, the real
+        ingestion layout) silently collide and one video's compilation is
+        lost, defeating cache_key()'s whole purpose."""
+        root = tmp_path / "output"
+        (root / "vid1").mkdir(parents=True)
+        (root / "vid2").mkdir(parents=True)
+        (root / "vid1" / "transcript.srt").write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\nunique-marker-A\n", encoding="utf-8"
+        )
+        (root / "vid2" / "transcript.srt").write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\nunique-marker-B\n", encoding="utf-8"
+        )
+
+        def fake_call_agent(prompt, *a, **kw):
+            return "SOPs:\n1. Step\n\nPrinciples:\n- Stmt [certain] (evidence: l1)"
+
+        argv = sys.argv
+        try:
+            sys.argv = ["compile.py", str(root), "--batch"]
+            with mock.patch("compile.call_agent", side_effect=fake_call_agent):
+                main()
+        finally:
+            sys.argv = argv
+
+        comp_dir = root / "compilation"
+        written = {p.stem for p in comp_dir.glob("*.json") if p.stem != "run"}
+        assert written == {"vid1__transcript.srt", "vid2__transcript.srt"}
+
+        vid1 = json.loads((comp_dir / "vid1__transcript.srt.json").read_text())
+        vid2 = json.loads((comp_dir / "vid2__transcript.srt.json").read_text())
+        assert vid1["source_path"] == str(root / "vid1" / "transcript.srt")
+        assert vid2["source_path"] == str(root / "vid2" / "transcript.srt")
 
 
 # ---------------------------------------------------------------------------

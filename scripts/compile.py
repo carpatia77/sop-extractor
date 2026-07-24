@@ -654,8 +654,8 @@ def main():
 
             # Parse structured output (§2.1)
             sections = parse_compilation(response)
-            for key in all_sections:
-                all_sections[key].extend(sections[key])
+            for section_key in all_sections:
+                all_sections[section_key].extend(sections[section_key])
 
         if args.dry_run:
             results.append({
