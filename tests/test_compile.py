@@ -289,6 +289,18 @@ class TestDiscoverSources:
     def test_empty_dir(self, tmp_path):
         assert discover_sources(tmp_path) == []
 
+    def test_excludes_compilation_subdir(self, tmp_path):
+        """discover_sources must ignore compilation/ subdirectory to avoid
+        re-compiling previous output (the bug that caused duplicate work)."""
+        (tmp_path / "video.txt").write_text("content")
+        comp = tmp_path / "compilation"
+        comp.mkdir()
+        (comp / "video.md").write_text("previous output")
+        (comp / "video.json").write_text("{}")
+        sources = discover_sources(tmp_path)
+        assert len(sources) == 1
+        assert sources[0].name == "video.txt"
+
 
 # ---------------------------------------------------------------------------
 # Cache (§2.4)

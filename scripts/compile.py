@@ -419,11 +419,15 @@ def discover_sources(directory: Path) -> list[Path]:
     Searches subdirectories to handle ingestion output structure:
       output/<video_id>/transcript.srt
       output/<video_id>/full_text.txt
+
+    Excludes compilation/ subdirectory (output from previous runs).
     """
     extensions = {".txt", ".srt", ".md"}
     sources = []
     for f in sorted(directory.rglob("*")):
         if not f.is_file():
+            continue
+        if "compilation" in f.parts:
             continue
         if f.suffix.lower() not in extensions:
             continue
