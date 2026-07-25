@@ -922,6 +922,8 @@ def main():
             from semantic_field import export_graphml as _export_graphml
             from semantic_field import export_jsonld as _export_jsonld
             from semantic_field import export_markdown as _export_markdown
+            from semantic_field import export_html as _export_html
+            from semantic_field import export_lightrag as _export_lightrag
 
             sf_data = {
                 "source": filepath.name,
@@ -953,6 +955,8 @@ def main():
 
             _export_jsonld(sf, sf_dir / f"{key}.jsonld")
             _export_markdown(sf, sf_dir / f"{key}.semantic_field.md")
+            _export_html(sf, sf_dir / f"{key}.semantic_field.html")
+            _export_lightrag(sf, sf_dir / f"{key}.lightrag.json")
             print(f"  Semantic Field: {sf['metadata']['total_nodes']} nodes, {sf['metadata']['total_edges']} edges")
         except Exception as e:
             print(f"  Semantic Field: skipped ({e})")

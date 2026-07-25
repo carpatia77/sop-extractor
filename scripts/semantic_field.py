@@ -455,3 +455,254 @@ def export_markdown(sf: dict, path: Path) -> None:
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# Export: HTML Viewer (self-contained, interactive)
+# ---------------------------------------------------------------------------
+
+def export_html(sf: dict, path: Path) -> None:
+    """Export semantic field as self-contained interactive HTML.
+
+    Uses embedded vanilla JS for force-directed graph layout.
+    No external dependencies — opens in any browser.
+    """
+    nodes = sf.get("nodes", [])
+    edges = sf.get("edges", [])
+
+    # Prepare node data for JS
+    js_nodes = []
+    for n in nodes:
+        js_nodes.append({
+            "id": n["id"],
+            "type": n["type"],
+            "label": n.get("term") or n.get("statement", "")[:60] or n.get("name", ""),
+            "epistemic": n.get("epistemic_status", ""),
+            "source": n.get("source_file", ""),
+            "entry_id": n.get("evidence_id", ""),
+            "locator": n.get("locator", ""),
+        })
+
+    # Prepare edge data for JS
+    js_edges = []
+    for e in edges:
+        js_edges.append({
+            "source": e["source"],
+            "target": e["target"],
+            "type": e["type"],
+            "inferred": e.get("inferred", False),
+        })
+
+    meta = sf.get("metadata", {})
+
+    html = _HTML_TEMPLATE.replace("__NODES__", json.dumps(js_nodes, ensure_ascii=False))
+    html = html.replace("__EDGES__", json.dumps(js_edges, ensure_ascii=False))
+    html = html.replace("__SOURCE__", sf.get("source_file", "unknown"))
+    html = html.replace("__TOTAL_NODES__", str(meta.get("total_nodes", 0)))
+    html = html.replace("__TOTAL_EDGES__", str(meta.get("total_edges", 0)))
+    html = html.replace("__BUILT_AT__", sf.get("built_at", "?"))
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
+_HTML_TEMPLATE = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Semantic Field: __SOURCE__</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; }
+#header { padding: 16px 24px; background: #161b22; border-bottom: 1px solid #30363d; }
+#header h1 { font-size: 18px; color: #58a6ff; }
+#header .meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
+#graph { width: 100%; height: calc(100vh - 120px); }
+#legend { position: absolute; bottom: 16px; left: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; }
+#legend .item { display: flex; align-items: center; margin-bottom: 6px; }
+#legend .dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+#detail { position: absolute; top: 80px; right: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 320px; max-height: 400px; overflow-y: auto; display: none; font-size: 13px; }
+#detail h3 { color: #58a6ff; margin-bottom: 8px; font-size: 14px; }
+#detail .field { margin-bottom: 6px; }
+#detail .label { color: #8b949e; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>Semantic Field: __SOURCE__</h1>
+  <div class="meta">Nodes: __TOTAL_NODES__ | Edges: __TOTAL_EDGES__ | Built: __BUILT_AT__</div>
+</div>
+<svg id="graph"></svg>
+<div id="legend">
+  <div class="item"><div class="dot" style="background:#3fb950"></div> Concept</div>
+  <div class="item"><div class="dot" style="background:#f0883e"></div> Principle</div>
+  <div class="item"><div class="dot" style="background:#bc8cff"></div> SOP</div>
+  <div class="item"><div class="dot" style="background:#8b949e"></div> Reference</div>
+  <div class="item"><div class="dot" style="background:#30363d; border:1px solid #58a6ff"></div> Edge (solid=explicit, dashed=inferred)</div>
+</div>
+<div id="detail" onclick="this.style.display='none'">
+  <h3 id="detail-title"></h3>
+  <div id="detail-body"></div>
+</div>
+<script>
+const nodes = __NODES__;
+const edges = __EDGES__;
+const W = window.innerWidth, H = window.innerHeight - 40;
+const svg = document.getElementById('graph');
+svg.setAttribute('width', W);
+svg.setAttribute('height', H);
+const colors = { concept: '#3fb950', principle: '#f0883e', sop: '#bc8cff', reference: '#8b949e' };
+// Simple force-directed layout (no d3)
+const sim = nodes.map((n, i) => ({
+  ...n, x: W/2 + (Math.random()-0.5)*400, y: H/2 + (Math.random()-0.5)*400, vx: 0, vy: 0
+}));
+const nodeMap = {}; sim.forEach(n => nodeMap[n.id] = n);
+function tick() {
+  // Repulsion
+  for (let i = 0; i < sim.length; i++) {
+    for (let j = i+1; j < sim.length; j++) {
+      let dx = sim[j].x - sim[i].x, dy = sim[j].y - sim[i].y;
+      let d = Math.sqrt(dx*dx + dy*dy) || 1;
+      let f = 200 / (d * d);
+      sim[i].vx -= dx/d * f; sim[i].vy -= dy/d * f;
+      sim[j].vx += dx/d * f; sim[j].vy += dy/d * f;
+    }
+  }
+  // Attraction (edges)
+  edges.forEach(e => {
+    const s = nodeMap[e.source], t = nodeMap[e.target];
+    if (!s || !t) return;
+    let dx = t.x - s.x, dy = t.y - s.y;
+    let d = Math.sqrt(dx*dx + dy*dy) || 1;
+    let f = (d - 100) * 0.01;
+    s.vx += dx/d * f; s.vy += dy/d * f;
+    t.vx -= dx/d * f; t.vy -= dy/d * f;
+  });
+  // Center gravity
+  sim.forEach(n => { n.vx += (W/2 - n.x) * 0.001; n.vy += (H/2 - n.y) * 0.001; });
+  // Apply velocity
+  sim.forEach(n => { n.x += n.vx * 0.5; n.y += n.vy * 0.5; n.vx *= 0.8; n.vy *= 0.8; });
+}
+function render() {
+  svg.innerHTML = '';
+  // Edges
+  edges.forEach(e => {
+    const s = nodeMap[e.source], t = nodeMap[e.target];
+    if (!s || !t) return;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', s.x); line.setAttribute('y1', s.y);
+    line.setAttribute('x2', t.x); line.setAttribute('y2', t.y);
+    line.setAttribute('stroke', e.inferred ? '#30363d' : '#58a6ff');
+    line.setAttribute('stroke-width', '1');
+    if (e.inferred) line.setAttribute('stroke-dasharray', '4,4');
+    svg.appendChild(line);
+  });
+  // Nodes
+  sim.forEach(n => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${n.x},${n.y})`);
+    g.style.cursor = 'pointer';
+    g.onclick = () => showDetail(n);
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('r', n.type === 'concept' ? 8 : 6);
+    c.setAttribute('fill', colors[n.type] || '#8b949e');
+    g.appendChild(c);
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', 10); t.setAttribute('y', 4);
+    t.setAttribute('fill', '#c9d1d9'); t.setAttribute('font-size', '11');
+    t.textContent = n.label.length > 40 ? n.label.slice(0, 40) + '...' : n.label;
+    g.appendChild(t);
+    svg.appendChild(g);
+  });
+}
+function showDetail(n) {
+  const d = document.getElementById('detail');
+  d.style.display = 'block';
+  document.getElementById('detail-title').textContent = n.label;
+  const fields = [
+    ['Type', n.type],
+    ['Epistemic', n.epistemic],
+    ['Entry ID', n.entry_id],
+    ['Locator', n.locator],
+    ['Source', n.source ? n.source.split('/').pop() : ''],
+  ];
+  document.getElementById('detail-body').innerHTML = fields
+    .filter(([,v]) => v).map(([k,v]) => `<div class="field"><span class="label">${k}:</span> ${v}</div>`).join('');
+}
+function loop() { tick(); render(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Export: LightRAG/Cognee Adapter (machine feed)
+# ---------------------------------------------------------------------------
+
+def export_lightrag(sf: dict, path: Path) -> None:
+    """Export semantic field as LightRAG-compatible JSON.
+
+    LightRAG expects:
+    - nodes: [{id, type, content, metadata}]
+    - edges: [{source, target, relationship, metadata}]
+
+    Also works as Cognee input (same graph format).
+    """
+    nodes_out = []
+    for n in sf.get("nodes", []):
+        # Build content string from available fields
+        parts = []
+        if n.get("term"):
+            parts.append(f"Concept: {n['term']}")
+        if n.get("definition"):
+            parts.append(f"Definition: {n['definition']}")
+        if n.get("statement"):
+            parts.append(f"Principle: {n['statement']}")
+        if n.get("when_to_use"):
+            parts.append(f"SOP: {n['name']} — {n['when_to_use']}")
+        if n.get("name") and n["type"] == "reference":
+            parts.append(f"Reference: {n['name']}")
+        if n.get("epistemic_status"):
+            parts.append(f"Epistemic: {n['epistemic_status']}")
+        if n.get("strongest_alternative"):
+            parts.append(f"Counter-argument: {n['strongest_alternative']}")
+        if n.get("locator"):
+            parts.append(f"Locator: {n['locator']}")
+
+        nodes_out.append({
+            "id": n["id"],
+            "type": n["type"],
+            "content": " | ".join(parts) if parts else n["id"],
+            "metadata": {
+                "source_file": n.get("source_file", ""),
+                "entry_id": n.get("evidence_id") or n.get("entry_id", ""),
+                "epistemic_status": n.get("epistemic_status", ""),
+                "locator": n.get("locator", ""),
+            },
+        })
+
+    edges_out = []
+    for e in sf.get("edges", []):
+        edges_out.append({
+            "source": e["source"],
+            "target": e["target"],
+            "relationship": e["type"],
+            "metadata": {
+                "inferred": e.get("inferred", False),
+                "evidence_id": e.get("evidence_id", ""),
+            },
+        })
+
+    output = {
+        "format": "lightrag-v1",
+        "source": sf.get("source_file", ""),
+        "built_at": sf.get("built_at", ""),
+        "nodes": nodes_out,
+        "edges": edges_out,
+    }
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
