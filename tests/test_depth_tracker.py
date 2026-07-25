@@ -68,11 +68,12 @@ def sample_sf():
 
 class TestDepthLevels:
     def test_depth_1_repeats_sf_terms(self, sample_sf):
-        result = evaluate_depth("volatility drag", sample_sf)
-        assert result["depth"] >= 1
+        # "geometric" is in concept definition but concept has no evidence_id
+        result = evaluate_depth("geometric", sample_sf)
+        assert result["depth"] == 1
 
     def test_depth_2_references_node(self, sample_sf):
-        result = evaluate_depth("volatility drag compounds against you", sample_sf)
+        result = evaluate_depth("volatility drag compounds against you over time", sample_sf)
         assert result["depth"] >= 2
 
     def test_depth_3_engages_disconfirming(self, sample_sf):
@@ -80,13 +81,24 @@ class TestDepthLevels:
         assert result["depth"] >= 3
 
     def test_depth_4_crosses_connected_nodes(self, sample_sf):
-        # "volatility drag" + "portfolio" → concept connected to SOP
-        result = evaluate_depth("volatility drag portfolio", sample_sf)
+        """Natural phrase mentioning concept + connected SOP."""
+        result = evaluate_depth(
+            "Volatility drag matters when building a portfolio", sample_sf,
+        )
         assert result["depth"] >= 4
 
     def test_depth_5_invokes_alternative(self, sample_sf):
-        result = evaluate_depth("rebalancing can mitigate drag", sample_sf)
+        """Phrase invoking EXCLUSIVE alternative terms (rebalancing, harvesting)."""
+        result = evaluate_depth(
+            "Rebalancing mitigates drag by harvesting premium", sample_sf,
+        )
         assert result["depth"] >= 5
+
+    def test_depth_5_not_triggered_by_superficial_repetition(self, sample_sf):
+        """Repeating principle vocabulary should NOT trigger depth 5."""
+        result = evaluate_depth("volatility drag compounds", sample_sf)
+        # Should NOT be depth 5 — just repetition, no evaluation
+        assert result["scores"][5] is False
 
     def test_depth_7_uncertainty(self, sample_sf):
         result = evaluate_depth("não sei se volatility drag é sempre verdade", sample_sf)
@@ -100,8 +112,8 @@ class TestDepthLevels:
 class TestMonotonicity:
     def test_max_rule(self, sample_sf):
         """depth = max(disparados), not sum or last."""
-        # "rebalancing can mitigate drag" → depth 5 (alternative) + depth 6 (new term anchored)
-        result = evaluate_depth("rebalancing can mitigate drag", sample_sf)
+        # "Rebalancing mitigates drag by harvesting premium" → depth 5 (alternative) + depth 6 (new term anchored)
+        result = evaluate_depth("Rebalancing mitigates drag by harvesting premium", sample_sf)
         assert result["depth"] == 6  # max(5, 6) = 6, not sum
 
     def test_empty_response(self, sample_sf):

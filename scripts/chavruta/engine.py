@@ -187,7 +187,7 @@ class ChavrutaEngine:
                         for n in self.sf.get("nodes", []):
                             if n["id"] == edge["source"] and n["id"] not in matched_ids:
                                 connected.append(n)
-            challenge = CHALLENGE_FNS[depth](best_node)
+            challenge = CHALLENGE_FNS[depth](best_node) if depth != 4 else CHALLENGE_FNS[depth](best_node, connected)
         else:
             challenge = "Pode elaborar mais sobre o que o autor ensina?"
 

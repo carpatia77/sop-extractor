@@ -132,7 +132,7 @@ class TestContradictionHandling:
 
 class TestDepthChallenges:
     def test_depth_1_challenge(self, engine):
-        result = engine.process("volatility drag")
+        result = engine.process("volatility")
         assert result["depth"] >= 1
         assert len(result["challenge"]) > 0
 
@@ -141,8 +141,19 @@ class TestDepthChallenges:
         assert result["depth"] >= 3
         assert "?" in result["challenge"]
 
+    def test_depth_4_no_crash(self, engine):
+        """Depth 4 should not crash — connected nodes passed correctly."""
+        result = engine.process(
+            "Volatility drag matters when building a portfolio",
+        )
+        # Should not raise TypeError
+        assert "challenge" in result
+        assert len(result["challenge"]) > 0
+
     def test_depth_5_challenge(self, engine):
-        result = engine.process("rebalancing can mitigate drag")
+        result = engine.process(
+            "Rebalancing mitigates drag by harvesting premium",
+        )
         assert result["depth"] >= 5
 
 

@@ -101,15 +101,34 @@ def _check_depth_3(response_terms: set, sf: dict) -> bool:
 def _check_depth_4(response_terms: set, sf: dict) -> bool:
     """Depth 4: Response mentions 2+ nodes connected by an edge.
 
-    Detected when find_nodes returns 2+ nodes that share an edge
-    in the SF graph.
+    Uses overlap coefficient (|A∩B| / min(|A|,|B|)) instead of Jaccard
+    to avoid dilution from connector words in natural language.
     """
-    nodes = find_nodes(" ".join(response_terms), sf, threshold=0.3)
-    if len(nodes) < 2:
+    if len(response_terms) < 2:
+        return False
+
+    # Find nodes using overlap coefficient (not Jaccard)
+    matched = []
+    for node in sf.get("nodes", []):
+        text = " ".join([
+            node.get("statement", ""),
+            node.get("term", ""),
+            node.get("definition", ""),
+            node.get("name", ""),
+        ])
+        node_terms = set(salient_terms(text))
+        if not node_terms:
+            continue
+        # Overlap coefficient: fraction of smaller set covered
+        overlap = len(response_terms & node_terms) / min(len(response_terms), len(node_terms))
+        if overlap >= 0.4:
+            matched.append(node)
+
+    if len(matched) < 2:
         return False
 
     # Check if any pair of matched nodes is connected by an edge
-    matched_ids = {n["id"] for n in nodes}
+    matched_ids = {n["id"] for n in matched}
     for edge in sf.get("edges", []):
         if edge["source"] in matched_ids and edge["target"] in matched_ids:
             return True
@@ -119,18 +138,25 @@ def _check_depth_4(response_terms: set, sf: dict) -> bool:
 def _check_depth_5(response_terms: set, sf: dict) -> bool:
     """Depth 5: Response invokes strongest_alternative.
 
-    Detected when response terms overlap with any node's
-    strongest_alternative field, AND the response is not negating it.
+    Detected when response terms overlap with EXCLUSIVE terms of any
+    node's strongest_alternative (terms not in the parent principle).
+    This prevents superficial repetition of principle vocabulary from
+    triggering depth 5.
     """
     if _has_negation(" ".join(response_terms)):
         return False  # Negating the alternative is contradiction, not evaluation
 
     for node in sf.get("nodes", []):
         alt = node.get("strongest_alternative", "")
-        if alt:
-            alt_terms = set(salient_terms(alt))
-            if alt_terms and response_terms & alt_terms:
-                return True
+        if not alt:
+            continue
+        alt_terms = set(salient_terms(alt))
+        # Get parent principle terms to exclude shared vocabulary
+        parent_terms = set(salient_terms(node.get("statement", "")))
+        alt_exclusive = alt_terms - parent_terms
+        # Only count if response matches EXCLUSIVE alternative terms
+        if alt_exclusive and response_terms & alt_exclusive:
+            return True
     return False
 
 
