@@ -228,6 +228,49 @@ class TestSuggestLinks:
             assert "target" in l
             assert "co_occurrence_count" in l
 
+    @staticmethod
+    def _comp(path, terms, used_in_map):
+        """Build a compilation where each term is used_in a named SOP."""
+        concepts = [
+            {"term": t, "definition": f"def {t}", "used_in": used_in_map.get(t, "")}
+            for t in terms
+        ]
+        sops = sorted({s for s in used_in_map.values() if s})
+        return {
+            "source_path": path,
+            "concepts": concepts,
+            "principles": [],
+            "sops": [{"name": s, "when_to_use": "x"} for s in sops],
+            "references": [],
+        }
+
+    def test_shared_target_pair_is_filtered(self):
+        """Regression: two concepts that both point to the SAME SOP are
+        'already related' and must NOT be suggested as a missing link —
+        even though they co-occur across every video. This filter regressed
+        twice (always-empty, then filter-never-fires); lock it here."""
+        comps = [
+            self._comp(f"v{i}.txt", ["Alpha", "Beta"],
+                       {"Alpha": "Build Portfolio", "Beta": "Build Portfolio"})
+            for i in range(3)
+        ]
+        links = suggest_links(consolidate(comps), min_cooccurrence=2)
+        pairs = {(l["source_term"], l["target_term"]) for l in links}
+        assert ("Alpha", "Beta") not in pairs
+        assert ("Beta", "Alpha") not in pairs
+
+    def test_unshared_target_pair_is_suggested(self):
+        """Two concepts that co-occur but point to DIFFERENT SOPs (no shared
+        target) are not yet explicitly related and SHOULD be suggested."""
+        comps = [
+            self._comp(f"v{i}.txt", ["Alpha", "Beta"],
+                       {"Alpha": "SOP-A", "Beta": "SOP-B"})
+            for i in range(3)
+        ]
+        links = suggest_links(consolidate(comps), min_cooccurrence=2)
+        pairs = {tuple(sorted([l["source_term"], l["target_term"]])) for l in links}
+        assert ("Alpha", "Beta") in pairs
+
 
 # ---------------------------------------------------------------------------
 # Report generation
