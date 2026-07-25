@@ -14,7 +14,7 @@ negation words and disconfirming_evidence matches before granting anchor.
 Anchor status:
   1. strongest_alternative — ACTIVE (reads from SF principle nodes)
   2. user_goal via salient_terms overlap > 0.25 — ACTIVE
-  3. evidence_text — UNLOCKED (exists in Evidence Ledger) but COMMENTED
+  3. evidence_text — ACTIVE (Fase C, reads from Evidence Ledger)
 
 Used by:
   - Chavruta Engine: blocks responses that leave the scope
@@ -127,6 +127,7 @@ def detect_drift(
     sf: dict,
     task_contract: dict | None = None,
     match_threshold: float = 0.25,
+    evidence_ledger: dict | None = None,
 ) -> dict:
     """Detect if user response drifts from the knowledge scope.
 
@@ -188,13 +189,13 @@ def detect_drift(
             if goal_overlap > 0.25:
                 anchor = "user_goal"
 
-    # FUTURA (Fase C): anchor #3 — evidence_text do Evidence Ledger
-    # if anchor == "none" and not is_contradiction:
-    #     for entry in evidence_ledger.get("entries", []):
-    #         ev_text = entry.get("evidence_text", "")
-    #         if ev_text and response_terms & set(salient_terms(ev_text)):
-    #             anchor = "evidence_text"
-    #             break
+    # Anchor #3: evidence_text do Evidence Ledger (ACTIVE in Fase C)
+    if anchor == "none" and not is_contradiction and evidence_ledger:
+        for entry in evidence_ledger.get("entries", []):
+            ev_text = entry.get("evidence_text", "")
+            if ev_text and response_terms & set(salient_terms(ev_text)):
+                anchor = "evidence_text"
+                break
 
     # Decision: contradiction always overrides anchor
     if is_contradiction:
@@ -230,6 +231,7 @@ def is_drift(
     sf: dict,
     task_contract: dict | None = None,
     match_threshold: float = 0.25,
+    evidence_ledger: dict | None = None,
 ) -> bool:
     """Simple boolean wrapper around detect_drift."""
-    return detect_drift(user_response, sf, task_contract, match_threshold)["is_drift"]
+    return detect_drift(user_response, sf, task_contract, match_threshold, evidence_ledger)["is_drift"]
