@@ -58,6 +58,9 @@ def create_context_questions(
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(context, f, indent=2, ensure_ascii=False)
 
+    # Wire: build evidence_ledger.json as part of session 2 output
+    build_evidence_ledger(skill_dir)
+
     return context
 
 
@@ -104,10 +107,7 @@ def build_evidence_ledger(skill_dir: str) -> dict | None:
             except (json.JSONDecodeError, OSError):
                 continue
 
-    if not principles:
-        return None
-
-    # Use the canonical evidence_ledger module
+    # Use the canonical evidence_ledger module (even with empty principles)
     ledger = build_ledger(
         principles=principles,
         filepath=str(compilation_dir) if compilation_dir.exists() else "",

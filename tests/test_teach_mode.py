@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from teach.session_manager import (
     load_progress,
     save_progress,
+    get_current_session,
     get_completed_sessions,
     complete_session,
     start_session,
@@ -296,3 +297,64 @@ class TestSession6:
         loaded = load_application_log(skill_dir)
         assert loaded is not None
         assert loaded["reflection"] == "Good session"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: all 6 sessions via public API, no manual file creation
+# ---------------------------------------------------------------------------
+
+class TestEndToEnd:
+    def test_full_pipeline_no_manual_files(self, skill_dir):
+        """Run all 6 sessions using only public functions, no file fabrication."""
+        from teach.session_1_pergunta import create_task_contract
+        from teach.session_2_contexto import create_context_questions
+        from teach.session_4_sintese import create_candidates_file, create_emerging_questions
+        from teach.session_5_conclusoes import publish_semantic_field
+        from teach.session_6_aplicacao import create_application_log
+
+        # Session 1: create task_contract
+        create_task_contract(skill_dir, "Understand volatility drag")
+        complete_session(skill_dir, 1)
+        assert get_current_session(skill_dir) == 2
+
+        # Session 2: create context + evidence_ledger (wired)
+        create_context_questions(skill_dir, author="Sharpe")
+        # evidence_ledger.json should exist (wired by create_context_questions)
+        assert os.path.exists(os.path.join(skill_dir, "evidence", "evidence_ledger.json"))
+        complete_session(skill_dir, 2)
+        assert get_current_session(skill_dir) == 3
+
+        # Session 3: create coherence audit
+        audit = {"contradictions_found": 0, "contradictions": []}
+        with open(os.path.join(skill_dir, "teach", "coherence_audit.json"), "w") as f:
+            json.dump(audit, f)
+        complete_session(skill_dir, 3)
+        assert get_current_session(skill_dir) == 4
+
+        # Session 4: create candidates
+        candidates = [
+            {"type": "concept", "term": "Volatility Drag", "status": "approved"},
+            {"type": "concept", "term": "Rejected Concept", "status": "rejected"},
+        ]
+        create_candidates_file(skill_dir, candidates)
+        create_emerging_questions(skill_dir, ["What is VRP?"])
+        complete_session(skill_dir, 4)
+        assert get_current_session(skill_dir) == 5
+
+        # Session 5: publish (auto-filters rejected)
+        publish_semantic_field(skill_dir)
+        sf_path = os.path.join(skill_dir, "semantic_field", "semantic_field.json")
+        assert os.path.exists(sf_path)
+        with open(sf_path) as f:
+            sf = json.load(f)
+        terms = [n["term"] for n in sf["nodes"]]
+        assert "Volatility Drag" in terms
+        assert "Rejected Concept" not in terms  # GATE: rejected leaked
+        complete_session(skill_dir, 5)
+        assert get_current_session(skill_dir) == 6
+
+        # Session 6: application log
+        create_application_log(skill_dir, reflection="Completed study")
+        complete_session(skill_dir, 6)
+        assert get_current_session(skill_dir) == 0  # All done
+        assert len(get_completed_sessions(skill_dir)) == 6
