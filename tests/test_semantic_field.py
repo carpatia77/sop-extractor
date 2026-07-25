@@ -352,6 +352,7 @@ class TestIntegration:
         if HAS_NETWORKX:
             gml_path = tmp_path / "sf.graphml"
             export_graphml(sf, gml_path)
+            assert gml_path.exists()
 
         ld_path = tmp_path / "sf.jsonld"
         export_jsonld(sf, ld_path)
@@ -360,7 +361,6 @@ class TestIntegration:
         export_markdown(sf, md_path)
 
         assert json_path.exists()
-        assert gml_path.exists()
         assert ld_path.exists()
         assert md_path.exists()
 
