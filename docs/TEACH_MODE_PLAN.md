@@ -336,7 +336,7 @@ def calibrate_depth(skill_dir: str, progress: dict) -> int:
 | Componente | Status | Dependências |
 |------------|--------|-------------|
 | Ingestão (yt-dlp + whisper) | ✅ 100% | Nenhuma |
-| Evidence Ledger | ✅ 100% (com Refutation Chain) | Ingestão |
+| Evidence Ledger | ⚪ Parcial (campo evidence_id posicional; ledger real pendente) | Ingestão |
 | Semantic Field | ✅ 100% | Evidence Ledger |
 | Cross-Analysis | ✅ 100% | Semantic Field |
 | **Teach Mode (6 sessões)** | ⚪ 0% | Evidence Ledger + Semantic Field |

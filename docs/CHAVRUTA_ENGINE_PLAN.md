@@ -328,7 +328,7 @@ COM Refutation Chain:
 | Módulo | Status | Descrição |
 |--------|--------|-----------|
 | Semantic Field | ✅ Implementado | Ground truth para Chavruta |
-| Evidence Ledger | ✅ Implementado (com Refutation Chain) | Proveniência por claim |
+| Evidence Ledger | ⚪ Parcial (campo evidence_id posicional; ledger real pendente) | Proveniência por claim |
 | Refutation Chain | ✅ Implementado | Stress-test por claim |
 | **Chavruta Engine** | ⚪ 0% | Motor de debate + depth tracking |
 | **Depth Tracker** | ⚪ 0% | Métrica de profundidade (1-7) |

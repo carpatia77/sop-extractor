@@ -15,12 +15,14 @@ O engenheiro auditor revisou `TEACH_MODE_PLAN.md` e `CHAVRUTA_ENGINE_PLAN.md` e 
 ### Mecanismo proposto
 
 ```python
-def evaluate_move(user_response: str, sf: dict, refutation: dict | None) -> int:
-    """Depth derivada de quais artefatos do SF o movimento toca."""
-    depth = 1
+def evaluate_move(user_response: str, sf: dict, refutation: dict | None,
+                  task_contract: dict = None) -> int:
+    """Depth derivada de quais artefatos do SF o movimento toca.
+    Regra: depth = max(disparados). Ordem das checagens nao afeta resultado."""
+    scores = []
 
-    # Depth 1: Repete o autor (não adiciona nada)
-    # → detectar: resposta contém apenas terms já presentes no SF sem cruzamento
+    # Depth 1: Repete o autor (nao adiciona nada)
+    # → detectar: resposta contém apenas terms ja presentes no SF sem cruzamento
 
     # Depth 2: Explica raciocínio
     # → detectar: resposta referencia um node com evidence_id
@@ -34,13 +36,18 @@ def evaluate_move(user_response: str, sf: dict, refutation: dict | None) -> int:
     # Depth 5: Avalia/discorda (usa strongest_alternative)
     # → detectar: resposta invoca um strongest_alternative do SF
 
-    # Depth 6: Gera algo novo (nó não existente)
-    # → detectar: resposta introduz termo/conceito não mapeado no SF
+    # Depth 6: Gera algo novo (termo novo ancorado — NAO e drift)
+    # → detectar: resposta contém termo nao mapeado MAS ancorado em:
+    #   - strongest_alternative existente, OU
+    #   - user_goal do task_contract, OU
+    #   - evidencia de um node
+    # → Se sem ancora = drift (DriftDetector, nao Depth 6)
 
     # Depth 7: Meta-cognição
-    # → detectar: resposta contém markers de uncertainty ("não sei", "não tenho certeza",
-    #             "isso é suposição") E referencia SF
-    return depth
+    # → detectar: resposta contém markers de uncertainty ("nao sei", "nao tenho certeza",
+    #             "isso e suposição") E referencia SF
+
+    return max(scores) if scores else 1
 ```
 
 ### Critérios observáveis (grounded, testável)
@@ -52,12 +59,47 @@ def evaluate_move(user_response: str, sf: dict, refutation: dict | None) -> int:
 | 3 | Resposta invoca disconfirming_evidence | refutation chain |
 | 4 | Resposta menciona 2+ nodes conectados por aresta | SF edge traversal |
 | 5 | Resposta invoca strongest_alternative | refutation chain |
-| 6 | Resposta contém termo não mapeado no SF | SF node absence |
+| 6 | Resposta contém termo novo **ancorado** num node existente via aresta proposta | SF + task_contract |
 | 7 | Resposta tem uncertainty markers + referência SF | regex + SF lookup |
+
+### Regra de monotonicidade
+
+`depth = max(disparados)`. Uma fala pode disparar múltiplos critérios (ex: menciona 2 nós conectados **e** invoca strongest_alternative → depth = max(4, 5) = 5). Ordem das checagens no código não afeta o resultado.
+
+### Desempate Depth 6 vs Drift Detector
+
+**Mesmo sinal observável** ("termo não mapeado no SF"), **significados opostos**:
+- Depth 6 (criação): termo novo **ancorado** — o usuário propõe algo que se conecta a um node existente
+- Drift: termo novo **sem âncora** — o usuário fala de algo completamente fora do SF
+
+**Regra de desempate**:
+```python
+def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
+    """Desempata entre criacao (depth 6) e drift."""
+    # 1. O termo novo aparece em strongest_alternative de algum principle?
+    for node in sf.get("nodes", []):
+        alt = node.get("strongest_alternative", "")
+        if new_term.lower() in alt.lower():
+            return "creation"  # ancorado em refutation chain
+
+    # 2. O termo novo está alinhado com user_goal do task_contract?
+    user_goal = task_contract.get("user_goal", "").lower()
+    if any(w in user_goal for w in new_term.lower().split()):
+        return "creation"  # ancorado no objetivo do usuário
+
+    # 3. O termo novo aparece na evidência de algum node?
+    for node in sf.get("nodes", []):
+        evidence = node.get("evidence", "")
+        if new_term.lower() in evidence.lower():
+            return "creation"  # ancorado na evidência
+
+    # 4. Sem âncora = drift
+    return "drift"
+```
 
 ### Arquivos a criar/modificar
 
-- `scripts/chavruta/depth_tracker.py` — implementação grounded
+- `scripts/chavruta/depth_tracker.py` — implementação grounded com `max()` rule
 - `tests/test_depth_tracker.py` — testes com fixtures de SF mockado
 
 ---
@@ -133,7 +175,7 @@ def evaluate_move(user_response: str, sf: dict, refutation: dict | None) -> int:
 
 **Problema**: "Busca X no Semantic Field" esconde matching fuzzy de linguagem natural contra nós do grafo. Sem mecanismo concreto, o gate "não afirma o que não está no SF" não é confiável.
 
-**Solução**:三层 approach
+**Solucao**: Abordagem de 3 camadas
 
 ### Camada 1: Match exato por ID
 ```python
@@ -189,7 +231,7 @@ def detect_drift(user_response: str, sf: dict, task_contract: dict) -> bool:
 
 | Categoria | O que testa | Como testa |
 |-----------|------------|-----------|
-| **Anti-hallucination** | Chavruta não afirma algo fora do SF | Fixture: claim不在SF → deve bloquear |
+| **Anti-hallucination** | Chavruta nao afirma algo fora do SF | Fixture: claim nao esta no SF -> deve bloquear |
 | **Depth accuracy** | Depth score é grounded | Fixture: resposta com 2 nós conectados → depth ≥ 4 |
 | **Drift detection** | Sai do escopo → detecta | Fixture: resposta sobre tema não mapeado → drift=True |
 | **Refutation integration** | Usa strongest_alternative | Fixture: principle com refutation → Chavruta o invoca |
@@ -249,4 +291,4 @@ def detect_drift(user_response: str, sf: dict, task_contract: dict) -> bool:
 | find_node concreto | `sf_matcher.py` multi-camada | 🟠 ALTA |
 | Eval harness | `test_chavruta_eval.py` antes do código | 🟡 MÉDIA |
 | Vertical slice primeiro | Sessão 1 + Chavruta mínimo antes das 6 sessões | 🟡 MÉDIA |
-| Tabelas comparativas são marketing | Remover ou contextualizar | 🟢 BAixa |
+| Tabelas comparativas sao marketing | Remover ou contextualizar | 🟢 Baixa |
