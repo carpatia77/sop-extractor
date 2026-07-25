@@ -190,6 +190,13 @@ class TestContradictionDetection:
         )
         assert result["is_contradiction"] is False
 
+    def test_disagree_is_challenge(self, sample_sf):
+        """'disagree' should be detected as challenge word."""
+        result = detect_drift(
+            "I disagree — volatility drag actually helps returns", sample_sf,
+        )
+        assert result["is_contradiction"] is True
+
     def test_out_of_scope_not_contradiction(self, sample_sf):
         """Unrelated content is drift but not contradiction."""
         result = detect_drift(

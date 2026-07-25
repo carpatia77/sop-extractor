@@ -46,6 +46,7 @@ CHALLENGE_WORDS = frozenset({
     "wrong", "myth", "false", "useless", "broken", "fake",
     "fails", "failed", "flawed", "flaw", "disprove", "refute",
     "contradict", "contrary", "opposite",
+    "disagree", "disagreement", "incorrect",
 })
 
 
@@ -84,6 +85,10 @@ def _contradicts_principle(response: str, sf: dict) -> bool:
             st_terms = set(salient_terms(statement))
             if st_terms and response_terms & st_terms and _has_negation(response):
                 # User uses SF terms but negates them — contradiction
+                return True
+            # Check if response challenges the principle's statement
+            if st_terms and response_terms & st_terms and _has_challenge(response):
+                # User uses SF terms and challenge words — contradiction
                 return True
     return False
 
