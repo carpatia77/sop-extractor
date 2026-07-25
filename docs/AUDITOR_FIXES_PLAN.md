@@ -59,7 +59,7 @@ def evaluate_move(user_response: str, sf: dict, refutation: dict | None,
 | 3 | Resposta invoca disconfirming_evidence | refutation chain |
 | 4 | Resposta menciona 2+ nodes conectados por aresta | SF edge traversal |
 | 5 | Resposta invoca strongest_alternative | refutation chain |
-| 6 | Resposta contém termo novo **ancorado** num node existente via aresta proposta | SF + task_contract |
+| 6 | Resposta contém termo novo **ancorado** via strongest_alternative ou user_goal (salient_terms overlap > 0.3) | refutation chain + task_contract |
 | 7 | Resposta tem uncertainty markers + referência SF | regex + SF lookup |
 
 ### Regra de monotonicidade
@@ -74,26 +74,45 @@ def evaluate_move(user_response: str, sf: dict, refutation: dict | None,
 
 **Regra de desempate**:
 ```python
+from verify_concept_presence import salient_terms
+
 def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
-    """Desempata entre criacao (depth 6) e drift."""
+    """Desempata entre criacao (depth 6) e drift.
+
+    3 caminhos de ancora (todos devem sobreviver no SF publicado):
+    1. strongest_alternative — campo presente nos principle nodes do SF
+    2. user_goal — via salient_terms com overlap threshold (nao .split())
+    3. source_file — campo presente em todos os nodes do SF
+    """
+    new_salient = set(salient_terms(new_term))
+    if not new_salient:
+        return "drift"  # sem termos significativos = nao e criacao
+
     # 1. O termo novo aparece em strongest_alternative de algum principle?
     for node in sf.get("nodes", []):
         alt = node.get("strongest_alternative", "")
-        if new_term.lower() in alt.lower():
+        if alt and new_salient & set(salient_terms(alt)):
             return "creation"  # ancorado em refutation chain
 
-    # 2. O termo novo está alinhado com user_goal do task_contract?
-    user_goal = task_contract.get("user_goal", "").lower()
-    if any(w in user_goal for w in new_term.lower().split()):
-        return "creation"  # ancorado no objetivo do usuário
+    # 2. Salient terms do novo termo tem overlap com user_goal do task_contract?
+    #    FIX FURO-A: usar salient_terms (stopwords removidos) + threshold 0.3
+    #    em vez de .split() que inclui "the", "a", etc.
+    user_goal = task_contract.get("user_goal", "")
+    goal_salient = set(salient_terms(user_goal))
+    if goal_salient and new_salient:
+        overlap = len(new_salient & goal_salient) / len(new_salient | goal_salient)
+        if overlap > 0.3:
+            return "creation"  # ancorado no objetivo do usuario
 
-    # 3. O termo novo aparece na evidência de algum node?
+    # 3. O termo novo aparece em source_file de algum node?
+    #    FIX FURO-B: usar source_file (campo que SOBREVIVE no SF publicado)
+    #    em vez de evidence (campo removido por semantic_field.py:234)
     for node in sf.get("nodes", []):
-        evidence = node.get("evidence", "")
-        if new_term.lower() in evidence.lower():
-            return "creation"  # ancorado na evidência
+        source = node.get("source_file", "")
+        if source and new_term.lower() in source.lower():
+            return "creation"  # ancorado na fonte
 
-    # 4. Sem âncora = drift
+    # 4. Sem ancora = drift
     return "drift"
 ```
 
