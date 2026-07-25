@@ -161,22 +161,36 @@ def is_session_completed(skill_dir: str, session_num: int) -> bool:
 def complete_session(skill_dir: str, session_num: int) -> int:
     """Mark a session as completed, return next session number.
 
-    Enforces ordering: can only complete session N if sessions 1..N-1
-    are already completed. Prevents skipping gates.
+    Enforces:
+      1. Ordering: sessions 1..N-1 must be completed first
+      2. Output existence: SESSION_FILES[N] must exist on disk
 
-    Raises ValueError if ordering is violated.
+    Raises ValueError if either gate is violated.
     Returns:
         Next session number (1-6), or 0 if all sessions complete.
     """
     progress = load_progress(skill_dir)
 
-    # GATE: enforce sequential ordering
+    # GATE 1: enforce sequential ordering
     for i in range(1, session_num):
         if i not in progress["completed_sessions"]:
             raise ValueError(
                 f"Cannot complete session {session_num}: "
                 f"session {i} ({SESSIONS[i]['name']}) must be completed first"
             )
+
+    # GATE 2: verify output files exist
+    required_files = SESSION_FILES.get(session_num, [])
+    missing = []
+    for pattern in required_files:
+        path = Path(skill_dir) / pattern
+        if not path.exists():
+            missing.append(pattern)
+    if missing:
+        raise ValueError(
+            f"Cannot complete session {session_num}: "
+            f"missing output files: {', '.join(missing)}"
+        )
 
     if session_num not in progress["completed_sessions"]:
         progress["completed_sessions"].append(session_num)

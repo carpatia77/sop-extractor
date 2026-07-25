@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Sessão 2: Contexto — Leitura atenta + contexto.
 
-Pre-flight scan + extração determinística. Gera evidence_ledger.json.
+Gera context_questions.json + evidence_ledger.json usando o módulo
+canônico evidence_ledger.build_ledger().
 
 Perguntas contextuais (gate obrigatório):
   - "Quem é o autor? Qual sua autoridade?"
@@ -9,7 +10,10 @@ Perguntas contextuais (gate obrigatório):
   - "Em que momento histórico?"
   - "Qual o propósito do autor?"
 
-Output: evidence_ledger.json (source_id, source_date, locator, excerpt_hash)
+Output: evidence_ledger.json (entry_id, claim, locator, excerpt_hash,
+        evidence_text, epistemic_status, refutation)
+
+Gate: Nenhum claim sem evidence_id válido.
 
 Referência judaica: "Nenhuma palavra é neutra." / "Texto sem contexto gera leitura rasa."
 """
@@ -18,6 +22,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    from scripts.evidence_ledger import build_ledger
+except ImportError:
+    from evidence_ledger import build_ledger
 
 
 def create_context_questions(
@@ -61,18 +70,27 @@ def load_context_questions(skill_dir: str) -> dict | None:
     return None
 
 
-def build_evidence_ledger_from_context(skill_dir: str) -> dict | None:
-    """Build evidence_ledger.json from context questions + compilation data.
+def build_evidence_ledger(skill_dir: str) -> dict | None:
+    """Build evidence_ledger.json using the canonical evidence_ledger module.
 
     This is the GATE: no claim published without evidence_id.
+    Uses evidence_ledger.build_ledger() — the real module with locator,
+    excerpt_hash, source_sha256, upload_date, refutation fields.
     """
     context = load_context_questions(skill_dir)
     if not context:
         return None
 
-    # Try to load compilation data for principles
+    # Load compilation data for principles
     compilation_dir = Path(skill_dir) / "compilation"
     principles = []
+    source_hash = ""
+    source_metadata = {
+        "upload_date": "",
+        "title": context.get("author", ""),
+        "uploader": context.get("author", ""),
+    }
+
     if compilation_dir.exists():
         for json_file in compilation_dir.glob("*.json"):
             if json_file.name.startswith("run") or "semantic_field" in json_file.name:
@@ -80,40 +98,30 @@ def build_evidence_ledger_from_context(skill_dir: str) -> dict | None:
             try:
                 with open(json_file, encoding="utf-8") as f:
                     data = json.load(f)
+                source_hash = data.get("source_sha256", source_hash)
                 for p in data.get("principles", []):
-                    p["_source_file"] = json_file.name
                     principles.append(p)
             except (json.JSONDecodeError, OSError):
                 continue
 
-    # Build ledger entries from principles
-    entries = []
-    for p in principles:
-        statement = p.get("statement", "")
-        if not statement:
-            continue
-        import hashlib
-        entry_id = f"ev-{hashlib.sha256(statement.encode()).hexdigest()[:12]}"
-        entries.append({
-            "entry_id": entry_id,
-            "claim": statement,
-            "source_file": p.get("_source_file", ""),
-            "epistemic_status": p.get("epistemic_status", "speculative"),
-            "evidence_text": p.get("evidence", ""),
-            "context_author": context.get("author", ""),
-            "context_audience": context.get("audience", ""),
-            "context_purpose": context.get("purpose", ""),
-        })
+    if not principles:
+        return None
 
-    ledger = {
-        "version": "1.0",
-        "session": 2,
-        "built_at": datetime.now(timezone.utc).isoformat(),
-        "entries": entries,
-        "metadata": {
-            "total_entries": len(entries),
-            "context_author": context.get("author", ""),
-        },
+    # Use the canonical evidence_ledger module
+    ledger = build_ledger(
+        principles=principles,
+        filepath=str(compilation_dir) if compilation_dir.exists() else "",
+        source_hash=source_hash,
+        source_metadata=source_metadata,
+    )
+
+    # Add context metadata
+    ledger["context"] = {
+        "author": context.get("author", ""),
+        "authority": context.get("authority", ""),
+        "audience": context.get("audience", ""),
+        "historical_context": context.get("historical_context", ""),
+        "purpose": context.get("purpose", ""),
     }
 
     # Write to evidence directory

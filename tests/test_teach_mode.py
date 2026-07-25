@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from teach.session_manager import (
     load_progress,
+    save_progress,
     get_completed_sessions,
     complete_session,
     start_session,
@@ -50,14 +51,30 @@ class TestSessionManager:
         assert progress["completed_sessions"] == []
 
     def test_complete_session_1(self, skill_dir):
+        # Create required output file
+        os.makedirs(os.path.join(skill_dir, "teach"), exist_ok=True)
+        with open(os.path.join(skill_dir, "teach", "task_contract.json"), "w") as f:
+            json.dump({"user_goal": "test"}, f)
         next_session = complete_session(skill_dir, 1)
         assert next_session == 2
         assert 1 in get_completed_sessions(skill_dir)
 
     def test_complete_all_sessions(self, skill_dir):
-        for i in range(1, 7):
-            next_session = complete_session(skill_dir, i)
-        assert next_session == 0  # All done
+        # Create all required output files
+        for i, files in {
+            1: ["teach/task_contract.json"],
+            2: ["teach/context_questions.json", "evidence/evidence_ledger.json"],
+            3: ["teach/coherence_audit.json"],
+            4: ["semantic_field/semantic_field.candidates.jsonl", "emerging_questions/emerging_questions.candidates.jsonl"],
+            5: ["semantic_field/semantic_field.json"],
+            6: ["teach/application_log.json"],
+        }.items():
+            for f in files:
+                path = os.path.join(skill_dir, f)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as fh:
+                    json.dump({}, fh)
+            complete_session(skill_dir, i)
         assert len(get_completed_sessions(skill_dir)) == 6
 
     def test_start_session(self, skill_dir):
@@ -67,6 +84,10 @@ class TestSessionManager:
 
     def test_calibrate_depth(self, skill_dir):
         assert calibrate_depth(skill_dir) == 1
+        # Create required file for session 1
+        os.makedirs(os.path.join(skill_dir, "teach"), exist_ok=True)
+        with open(os.path.join(skill_dir, "teach", "task_contract.json"), "w") as f:
+            json.dump({}, f)
         complete_session(skill_dir, 1)
         assert calibrate_depth(skill_dir) == 2
 
@@ -89,10 +110,30 @@ class TestSessionManager:
 
     def test_ordering_partial(self, skill_dir):
         """GATE: can complete session 2 after session 1, but not 4 without 3."""
+        # Create files for session 1
+        os.makedirs(os.path.join(skill_dir, "teach"), exist_ok=True)
+        with open(os.path.join(skill_dir, "teach", "task_contract.json"), "w") as f:
+            json.dump({}, f)
         complete_session(skill_dir, 1)
-        complete_session(skill_dir, 2)  # OK — 1 is done
+        # Create files for session 2
+        with open(os.path.join(skill_dir, "teach", "context_questions.json"), "w") as f:
+            json.dump({}, f)
+        os.makedirs(os.path.join(skill_dir, "evidence"), exist_ok=True)
+        with open(os.path.join(skill_dir, "evidence", "evidence_ledger.json"), "w") as f:
+            json.dump({}, f)
+        complete_session(skill_dir, 2)  # OK — 1 is done, files exist
         with pytest.raises(ValueError, match="session 3"):
             complete_session(skill_dir, 4)  # FAIL — 3 not done
+
+    def test_file_existence_enforced(self, skill_dir):
+        """GATE: cannot complete session without output files."""
+        # Mark session 1 as completed (manually, bypassing file check)
+        progress = load_progress(skill_dir)
+        progress["completed_sessions"] = [1]
+        save_progress(skill_dir, progress)
+        # Try to complete session 2 without files
+        with pytest.raises(ValueError, match="missing output files"):
+            complete_session(skill_dir, 2)
 
     def test_session_definitions_complete(self):
         assert len(SESSIONS) == 6
