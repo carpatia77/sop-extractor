@@ -130,8 +130,19 @@ class TestTensionDetection:
 class TestLimitDetection:
     def test_sparse_connections(self, sample_sf):
         limits = detect_sparse_connections(sample_sf)
-        # concept:short and sop:hp have 0 connections each
+        # concept:vd has 2 connections (edge:0001 + edge:0002) → sparse
+        # concept:short and sop:hp have 0 connections → orphan, not sparse
         assert len(limits) >= 1
+        assert limits[0]["type"] == "sparse_connection"
+
+    def test_orphan_not_sparse(self, sample_sf):
+        """Orphan (0 connections) should NOT appear in sparse results."""
+        from emerging_questions import detect_orphan_concepts
+        orphans = detect_orphan_concepts(sample_sf)
+        orphan_ids = {o["node_id"] for o in orphans}
+        sparse = detect_sparse_connections(sample_sf)
+        for s in sparse:
+            assert s["node_id"] not in orphan_ids
 
 
 # ---------------------------------------------------------------------------

@@ -8,10 +8,8 @@ Analyzes Semantic Field to find:
 
 Output: emerging_questions.json + emerging_questions.md
 
-Used by:
-  - teach/session_4_sintese.py (synthesis session)
-  - teach/session_6_aplicacao.py (open questions collection)
-  - CLI: sopx emerging <compilation_dir>
+Standalone module — not yet wired to teach sessions or CLI.
+Call generate_emerging_questions(sf) directly for analysis.
 """
 from __future__ import annotations
 
@@ -146,7 +144,11 @@ def detect_epistemic_uncertainty(sf: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def detect_sparse_connections(sf: dict) -> list[dict]:
-    """Find nodes with very few connections (knowledge limits)."""
+    """Find nodes with very few connections (1-2), not 0 (that's orphan).
+
+    Sparse = has some connections but is isolated from the broader graph.
+    Orphan (0 connections) is handled by detect_orphan_concepts.
+    """
     node_connections: dict[str, int] = {}
     for edge in sf.get("edges", []):
         src = edge.get("source", "")
@@ -158,7 +160,7 @@ def detect_sparse_connections(sf: dict) -> list[dict]:
     for node in sf.get("nodes", []):
         nid = node.get("id", "")
         conns = node_connections.get(nid, 0)
-        if conns == 0 and node.get("type") in ("concept", "principle"):
+        if 1 <= conns <= 2 and node.get("type") in ("concept", "principle"):
             limits.append({
                 "type": "sparse_connection",
                 "severity": "low",
