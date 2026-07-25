@@ -58,7 +58,7 @@ def _challenge_depth_4(node: dict, connected: list[dict]) -> str:
     """Depth 4: ask how concepts connect."""
     if len(connected) < 2:
         return "Você mencionou conceitos conectados. Como eles se relacionam?"
-    names = [n.get("term") or n.get("statement", "")[:40] for n in connected[:2]]
+    names = [n.get("term") or n.get("name") or n.get("statement", "")[:40] for n in connected[:2]]
     return f"Como '{names[0]}' se conecta com '{names[1]}'? Qual é a relação?"
 
 
@@ -178,17 +178,27 @@ class ChavrutaEngine:
             connected = []
             if depth == 4:
                 # Find connected nodes for depth 4
-                matched = find_nodes(user_response, self.sf, threshold=0.3)
+                matched = find_nodes(user_response, self.sf)
                 matched_ids = {n["id"] for n in matched}
+                # Case 1: both matched nodes are connected to each other
                 for edge in self.sf.get("edges", []):
-                    if edge["source"] in matched_ids:
-                        for n in self.sf.get("nodes", []):
-                            if n["id"] == edge["target"] and n["id"] not in matched_ids:
+                    if edge["source"] in matched_ids and edge["target"] in matched_ids:
+                        # Both endpoints matched — they ARE the connected pair
+                        for n in matched:
+                            if n["id"] in (edge["source"], edge["target"]):
                                 connected.append(n)
-                    elif edge["target"] in matched_ids:
-                        for n in self.sf.get("nodes", []):
-                            if n["id"] == edge["source"] and n["id"] not in matched_ids:
-                                connected.append(n)
+                        break
+                # Case 2: matched nodes have neighbors not in matched set
+                if len(connected) < 2:
+                    for edge in self.sf.get("edges", []):
+                        if edge["source"] in matched_ids:
+                            for n in self.sf.get("nodes", []):
+                                if n["id"] == edge["target"] and n["id"] not in matched_ids:
+                                    connected.append(n)
+                        elif edge["target"] in matched_ids:
+                            for n in self.sf.get("nodes", []):
+                                if n["id"] == edge["source"] and n["id"] not in matched_ids:
+                                    connected.append(n)
             challenge = CHALLENGE_FNS[depth](best_node) if depth != 4 else CHALLENGE_FNS[depth](best_node, connected)
         else:
             challenge = "Pode elaborar mais sobre o que o autor ensina?"
