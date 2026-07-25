@@ -59,7 +59,7 @@ def evaluate_move(user_response: str, sf: dict, refutation: dict | None,
 | 3 | Resposta invoca disconfirming_evidence | refutation chain |
 | 4 | Resposta menciona 2+ nodes conectados por aresta | SF edge traversal |
 | 5 | Resposta invoca strongest_alternative | refutation chain |
-| 6 | Resposta contém termo novo **ancorado** via strongest_alternative ou user_goal (salient_terms overlap > 0.3). 2 ancoras hoje; 3a (evidence_text) na Fase D | refutation chain + task_contract |
+| 6 | Resposta contém termo novo **ancorado** via strongest_alternative, user_goal (salient_terms overlap > 0.3), ou evidence_text do Evidence Ledger. 3 ancoras funcionais | refutation chain + task_contract + evidence ledger |
 | 7 | Resposta tem uncertainty markers + referência SF | regex + SF lookup |
 
 ### Regra de monotonicidade
@@ -79,13 +79,10 @@ from verify_concept_presence import salient_terms
 def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
     """Desempata entre criacao (depth 6) e drift.
 
-    2 ancoras funcionais hoje:
+    3 ancoras funcionais:
     1. strongest_alternative — campo presente nos principle nodes do SF
     2. user_goal — via salient_terms com overlap > 0.3
-
-    FUTURA (Fase D — quando Evidence Ledger existir):
-    3. evidence_text — trecho literal da fonte (campo do Evidence Ledger)
-       NAO usar source_file (path de arquivo nao casa com termos de conceito).
+    3. evidence_text — campo do Evidence Ledger (descomentar na Fase C)
     """
     new_salient = set(salient_terms(new_term))
     if not new_salient:
@@ -106,7 +103,8 @@ def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
         if overlap > 0.3:
             return "creation"  # ancorado no objetivo do usuario
 
-    # FUTURA (Fase D): ancora #3 — evidence_text do Evidence Ledger
+    # Fase C (Chavruta Engine): ancora #3 — evidence_text do Evidence Ledger
+    # Descomentar quando o Chavruta Engine for implementado.
     # for entry in evidence_ledger.get("entries", []):
     #     if entry.get("evidence_text") and new_salient & set(salient_terms(entry["evidence_text"])):
     #         return "creation"
@@ -286,10 +284,10 @@ def detect_drift(user_response: str, sf: dict, task_contract: dict) -> bool:
 1. `scripts/chavruta/depth_tracker.py` — implementação grounded
 2. `tests/test_depth_tracker.py` — testes com fixtures
 
-### Fase D: Evidence Ledger (honestidade)
-1. `scripts/evidence_ledger.py` — módulo de ledger
-2. Atualizar `semantic_field.py` para usar entry_id real
-3. `tests/test_evidence_ledger.py`
+### Fase D: Evidence Ledger (honestidade) — ✅ COMPLETA
+1. ~~`scripts/evidence_ledger.py`~~ — criado em `422a55b`
+2. ~~Atualizar `semantic_field.py`~~ — feito em `422a55b`
+3. ~~`tests/test_evidence_ledger.py`~~ — 34 testes em `422a55b`
 
 ### Fase E: Chavruta Engine (motor)
 1. `scripts/chavruta/engine.py` — motor principal
