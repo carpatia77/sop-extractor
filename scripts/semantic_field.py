@@ -150,7 +150,9 @@ def build_semantic_field(compilation: dict) -> dict:
     Returns:
         Semantic field dict with nodes, edges, metadata.
     """
-    source_file = compilation.get("source", "unknown")
+    # Use source_path (full relative path) for provenance, not source (bare filename).
+    # All real ingestion videos have source="transcript.srt" which collapses.
+    source_file = compilation.get("source_path") or compilation.get("source", "unknown")
     source_sha256 = compilation.get("source_sha256", "")
     compiled_at = compilation.get("compiled_at", "")
 

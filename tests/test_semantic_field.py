@@ -8,6 +8,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
+import importlib.util
+HAS_NETWORKX = importlib.util.find_spec("networkx") is not None
+
 from semantic_field import (
     build_semantic_field,
     validate_semantic_field,
@@ -265,6 +268,7 @@ class TestValidation:
 # Export: GraphML
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(not HAS_NETWORKX, reason="networkx not installed")
 class TestExportGraphML:
     def test_creates_file(self, sample_compilation, tmp_path):
         sf = build_semantic_field(sample_compilation)
@@ -345,8 +349,9 @@ class TestIntegration:
         with open(json_path, "w") as f:
             json.dump(sf, f, indent=2)
 
-        gml_path = tmp_path / "sf.graphml"
-        export_graphml(sf, gml_path)
+        if HAS_NETWORKX:
+            gml_path = tmp_path / "sf.graphml"
+            export_graphml(sf, gml_path)
 
         ld_path = tmp_path / "sf.jsonld"
         export_jsonld(sf, ld_path)

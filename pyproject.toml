@@ -30,7 +30,8 @@ all = [
     "pdfminer.six",
     "python-docx",
     "striprtf",
-    "docling"
+    "docling",
+    "networkx>=3.0",
 ]
 ingest = [
     "yt-dlp>=2024.1.0",
