@@ -59,7 +59,7 @@ def evaluate_move(user_response: str, sf: dict, refutation: dict | None,
 | 3 | Resposta invoca disconfirming_evidence | refutation chain |
 | 4 | Resposta menciona 2+ nodes conectados por aresta | SF edge traversal |
 | 5 | Resposta invoca strongest_alternative | refutation chain |
-| 6 | Resposta contém termo novo **ancorado** via strongest_alternative ou user_goal (salient_terms overlap > 0.3) | refutation chain + task_contract |
+| 6 | Resposta contém termo novo **ancorado** via strongest_alternative ou user_goal (salient_terms overlap > 0.3). 2 ancoras hoje; 3a (evidence_text) na Fase D | refutation chain + task_contract |
 | 7 | Resposta tem uncertainty markers + referência SF | regex + SF lookup |
 
 ### Regra de monotonicidade
@@ -79,10 +79,13 @@ from verify_concept_presence import salient_terms
 def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
     """Desempata entre criacao (depth 6) e drift.
 
-    3 caminhos de ancora (todos devem sobreviver no SF publicado):
+    2 ancoras funcionais hoje:
     1. strongest_alternative — campo presente nos principle nodes do SF
-    2. user_goal — via salient_terms com overlap threshold (nao .split())
-    3. source_file — campo presente em todos os nodes do SF
+    2. user_goal — via salient_terms com overlap > 0.3
+
+    FUTURA (Fase D — quando Evidence Ledger existir):
+    3. evidence_text — trecho literal da fonte (campo do Evidence Ledger)
+       NAO usar source_file (path de arquivo nao casa com termos de conceito).
     """
     new_salient = set(salient_terms(new_term))
     if not new_salient:
@@ -95,8 +98,7 @@ def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
             return "creation"  # ancorado em refutation chain
 
     # 2. Salient terms do novo termo tem overlap com user_goal do task_contract?
-    #    FIX FURO-A: usar salient_terms (stopwords removidos) + threshold 0.3
-    #    em vez de .split() que inclui "the", "a", etc.
+    #    Usa salient_terms (stopwords removidos) + threshold 0.3.
     user_goal = task_contract.get("user_goal", "")
     goal_salient = set(salient_terms(user_goal))
     if goal_salient and new_salient:
@@ -104,17 +106,16 @@ def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
         if overlap > 0.3:
             return "creation"  # ancorado no objetivo do usuario
 
-    # 3. O termo novo aparece em source_file de algum node?
-    #    FIX FURO-B: usar source_file (campo que SOBREVIVE no SF publicado)
-    #    em vez de evidence (campo removido por semantic_field.py:234)
-    for node in sf.get("nodes", []):
-        source = node.get("source_file", "")
-        if source and new_term.lower() in source.lower():
-            return "creation"  # ancorado na fonte
+    # FUTURA (Fase D): ancora #3 — evidence_text do Evidence Ledger
+    # for entry in evidence_ledger.get("entries", []):
+    #     if entry.get("evidence_text") and new_salient & set(salient_terms(entry["evidence_text"])):
+    #         return "creation"
 
-    # 4. Sem ancora = drift
+    # Sem ancora = drift
     return "drift"
 ```
+
+**Nota sobre 2 vs 3 ancoras**: Hoje sao 2 ancoras funcionais. A ancora #3 (evidence_text) sera reintroduzida na Fase D quando o Evidence Ledger existir com locator/excerpt_hash/evidence_text reais. Nao usar source_file como ancora — e um path de arquivo que nao casa com termos de conceito em linguagem natural.
 
 ### Arquivos a criar/modificar
 
