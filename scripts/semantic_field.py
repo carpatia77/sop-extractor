@@ -72,13 +72,10 @@ def _split_used_in(used_in_raw: str) -> list[str]:
 # Edge builder
 # ---------------------------------------------------------------------------
 
-_EDGE_COUNTER = 0
-
-
-def _make_edge_id() -> str:
-    global _EDGE_COUNTER
-    _EDGE_COUNTER += 1
-    return f"edge:{_EDGE_COUNTER:04d}"
+def _make_edge_id(counter: list[int]) -> str:
+    """Generate edge ID using a mutable counter (no global state)."""
+    counter[0] += 1
+    return f"edge:{counter[0]:04d}"
 
 
 def build_edges(
@@ -88,8 +85,7 @@ def build_edges(
     reference_nodes: list[dict],
 ) -> list[dict]:
     """Build edges from node cross-references."""
-    global _EDGE_COUNTER
-    _EDGE_COUNTER = 0
+    counter = [0]
 
     edges = []
     sop_names = {n["name"]: n["id"] for n in sop_nodes}
@@ -101,11 +97,12 @@ def build_edges(
             sop_nid = sop_names.get(sop_name)
             if sop_nid:
                 edges.append({
-                    "id": _make_edge_id(),
+                    "id": _make_edge_id(counter),
                     "type": "used_in",
                     "source": node["id"],
                     "target": sop_nid,
                     "evidence_id": None,
+                    "inferred": True,
                 })
 
     # Principle → Reference (references)
@@ -114,11 +111,12 @@ def build_edges(
         for ref_name, ref_nid in ref_names.items():
             if ref_name.lower() in evidence.lower():
                 edges.append({
-                    "id": _make_edge_id(),
+                    "id": _make_edge_id(counter),
                     "type": "references",
                     "source": node["id"],
                     "target": ref_nid,
                     "evidence_id": None,
+                    "inferred": True,
                 })
 
     # Concept → Reference (references) — via definition/term matching
@@ -127,11 +125,12 @@ def build_edges(
         for ref_name, ref_nid in ref_names.items():
             if ref_name.lower() in text:
                 edges.append({
-                    "id": _make_edge_id(),
+                    "id": _make_edge_id(counter),
                     "type": "references",
                     "source": node["id"],
                     "target": ref_nid,
                     "evidence_id": None,
+                    "inferred": True,
                 })
 
     return edges
@@ -264,7 +263,7 @@ def build_semantic_field(compilation: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 VALID_EPHEMERAL = {"certain", "probable", "speculative"}
-VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references", "contradicts", "derives_from"}
+VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references"}
 VALID_NODE_TYPES = {"concept", "principle", "sop", "reference"}
 
 
@@ -354,12 +353,11 @@ JSONLD_CONTEXT = {
     "epistemic_status": "semantic_field:epistemic_status",
     "evidence_id": "semantic_field:evidence_id",
     "source_file": "semantic_field:source_file",
+    "inferred": "semantic_field:inferred",
     "used_in": {"@id": "semantic_field:used_in", "@type": "@id"},
     "supports": {"@id": "semantic_field:supports", "@type": "@id"},
     "requires": {"@id": "semantic_field:requires", "@type": "@id"},
     "references": {"@id": "semantic_field:references", "@type": "@id"},
-    "contradicts": {"@id": "semantic_field:contradicts", "@type": "@id"},
-    "derives_from": {"@id": "semantic_field:derives_from", "@type": "@id"},
 }
 
 

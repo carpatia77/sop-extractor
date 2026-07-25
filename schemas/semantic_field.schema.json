@@ -91,7 +91,7 @@
         "id": { "type": "string", "minLength": 1 },
         "type": {
           "type": "string",
-          "enum": ["used_in", "supports", "requires", "references", "contradicts", "derives_from"]
+          "enum": ["used_in", "supports", "requires", "references"]
         },
         "source": { "type": "string", "description": "Source node ID" },
         "target": { "type": "string", "description": "Target node ID" },

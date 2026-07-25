@@ -93,18 +93,23 @@ def consolidate(compilations: list[dict]) -> dict:
         node["source_files"] = sorted(principle_videos[key])
         consolidated_nodes.append(node)
 
-    # Cross-video edges — concept co-occurrence within same video
+    # Cross-video edges — concept co-occurrence + per-video explicit edges
     cross_edges = []
     edge_counter = 0
-    pair_index = {}  # sorted_pair → edge index
+    pair_index = {}  # sorted_pair → edge index (for co_occurs dedup)
+    explicit_edges = []  # per-video used_in/references edges, carried forward
+
     for sf in sfs:
         source = sf.get("source_file", "")
+        source_basename = Path(source).stem if source else ""
+
         # Get concepts in this video
         video_concepts = [
             slugify(n.get("term", ""))
             for n in sf.get("nodes", [])
             if n["type"] == "concept"
         ]
+
         # Create co-occurrence edges
         for i, c1 in enumerate(video_concepts):
             for c2 in video_concepts[i + 1:]:
@@ -121,8 +126,21 @@ def consolidate(compilations: list[dict]) -> dict:
                         "source": f"concept:{pair[0]}",
                         "target": f"concept:{pair[1]}",
                         "source_files": [source],
+                        "inferred": True,
                     })
                     edge_counter += 1
+
+        # Carry forward per-video explicit edges (used_in, references)
+        for e in sf.get("edges", []):
+            explicit_edges.append({
+                "id": f"edge:{edge_counter:04d}",
+                "type": e["type"],
+                "source": e["source"],
+                "target": e["target"],
+                "source_video": source_basename,
+                "inferred": False,
+            })
+            edge_counter += 1
 
     # Metadata
     node_counts = Counter(n["type"] for n in consolidated_nodes)
@@ -136,9 +154,11 @@ def consolidate(compilations: list[dict]) -> dict:
         "source_files": [sf.get("source_file", "") for sf in sfs],
         "nodes": consolidated_nodes,
         "edges": cross_edges,
+        "explicit_edges": explicit_edges,
         "metadata": {
             "total_nodes": len(consolidated_nodes),
             "total_edges": len(cross_edges),
+            "total_explicit_edges": len(explicit_edges),
             "node_counts": dict(node_counts),
             "n_concepts": n_concepts,
             "n_principles": sum(1 for n in consolidated_nodes if n["type"] == "principle"),
@@ -249,17 +269,22 @@ def extract_gold(consolidated: dict, max_videos: int = 2) -> list[dict]:
 
 def suggest_links(consolidated: dict, min_cooccurrence: int = 3) -> list[dict]:
     """Suggest missing links between concepts that co-occur frequently
-    but don't have an explicit edge in any individual SF.
+    across videos but don't have an explicit edge (used_in, references)
+    in any individual video's semantic field.
+
+    Compares co_occurs pairs against explicit_edges (per-video relationships)
+    to find implicit associations that could be made explicit.
     """
     edges = consolidated.get("edges", [])
+    explicit_edges = consolidated.get("explicit_edges", [])
     nodes = consolidated.get("nodes", [])
-    concepts = [n for n in nodes if n["type"] == "concept"]
+    concepts = {n["id"]: n for n in nodes if n["type"] == "concept"}
 
-    # Existing edge pairs
-    existing_pairs = set()
-    for e in edges:
+    # Pairs that have explicit edges in at least one video
+    explicit_pairs = set()
+    for e in explicit_edges:
         pair = tuple(sorted([e["source"], e["target"]]))
-        existing_pairs.add(pair)
+        explicit_pairs.add(pair)
 
     # Co-occurrence frequency from cross-video analysis
     cooccur = Counter()
@@ -268,17 +293,12 @@ def suggest_links(consolidated: dict, min_cooccurrence: int = 3) -> list[dict]:
             pair = tuple(sorted([e["source"], e["target"]]))
             cooccur[pair] = len(e.get("source_files", []))
 
-    # Suggest links for frequent co-occurrences not in existing edges
+    # Suggest links for frequent co-occurrences NOT backed by explicit edges
     suggestions = []
     for pair, count in cooccur.most_common(20):
-        if pair not in existing_pairs:
-            c1 = concepts[0] if concepts else {}
-            c2 = concepts[0] if concepts else {}
-            for c in concepts:
-                if c["id"] == pair[0]:
-                    c1 = c
-                if c["id"] == pair[1]:
-                    c2 = c
+        if pair not in explicit_pairs:
+            c1 = concepts.get(pair[0], {})
+            c2 = concepts.get(pair[1], {})
             suggestions.append({
                 "source": pair[0],
                 "target": pair[1],
@@ -325,7 +345,8 @@ def generate_report(
     lines.append("| Concept | Frequency | Videos |")
     lines.append("|---------|-----------|--------|")
     for c in concepts[:15]:
-        vids = ", ".join(c.get("source_files", [])[:3])
+        vids_raw = c.get("source_files", [])[:3]
+        vids = ", ".join(Path(v).stem for v in vids_raw)
         if len(c.get("source_files", [])) > 3:
             vids += f" +{len(c['source_files']) - 3}"
         lines.append(f"| {c.get('term', '?')} | {c.get('frequency', 0)} | {vids} |")
