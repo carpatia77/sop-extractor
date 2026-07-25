@@ -269,22 +269,33 @@ def extract_gold(consolidated: dict, max_videos: int = 2) -> list[dict]:
 
 def suggest_links(consolidated: dict, min_cooccurrence: int = 3) -> list[dict]:
     """Suggest missing links between concepts that co-occur frequently
-    across videos but don't have an explicit edge (used_in, references)
+    across videos but don't already share a target (SOP or reference)
     in any individual video's semantic field.
 
-    Compares co_occurs pairs against explicit_edges (per-video relationships)
-    to find implicit associations that could be made explicit.
+    Two concepts are "already related" if they both point to the same SOP
+    (used_in) or the same reference in any video. We derive these pairs
+    from explicit_edges, then filter co_occurs against them.
     """
+    import itertools
+
     edges = consolidated.get("edges", [])
     explicit_edges = consolidated.get("explicit_edges", [])
     nodes = consolidated.get("nodes", [])
     concepts = {n["id"]: n for n in nodes if n["type"] == "concept"}
 
-    # Pairs that have explicit edges in at least one video
-    explicit_pairs = set()
+    # Derive concept pairs that are already related via shared targets.
+    # Two concepts sharing a SOP or reference are "already related".
+    target_concepts = defaultdict(set)
     for e in explicit_edges:
-        pair = tuple(sorted([e["source"], e["target"]]))
-        explicit_pairs.add(pair)
+        src = e["source"]
+        tgt = e["target"]
+        if src.startswith("concept:"):
+            target_concepts[tgt].add(src)
+
+    explicit_pairs = set()
+    for concepts_sharing_target in target_concepts.values():
+        for a, b in itertools.combinations(sorted(concepts_sharing_target), 2):
+            explicit_pairs.add((a, b))
 
     # Co-occurrence frequency from cross-video analysis
     cooccur = Counter()
@@ -293,7 +304,7 @@ def suggest_links(consolidated: dict, min_cooccurrence: int = 3) -> list[dict]:
             pair = tuple(sorted([e["source"], e["target"]]))
             cooccur[pair] = len(e.get("source_files", []))
 
-    # Suggest links for frequent co-occurrences NOT backed by explicit edges
+    # Suggest links for frequent co-occurrences NOT already related
     suggestions = []
     for pair, count in cooccur.most_common(20):
         if pair not in explicit_pairs:
