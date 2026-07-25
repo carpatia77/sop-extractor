@@ -6,7 +6,6 @@ integration with compile pipeline, edge cases.
 """
 import json
 import os
-from pathlib import Path
 
 import pytest
 
@@ -174,6 +173,25 @@ class TestExportLightrag:
         concept = [n for n in data["nodes"] if n["type"] == "concept"][0]
         assert "Volatility Drag" in concept["content"]
         assert "Definition:" in concept["content"]
+
+    def test_sop_content_includes_name_without_when_to_use(self, tmp_path):
+        """Regression: a SOP node's content collapsed to its bare id
+        (e.g. 'sop:build-portfolio') whenever when_to_use was empty, because
+        the SOP name was only appended alongside when_to_use. LightRAG/Cognee
+        retrieval relies on 'content' — a nameless SOP is invisible to search."""
+        comp = {
+            "source_path": "v1.txt",
+            "sops": [{"name": "Build Portfolio", "when_to_use": ""}],
+            "principles": [], "concepts": [], "references": [],
+        }
+        sf = build_semantic_field(comp)
+        out = tmp_path / "test.lightrag.json"
+        export_lightrag(sf, out)
+        with open(out) as f:
+            data = json.load(f)
+        sop = [n for n in data["nodes"] if n["type"] == "sop"][0]
+        assert "Build Portfolio" in sop["content"]
+        assert sop["content"] != sop["id"]
 
     def test_principle_content_includes_refutation(self, sample_sf, tmp_path):
         out = tmp_path / "test.lightrag.json"

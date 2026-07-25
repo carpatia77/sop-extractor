@@ -661,8 +661,11 @@ def export_lightrag(sf: dict, path: Path) -> None:
             parts.append(f"Definition: {n['definition']}")
         if n.get("statement"):
             parts.append(f"Principle: {n['statement']}")
-        if n.get("when_to_use"):
-            parts.append(f"SOP: {n['name']} — {n['when_to_use']}")
+        if n.get("name") and n["type"] == "sop":
+            sop_line = f"SOP: {n['name']}"
+            if n.get("when_to_use"):
+                sop_line += f" — {n['when_to_use']}"
+            parts.append(sop_line)
         if n.get("name") and n["type"] == "reference":
             parts.append(f"Reference: {n['name']}")
         if n.get("epistemic_status"):
