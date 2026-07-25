@@ -522,6 +522,11 @@ def write_compilation(
         "references": sections["references"],
     }
 
+    # Include refutation summary if present (§2.7)
+    ref_summary = sections.get("refutation_summary")
+    if ref_summary:
+        data["refutation_summary"] = ref_summary
+
     # Propagate source ingestion metadata (§2.2)
     if source_metadata:
         data["source_metadata"] = source_metadata
@@ -691,6 +696,12 @@ def main():
                         help="Fraction of batch items to sample for human review (default: 0.10). Set to 0 to disable.")
     parser.add_argument("--continue-on-reject", action="store_true",
                         help="Continue batch after a sampled item is rejected (default: abort)")
+    parser.add_argument("--refutation-chain", action="store_true", default=True,
+                        help="Generate refutation chains for principles (default: on)")
+    parser.add_argument("--no-refutation-chain", dest="refutation_chain", action="store_false",
+                        help="Disable refutation chain generation")
+    parser.add_argument("--refutation-overlap-threshold", type=float, default=0.7,
+                        help="Max semantic overlap between claim and alternative (default 0.7)")
 
     args = parser.parse_args()
     input_path = Path(args.path)
@@ -839,6 +850,40 @@ def main():
                           f"absent={fp['_absent_terms'][:5]}")
             all_sections["principles"] = kept
             grounding_flagged = flagged
+
+        # Refutation chain (§2.7) — adversarial quality gate
+        refutation_flagged = []
+        if args.refutation_chain and all_sections["principles"]:
+            try:
+                from refutation_chain import enrich_principles as _enrich
+                enriched, refutation_flagged = _enrich(
+                    all_sections["principles"], content,
+                    agent=args.agent, model=args.model, timeout=args.timeout,
+                    overlap_threshold=args.refutation_overlap_threshold,
+                    dry_run=args.dry_run,
+                )
+                if refutation_flagged:
+                    print(f"  Refutation: {len(refutation_flagged)} principles flagged "
+                          f"(overlap or validation issue)")
+                all_sections["principles"] = enriched
+                # Build refutation summary for output
+                dissent_counts = {}
+                for p in enriched:
+                    ref = p.get("refutation")
+                    if ref and not ref.get("_dry_run"):
+                        dt = ref.get("dissent_type", "unknown")
+                        dissent_counts[dt] = dissent_counts.get(dt, 0) + 1
+                all_sections["refutation_summary"] = {
+                    "total": len(enriched),
+                    "enriched": sum(
+                        1 for p in enriched
+                        if p.get("refutation") and not p["refutation"].get("_dry_run")
+                    ),
+                    "flagged": len(refutation_flagged),
+                    "dissent_types": dissent_counts,
+                }
+            except Exception as e:
+                print(f"  WARN: Refutation chain failed: {e}")
 
         # Write output (§2.1 + §2.2) with collision-safe key
         source_metadata = read_source_metadata(filepath)

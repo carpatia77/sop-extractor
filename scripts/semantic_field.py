@@ -180,7 +180,7 @@ def build_semantic_field(compilation: dict) -> dict:
         if not statement:
             continue
         nid = principle_id(statement)
-        principle_nodes.append({
+        node = {
             "id": nid,
             "type": "principle",
             "statement": statement,
@@ -188,7 +188,14 @@ def build_semantic_field(compilation: dict) -> dict:
             "source_file": source_file,
             "evidence_id": f"{source_file}#principle:{len(principle_nodes)}",
             "evidence": p.get("evidence", ""),
-        })
+        }
+        # Include refutation chain data if present (§2.7)
+        refutation = p.get("refutation")
+        if refutation and not refutation.get("_dry_run"):
+            node["strongest_alternative"] = refutation.get("strongest_alternative", "")
+            node["disconfirming_evidence"] = refutation.get("disconfirming_evidence", "")
+            node["dissent_type"] = refutation.get("dissent_type", "")
+        principle_nodes.append(node)
 
     sop_nodes = []
     for s in compilation.get("sops", []):
