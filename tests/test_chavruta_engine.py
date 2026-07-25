@@ -142,11 +142,10 @@ class TestDepthChallenges:
         assert "?" in result["challenge"]
 
     def test_depth_4_no_crash(self, engine):
-        """Depth 4 should not crash — connected nodes passed correctly."""
-        result = engine.process(
-            "Volatility drag matters when building a portfolio",
-        )
-        # Should not raise TypeError
+        """Depth 4 with both nodes matched should not crash."""
+        # Phrase that genuinely matches concept + connected SOP
+        result = engine.process("Volatility Drag Build Portfolio")
+        # Should not raise IndexError or TypeError
         assert "challenge" in result
         assert len(result["challenge"]) > 0
 

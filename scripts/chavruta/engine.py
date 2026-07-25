@@ -56,6 +56,8 @@ def _challenge_depth_3(node: dict) -> str:
 
 def _challenge_depth_4(node: dict, connected: list[dict]) -> str:
     """Depth 4: ask how concepts connect."""
+    if len(connected) < 2:
+        return "Você mencionou conceitos conectados. Como eles se relacionam?"
     names = [n.get("term") or n.get("statement", "")[:40] for n in connected[:2]]
     return f"Como '{names[0]}' se conecta com '{names[1]}'? Qual é a relação?"
 

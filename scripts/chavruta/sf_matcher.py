@@ -70,9 +70,13 @@ def match_by_substring(query: str, nodes: list[dict]) -> list[dict]:
 def match_by_salient(
     query: str,
     nodes: list[dict],
-    threshold: float = 0.3,
+    threshold: float = 0.4,
 ) -> list[tuple[dict, float]]:
-    """Match query against nodes using salient-term Jaccard overlap.
+    """Match query against nodes using overlap coefficient.
+
+    Uses overlap coefficient (|A∩B| / min(|A|,|B|)) instead of Jaccard
+    to avoid dilution from connector words in natural language.
+    Frases naturais não diluem mais o denominator.
 
     Returns list of (node, overlap_score) tuples, sorted by score descending.
     Only includes nodes with overlap > threshold.
@@ -92,7 +96,7 @@ def match_by_salient(
         node_terms = set(salient_terms(text))
         if not node_terms:
             continue
-        overlap = len(query_terms & node_terms) / len(query_terms | node_terms)
+        overlap = len(query_terms & node_terms) / min(len(query_terms), len(node_terms))
         if overlap > threshold:
             matches.append((node, round(overlap, 3)))
 
@@ -107,7 +111,7 @@ def match_by_salient(
 def find_nodes(
     query: str,
     sf: dict,
-    threshold: float = 0.3,
+    threshold: float = 0.4,
 ) -> list[dict]:
     """Find nodes in Semantic Field matching query.
 
