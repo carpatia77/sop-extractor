@@ -848,6 +848,47 @@ def main():
             source_metadata=source_metadata,
         )
 
+        # Semantic Field (§2.6) — build graph from compilation
+        try:
+            from semantic_field import build_semantic_field, validate_semantic_field
+            from semantic_field import export_graphml as _export_graphml
+            from semantic_field import export_jsonld as _export_jsonld
+            from semantic_field import export_markdown as _export_markdown
+
+            sf_data = {
+                "source": filepath.name,
+                "source_sha256": source_hash,
+                "compiled_at": datetime.now(timezone.utc).isoformat(),
+                "sops": all_sections["sops"],
+                "principles": all_sections["principles"],
+                "concepts": all_sections["concepts"],
+                "references": all_sections["references"],
+            }
+            sf = build_semantic_field(sf_data)
+            sf_errors = validate_semantic_field(sf)
+            if sf_errors:
+                print(f"  Semantic Field: {len(sf_errors)} validation errors")
+                for err in sf_errors[:3]:
+                    print(f"    WARN: {err}")
+
+            sf_dir = output_dir / "compilation"
+            sf_json = sf_dir / f"{key}.semantic_field.json"
+            tmp_sf = sf_dir / f"{key}.semantic_field.json.tmp"
+            with open(tmp_sf, "w", encoding="utf-8") as f:
+                json.dump(sf, f, indent=2, ensure_ascii=False)
+            tmp_sf.rename(sf_json)
+
+            try:
+                _export_graphml(sf, sf_dir / f"{key}.graphml")
+            except RuntimeError:
+                pass  # networkx not installed, skip GraphML
+
+            _export_jsonld(sf, sf_dir / f"{key}.jsonld")
+            _export_markdown(sf, sf_dir / f"{key}.semantic_field.md")
+            print(f"  Semantic Field: {sf['metadata']['total_nodes']} nodes, {sf['metadata']['total_edges']} edges")
+        except Exception as e:
+            print(f"  Semantic Field: skipped ({e})")
+
         print(f"  OK: {len(combined_response):,} chars, "
               f"{len(all_sections['sops'])} SOPs, "
               f"{len(all_sections['principles'])} principles, "

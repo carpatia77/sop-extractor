@@ -37,6 +37,7 @@ ingest = [
     "faster-whisper>=1.0.0",
     "pyyaml>=6.0",
 ]
+semantic-field = ["networkx>=3.0"]
 
 
 # Tooling config so `ruff check .` and `pytest` locally match CI without flags.

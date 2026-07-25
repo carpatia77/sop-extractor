@@ -383,7 +383,8 @@ class TestCacheKey:
             sys.argv = argv
 
         comp_dir = root / "compilation"
-        written = {p.stem for p in comp_dir.glob("*.json") if p.stem != "run"}
+        written = {p.stem for p in comp_dir.glob("*.json")
+                   if p.stem != "run" and "semantic_field" not in p.name}
         assert written == {"vid1__transcript.srt", "vid2__transcript.srt"}
 
         vid1 = json.loads((comp_dir / "vid1__transcript.srt.json").read_text())
@@ -425,7 +426,8 @@ class TestCacheKey:
 
         # Only vid1 should have been compiled (rejected on first review)
         comp_dir = root / "compilation"
-        written = {p.stem for p in comp_dir.glob("*.json") if p.stem != "run"}
+        written = {p.stem for p in comp_dir.glob("*.json")
+                   if p.stem != "run" and "semantic_field" not in p.name}
         assert len(written) == 1, f"Expected 1 file compiled, got: {written}"
         assert "vid1" in written.pop(), f"Expected vid1, got: {written}"
         assert call_count == 1, f"Agent called {call_count} times, expected 1"
