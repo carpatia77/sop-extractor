@@ -61,6 +61,72 @@ def load_context_questions(skill_dir: str) -> dict | None:
     return None
 
 
+def build_evidence_ledger_from_context(skill_dir: str) -> dict | None:
+    """Build evidence_ledger.json from context questions + compilation data.
+
+    This is the GATE: no claim published without evidence_id.
+    """
+    context = load_context_questions(skill_dir)
+    if not context:
+        return None
+
+    # Try to load compilation data for principles
+    compilation_dir = Path(skill_dir) / "compilation"
+    principles = []
+    if compilation_dir.exists():
+        for json_file in compilation_dir.glob("*.json"):
+            if json_file.name.startswith("run") or "semantic_field" in json_file.name:
+                continue
+            try:
+                with open(json_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                for p in data.get("principles", []):
+                    p["_source_file"] = json_file.name
+                    principles.append(p)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    # Build ledger entries from principles
+    entries = []
+    for p in principles:
+        statement = p.get("statement", "")
+        if not statement:
+            continue
+        import hashlib
+        entry_id = f"ev-{hashlib.sha256(statement.encode()).hexdigest()[:12]}"
+        entries.append({
+            "entry_id": entry_id,
+            "claim": statement,
+            "source_file": p.get("_source_file", ""),
+            "epistemic_status": p.get("epistemic_status", "speculative"),
+            "evidence_text": p.get("evidence", ""),
+            "context_author": context.get("author", ""),
+            "context_audience": context.get("audience", ""),
+            "context_purpose": context.get("purpose", ""),
+        })
+
+    ledger = {
+        "version": "1.0",
+        "session": 2,
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "entries": entries,
+        "metadata": {
+            "total_entries": len(entries),
+            "context_author": context.get("author", ""),
+        },
+    }
+
+    # Write to evidence directory
+    out_dir = Path(skill_dir) / "evidence"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "evidence_ledger.json"
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(ledger, f, indent=2, ensure_ascii=False)
+
+    return ledger
+
+
 def generate_contexto_prompt(skill_dir: str) -> str:
     """Generate the context questions for Session 2."""
     questions = [

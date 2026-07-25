@@ -76,9 +76,9 @@ SESSIONS = {
 SESSION_FILES = {
     1: ["teach/task_contract.json"],
     2: ["teach/context_questions.json", "evidence/evidence_ledger.json"],
-    3: ["teach/coherence_audit.md"],
-    4: ["semantic_field/semantic_field.candidates.jsonl"],
-    5: ["semantic_field/semantic_field.json", "semantic_field/semantic_field.review.json"],
+    3: ["teach/coherence_audit.json"],
+    4: ["semantic_field/semantic_field.candidates.jsonl", "emerging_questions/emerging_questions.candidates.jsonl"],
+    5: ["semantic_field/semantic_field.json"],
     6: ["teach/application_log.json"],
 }
 
@@ -161,10 +161,22 @@ def is_session_completed(skill_dir: str, session_num: int) -> bool:
 def complete_session(skill_dir: str, session_num: int) -> int:
     """Mark a session as completed, return next session number.
 
+    Enforces ordering: can only complete session N if sessions 1..N-1
+    are already completed. Prevents skipping gates.
+
+    Raises ValueError if ordering is violated.
     Returns:
         Next session number (1-6), or 0 if all sessions complete.
     """
     progress = load_progress(skill_dir)
+
+    # GATE: enforce sequential ordering
+    for i in range(1, session_num):
+        if i not in progress["completed_sessions"]:
+            raise ValueError(
+                f"Cannot complete session {session_num}: "
+                f"session {i} ({SESSIONS[i]['name']}) must be completed first"
+            )
 
     if session_num not in progress["completed_sessions"]:
         progress["completed_sessions"].append(session_num)

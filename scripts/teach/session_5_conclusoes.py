@@ -44,8 +44,19 @@ def filter_approved(candidates: list[dict]) -> list[dict]:
     return [c for c in candidates if c.get("status") == "approved"]
 
 
-def publish_semantic_field(skill_dir: str, approved: list[dict]) -> Path:
-    """Publish approved candidates as semantic_field.json."""
+def publish_semantic_field(skill_dir: str, candidates: list[dict] | None = None) -> Path:
+    """Publish candidates as semantic_field.json.
+
+    Auto-filters: only items with status="approved" are published.
+    proposed/rejected items are NEVER included — this is the core
+    anti-fabrication gate.
+    """
+    if candidates is None:
+        candidates = load_candidates(skill_dir)
+
+    # GATE: only approved items reach the canonical output
+    approved = filter_approved(candidates)
+
     out_dir = Path(skill_dir) / "semantic_field"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "semantic_field.json"

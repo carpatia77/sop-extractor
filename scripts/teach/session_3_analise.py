@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Sessão 3: Análise — A verdade se afia.
 
-Coherence audit + Evolution audit + Refutation chain.
+Checks existing compilation data for contradictions flagged by
+refutation chains. Does NOT run full coherence audit (use
+validate_coherence_audit.py for that) or evolution audit (use
+validate_evolution_audit.py for that). This module surfaces
+pre-existing refutation data for the teach session context.
 
 Perguntas:
   - "O autor contradiz a si mesmo?"
@@ -9,7 +13,7 @@ Perguntas:
   - "Há tensões não resolvidas?"
   - "O que outra fonte diz sobre o mesmo tema?"
 
-Output: coherence_audit.md + evolution audit (contradictions flagged, tensions opened)
+Output: coherence_audit.json (refutation contradictions found)
 
 Gate: Contradições não são reconciliadas silenciosamente.
 

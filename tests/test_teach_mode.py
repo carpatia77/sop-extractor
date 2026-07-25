@@ -82,6 +82,18 @@ class TestSessionManager:
         with pytest.raises(ValueError):
             start_session(skill_dir, 7)
 
+    def test_ordering_enforced(self, skill_dir):
+        """GATE: cannot complete session 3 without completing 1 and 2."""
+        with pytest.raises(ValueError, match="session 1"):
+            complete_session(skill_dir, 3)
+
+    def test_ordering_partial(self, skill_dir):
+        """GATE: can complete session 2 after session 1, but not 4 without 3."""
+        complete_session(skill_dir, 1)
+        complete_session(skill_dir, 2)  # OK — 1 is done
+        with pytest.raises(ValueError, match="session 3"):
+            complete_session(skill_dir, 4)  # FAIL — 3 not done
+
     def test_session_definitions_complete(self):
         assert len(SESSIONS) == 6
         for i in range(1, 7):
@@ -194,19 +206,40 @@ class TestSession5:
         approved = filter_approved(candidates)
         assert len(approved) == 2
 
-    def test_publish_semantic_field(self, skill_dir):
-        approved = [
-            {"type": "concept", "term": "Test", "status": "approved"},
-            {"type": "edge", "source": "a", "target": "b", "status": "approved"},
+    def test_publish_auto_filters(self, skill_dir):
+        """GATE: publish_semantic_field auto-filters, never leaks proposed/rejected."""
+        mixed = [
+            {"type": "concept", "term": "A", "status": "approved"},
+            {"type": "concept", "term": "B", "status": "rejected"},
+            {"type": "concept", "term": "C", "status": "proposed"},
+            {"type": "concept", "term": "D", "status": "approved"},
         ]
-        path = publish_semantic_field(skill_dir, approved)
-        assert path.exists()
+        path = publish_semantic_field(skill_dir, mixed)
         with open(path) as f:
             sf = json.load(f)
-        assert sf["metadata"]["total_nodes"] == 1
-        assert sf["metadata"]["total_edges"] == 1
+        terms = [n["term"] for n in sf["nodes"]]
+        assert "A" in terms
+        assert "D" in terms
+        assert "B" not in terms  # rejected must not leak
+        assert "C" not in terms  # proposed must not leak
+
+    def test_publish_from_disk(self, skill_dir):
+        """publish_semantic_field loads from disk if candidates=None."""
+        candidates = [
+            {"type": "concept", "term": "X", "status": "approved"},
+            {"type": "concept", "term": "Y", "status": "rejected"},
+        ]
+        create_candidates_file(skill_dir, candidates)
+        path = publish_semantic_field(skill_dir)  # auto-loads from disk
+        with open(path) as f:
+            sf = json.load(f)
+        terms = [n["term"] for n in sf["nodes"]]
+        assert "X" in terms
+        assert "Y" not in terms
 
 
+# ---------------------------------------------------------------------------
+# Session 6: Aplicação
 # ---------------------------------------------------------------------------
 # Session 6: Aplicação
 # ---------------------------------------------------------------------------
