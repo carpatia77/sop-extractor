@@ -115,7 +115,7 @@ def _is_creation_vs_drift(new_term: str, sf: dict, task_contract: dict) -> str:
     return "drift"
 ```
 
-**Nota sobre 2 vs 3 ancoras**: Hoje sao 2 ancoras funcionais. A ancora #3 (evidence_text) sera reintroduzida na Fase D quando o Evidence Ledger existir com locator/excerpt_hash/evidence_text reais. Nao usar source_file como ancora — e um path de arquivo que nao casa com termos de conceito em linguagem natural.
+**Nota sobre 2 vs 3 ancoras**: A ancora #3 (evidence_text) agora esta disponivel via Evidence Ledger (`scripts/evidence_ledger.py`). Será descomentada quando o Chavruta Engine for implementado (Fase C). Nao usar source_file como ancora — e um path de arquivo que nao casa com termos de conceito em linguagem natural.
 
 ### Arquivos a criar/modificar
 
