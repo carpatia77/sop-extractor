@@ -6,8 +6,6 @@ ledger building, lookup, integration with compile pipeline.
 """
 import os
 
-import pytest
-
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
