@@ -184,26 +184,63 @@ class TestRefutationIntegration:
 # ---------------------------------------------------------------------------
 
 class TestNoSilentReconciliation:
-    def test_contradiction_flagged(self, sf_with_refutation):
-        """When a claim contradicts SF, it should be flagged, not silently accepted."""
+    def test_contradiction_with_negation_is_drift(self, sf_with_refutation):
+        """Response that NEGATES a principle must be flagged as contradiction."""
         result = detect_drift(
-            "Volatility drag does not compound and is irrelevant",
+            "Volatility drag does NOT compound and is irrelevant",
             sf_with_refutation,
         )
-        # This contradicts the principle — should NOT be silently accepted
-        # It may or may not be drift depending on coverage, but it should
-        # at minimum NOT be marked as "no drift, all good"
-        # The key is: the system must NOT silently agree with a contradiction
-        assert result["is_drift"] is True or result["anchor_used"] != "none"
+        assert result["is_drift"] is True
+        assert result["is_contradiction"] is True
+        assert result["anchor_used"] == "none"
+
+    def test_contradiction_with_challenge_words(self, sf_with_refutation):
+        """Response that uses challenge words (wrong, myth) must be flagged."""
+        result = detect_drift(
+            "The author's principle about volatility drag is wrong",
+            sf_with_refutation,
+        )
+        assert result["is_drift"] is True
+        assert result["is_contradiction"] is True
+
+    def test_contradiction_disconfirming_evidence(self, sf_with_refutation):
+        """Response matching disconfirming_evidence is a challenge, not anchor."""
+        result = detect_drift(
+            "Sharpe ratio is path-independent so drag doesn't apply",
+            sf_with_refutation,
+        )
+        # This matches the disconfirming_evidence of the principle
+        assert result["is_contradiction"] is True
+
+    def test_contradiction_overrides_anchor(self, sf_with_refutation):
+        """Even with high coverage, contradiction forces drift."""
+        result = detect_drift(
+            "Volatility drag does not compound against you over time",
+            sf_with_refutation,
+        )
+        assert result["is_drift"] is True
+        assert result["is_contradiction"] is True
+        # Must NOT be anchored despite high lexical overlap
+        assert result["anchor_used"] == "none"
 
     def test_qualification_surfaced(self, sf_with_refutation):
-        """Qualifying language should use the refutation chain."""
+        """Qualifying language without negation should use the refutation chain."""
         result = detect_drift(
             "Rebalancing can mitigate volatility drag",
             sf_with_refutation,
         )
         assert result["is_drift"] is False
         assert result["anchor_used"] == "strongest_alternative"
+        assert result["is_contradiction"] is False
+
+    def test_affirmation_not_contradiction(self, sf_with_refutation):
+        """Affirming a principle is not a contradiction."""
+        result = detect_drift(
+            "Volatility drag compounds against you over time",
+            sf_with_refutation,
+        )
+        assert result["is_drift"] is False
+        assert result["is_contradiction"] is False
 
 
 # ---------------------------------------------------------------------------

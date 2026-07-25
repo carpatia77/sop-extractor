@@ -156,6 +156,50 @@ class TestEdgeCases:
 
 
 # ---------------------------------------------------------------------------
+# Contradiction detection
+# ---------------------------------------------------------------------------
+
+class TestContradictionDetection:
+    def test_negation_flagged(self, sample_sf):
+        """Response with negation words targeting SF terms is contradiction."""
+        result = detect_drift(
+            "Volatility drag does NOT compound", sample_sf,
+        )
+        assert result["is_drift"] is True
+        assert result["is_contradiction"] is True
+
+    def test_challenge_words_flagged(self, sample_sf):
+        """Response with challenge words (wrong, myth) is contradiction."""
+        result = detect_drift(
+            "The principle about volatility drag is wrong", sample_sf,
+        )
+        assert result["is_contradiction"] is True
+
+    def test_negation_overrides_anchor(self, sample_sf):
+        """Negation forces drift even with high coverage."""
+        result = detect_drift(
+            "Volatility drag does not compound against you over time", sample_sf,
+        )
+        assert result["is_drift"] is True
+        assert result["anchor_used"] == "none"
+
+    def test_affirmation_not_contradiction(self, sample_sf):
+        """Affirming SF content is not contradiction."""
+        result = detect_drift(
+            "Volatility drag compounds against you", sample_sf,
+        )
+        assert result["is_contradiction"] is False
+
+    def test_out_of_scope_not_contradiction(self, sample_sf):
+        """Unrelated content is drift but not contradiction."""
+        result = detect_drift(
+            "The weather is sunny today", sample_sf,
+        )
+        assert result["is_drift"] is True
+        assert result["is_contradiction"] is False
+
+
+# ---------------------------------------------------------------------------
 # Boolean wrapper
 # ---------------------------------------------------------------------------
 
