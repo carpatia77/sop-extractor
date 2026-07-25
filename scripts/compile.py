@@ -527,6 +527,11 @@ def write_compilation(
     if ref_summary:
         data["refutation_summary"] = ref_summary
 
+    # Include evidence ledger if present (§2.8)
+    ledger = sections.get("evidence_ledger")
+    if ledger:
+        data["evidence_ledger"] = ledger
+
     # Propagate source ingestion metadata (§2.2)
     if source_metadata:
         data["source_metadata"] = source_metadata
@@ -768,7 +773,8 @@ def main():
             })
             continue
 
-        # Strip SRT if needed
+        # Strip SRT if needed (keep original for Evidence Ledger locator)
+        original_text = content
         if filepath.suffix.lower() == ".srt":
             content = strip_srt(content)
 
@@ -885,8 +891,25 @@ def main():
             except Exception as e:
                 print(f"  WARN: Refutation chain failed: {e}")
 
-        # Write output (§2.1 + §2.2) with collision-safe key
+        # Evidence Ledger (§2.8) — provenance per claim
         source_metadata = read_source_metadata(filepath)
+        if all_sections["principles"]:
+            try:
+                from evidence_ledger import build_ledger
+                ledger = build_ledger(
+                    all_sections["principles"],
+                    filepath=str(filepath),
+                    source_hash=source_hash,
+                    source_metadata=source_metadata,
+                    original_text=original_text,
+                )
+                all_sections["evidence_ledger"] = ledger
+                entry_count = ledger["metadata"]["total_entries"]
+                print(f"  Evidence Ledger: {entry_count} entries")
+            except Exception as e:
+                print(f"  WARN: Evidence ledger failed: {e}")
+
+        # Write output (§2.1 + §2.2) with collision-safe key
         write_compilation(
             filepath, prompt, combined_response, all_sections,
             output_dir, args.agent, args.model, source_hash, key,
@@ -909,7 +932,7 @@ def main():
                 "concepts": all_sections["concepts"],
                 "references": all_sections["references"],
             }
-            sf = build_semantic_field(sf_data)
+            sf = build_semantic_field(sf_data, evidence_ledger=all_sections.get("evidence_ledger"))
             sf_errors = validate_semantic_field(sf)
             if sf_errors:
                 print(f"  Semantic Field: {len(sf_errors)} validation errors")

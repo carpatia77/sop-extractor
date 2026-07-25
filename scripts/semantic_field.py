@@ -140,11 +140,12 @@ def build_edges(
 # Main builder
 # ---------------------------------------------------------------------------
 
-def build_semantic_field(compilation: dict) -> dict:
+def build_semantic_field(compilation: dict, evidence_ledger: dict | None = None) -> dict:
     """Transform a compilation JSON into a semantic field graph.
 
     Args:
         compilation: output from scripts/compile.py (dict with sops, principles, concepts, references)
+        evidence_ledger: optional evidence ledger for real entry_id (replaces positional)
 
     Returns:
         Semantic field dict with nodes, edges, metadata.
@@ -154,6 +155,12 @@ def build_semantic_field(compilation: dict) -> dict:
     source_file = compilation.get("source_path") or compilation.get("source", "unknown")
     source_sha256 = compilation.get("source_sha256", "")
     compiled_at = compilation.get("compiled_at", "")
+
+    # Build ledger lookup: claim -> entry (for real entry_id)
+    ledger_by_claim = {}
+    if evidence_ledger:
+        for entry in evidence_ledger.get("entries", []):
+            ledger_by_claim[entry["claim"]] = entry
 
     concept_nodes = []
     for c in compilation.get("concepts", []):
@@ -180,15 +187,22 @@ def build_semantic_field(compilation: dict) -> dict:
         if not statement:
             continue
         nid = principle_id(statement)
+        # Use real entry_id from Evidence Ledger if available, else positional
+        ledger_entry = ledger_by_claim.get(statement, {})
+        entry_id = ledger_entry.get("entry_id", "")
         node = {
             "id": nid,
             "type": "principle",
             "statement": statement,
             "epistemic_status": p.get("epistemic_status", "speculative"),
             "source_file": source_file,
-            "evidence_id": f"{source_file}#principle:{len(principle_nodes)}",
+            "evidence_id": entry_id or f"{source_file}#principle:{len(principle_nodes)}",
             "evidence": p.get("evidence", ""),
         }
+        # Add locator + excerpt_hash from Evidence Ledger if available
+        if ledger_entry:
+            node["locator"] = ledger_entry.get("locator", "")
+            node["excerpt_hash"] = ledger_entry.get("excerpt_hash", "")
         # Include refutation chain data if present (§2.7)
         refutation = p.get("refutation")
         if refutation and not refutation.get("_dry_run"):
