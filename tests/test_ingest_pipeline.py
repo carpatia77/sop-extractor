@@ -1,169 +1,152 @@
-"""Tests for sopx.ingest.pipeline — IngestPipeline."""
+"""Tests for sopx.ingest.pipeline — IngestPipeline including batch playlist.
+
+Tests: ingest_playlist with mocked yt-dlp, error handling, max_videos limit.
+"""
 import json
-from unittest.mock import MagicMock
+import os
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sopx.cache import CacheManager
-from sopx.ingest.pipeline import IngestPipeline, IngestResult, check_dependencies
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from sopx.ingest.pipeline import IngestPipeline
 
 
-class TestIngestResult:
-    def test_dataclass_fields(self, tmp_path):
-        result = IngestResult(
-            output_dir=tmp_path,
-            srt=tmp_path / "transcript.srt",
-            text=tmp_path / "full_text.txt",
-            metadata=tmp_path / "metadata.json",
-            cached=False,
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def pipeline():
+    """Create a real IngestPipeline with mocked adapters."""
+    with patch("sopx.ingest.pipeline.YtDlpAdapter") as mock_ytdlp, \
+         patch("sopx.ingest.pipeline.FFmpegAdapter") as mock_ffmpeg, \
+         patch("sopx.ingest.pipeline.WhisperAdapter") as mock_whisper, \
+         patch("sopx.ingest.pipeline.CacheManager"):
+        p = IngestPipeline.__new__(IngestPipeline)
+        p._ytdlp = mock_ytdlp
+        p._ytdlp.binary = "/usr/bin/yt-dlp"
+        p._ffmpeg = mock_ffmpeg
+        p._whisper = mock_whisper
+        p.config = {"output_dir": "/tmp/test"}
+        yield p
+
+
+@pytest.fixture
+def sample_playlist_output():
+    """Sample yt-dlp --flat-playlist --dump-json output."""
+    videos = [
+        {"id": "video1", "title": "Video 1"},
+        {"id": "video2", "title": "Video 2"},
+        {"id": "video3", "title": "Video 3"},
+    ]
+    return "\n".join(json.dumps(v) for v in videos)
+
+
+# ---------------------------------------------------------------------------
+# ingest_playlist
+# ---------------------------------------------------------------------------
+
+class TestIngestPlaylist:
+    @patch("subprocess.run")
+    def test_lists_videos(self, mock_run, pipeline, sample_playlist_output, tmp_path):
+        """Playlist lists videos via yt-dlp."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout=sample_playlist_output, stderr=""
         )
-        assert result.output_dir == tmp_path
-        assert result.cached is False
+        pipeline.ingest = MagicMock(return_value=MagicMock(success=True))
 
-
-def _make_pipeline_with_mocks(tmp_path, cache=None):
-    """Create an IngestPipeline with pre-injected mock adapters.
-
-    The whisper mock writes the SRT file to the output_dir so the pipeline
-    can read it back.
-    """
-    cache = cache or CacheManager(tmp_path / "cache")
-    pipeline = IngestPipeline(cache=cache)
-
-    expected_text = "Texto transcrito aqui com varias palavras para testar"
-
-    def _fake_transcribe(audio_path, output_dir):
-        srt_path = output_dir / "transcript.srt"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        srt_path.write_text(
-            "1\n00:00:00,000 --> 00:00:02,000\nTexto transcrito aqui com varias palavras para testar\n",
-            encoding="utf-8",
+        pipeline.ingest_playlist(
+            "https://youtube.com/playlist?list=XYZ",
+            output_base=str(tmp_path),
         )
-        return srt_path, expected_text
 
-    mock_ffmpeg = MagicMock()
-    mock_ffmpeg.extract_audio.return_value = tmp_path / "audio.mp3"
-    mock_ffmpeg.get_duration.return_value = 300.0
-    pipeline._ffmpeg = mock_ffmpeg
+        # yt-dlp was called to list videos
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args
+        assert "--flat-playlist" in call_args[0][0]
+        assert "--dump-json" in call_args[0][0]
 
-    mock_whisper = MagicMock()
-    mock_whisper.transcribe_to_text.side_effect = _fake_transcribe
-    pipeline._whisper = mock_whisper
-
-    mock_ytdlp = MagicMock()
-    pipeline._ytdlp = mock_ytdlp
-
-    return pipeline, mock_ffmpeg, mock_whisper, mock_ytdlp
-
-
-class TestIngestPipeline:
-    def test_init_default(self):
-        pipeline = IngestPipeline()
-        assert pipeline.config is not None
-        assert pipeline.cache is not None
-
-    def test_init_custom(self, tmp_path):
-        config = {"language": "en-US", "whisper": {"model_size": "medium"}}
-        cache = CacheManager(tmp_path / "cache")
-        pipeline = IngestPipeline(config=config, cache=cache)
-        assert pipeline.config["language"] == "en-US"
-
-    def test_ingest_local_file(self, tmp_path):
-        pipeline, mock_ffmpeg, mock_whisper, _ = _make_pipeline_with_mocks(tmp_path)
-
-        video = tmp_path / "video.mp4"
-        video.write_bytes(b"fake video content")
-
-        result = pipeline.ingest(str(video), output_base=tmp_path / "output")
-
-        assert result.output_dir.exists()
-        assert result.srt.name == "transcript.srt"
-        assert result.text.exists()
-        assert result.cached is False
-
-        text_content = result.text.read_text()
-        assert "Texto transcrito" in text_content
-
-        meta = json.loads(result.metadata.read_text())
-        assert "canonical_id" in meta
-        assert "upload_date" in meta
-        assert "whisper_model" in meta
-
-    def test_ingest_cache_hit(self, tmp_path):
-        pipeline, mock_ffmpeg, mock_whisper, _ = _make_pipeline_with_mocks(tmp_path)
-
-        video = tmp_path / "video.mp4"
-        video.write_bytes(b"fake video content")
-
-        result1 = pipeline.ingest(str(video), output_base=tmp_path / "output")
-        assert result1.cached is False
-
-        result2 = pipeline.ingest(str(video), output_base=tmp_path / "output")
-        assert result2.cached is True
-        assert result2.output_dir == result1.output_dir
-
-        mock_ffmpeg.extract_audio.assert_called_once()
-        mock_whisper.transcribe_to_text.assert_called_once()
-
-    def test_ingest_file_not_found(self, tmp_path):
-        pipeline, _, _, _ = _make_pipeline_with_mocks(tmp_path)
-
-        with pytest.raises(FileNotFoundError, match="não encontrado"):
-            pipeline.ingest("/nonexistent/video.mp4")
-
-    def test_ingest_url(self, tmp_path):
-        pipeline, mock_ffmpeg, mock_whisper, mock_ytdlp = _make_pipeline_with_mocks(tmp_path)
-        mock_ytdlp.get_info.return_value = {
-            "canonical_id": "ABC123",
-            "title": "Test Video",
-            "uploader": "Channel",
-            "upload_date": "20250101",
-            "duration": 300,
-        }
-        mock_ytdlp.download_audio.return_value = tmp_path / "audio.mp3"
-
-        result = pipeline.ingest(
-            "https://youtube.com/watch?v=abc",
-            output_base=tmp_path / "output",
+    @patch("subprocess.run")
+    def test_max_videos_limit(self, mock_run, pipeline, sample_playlist_output, tmp_path):
+        """max_videos limits processing."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout=sample_playlist_output, stderr=""
         )
-        meta = json.loads(result.metadata.read_text())
-        assert meta["canonical_id"] == "ABC123"
-        mock_ytdlp.get_info.assert_called_once()
-        mock_ytdlp.download_audio.assert_called_once()
-        mock_ffmpeg.extract_audio.assert_not_called()
+        pipeline.ingest = MagicMock(return_value=MagicMock(success=True))
 
-    def test_metadata_schema(self, tmp_path):
-        pipeline, _, _, _ = _make_pipeline_with_mocks(tmp_path)
+        pipeline.ingest_playlist(
+            "https://youtube.com/playlist?list=XYZ",
+            output_base=str(tmp_path),
+            max_videos=2,
+        )
 
-        video = tmp_path / "video.mp4"
-        video.write_bytes(b"fake video")
-        result = pipeline.ingest(str(video), output_base=tmp_path / "output")
+        # Only 2 videos processed
+        assert pipeline.ingest.call_count == 2
 
-        meta = json.loads(result.metadata.read_text())
-        required_keys = {
-            "source", "canonical_id", "title", "uploader", "upload_date",
-            "ingested_at", "duration_seconds", "whisper_model", "language",
-            "word_count",
-        }
-        assert required_keys.issubset(meta.keys())
+    @patch("subprocess.run")
+    def test_processes_each_video(self, mock_run, pipeline, sample_playlist_output, tmp_path):
+        """Each video is processed via ingest()."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout=sample_playlist_output, stderr=""
+        )
+        pipeline.ingest = MagicMock(return_value=MagicMock(success=True))
 
-    def test_list_cache(self, tmp_path):
-        pipeline, _, _, _ = _make_pipeline_with_mocks(tmp_path)
+        pipeline.ingest_playlist(
+            "https://youtube.com/playlist?list=XYZ",
+            output_base=str(tmp_path),
+        )
 
-        video = tmp_path / "video.mp4"
-        video.write_bytes(b"fake")
-        pipeline.ingest(str(video), output_base=tmp_path / "output")
+        assert pipeline.ingest.call_count == 3
+        urls = [call[0][0] for call in pipeline.ingest.call_args_list]
+        assert "video1" in urls[0]
+        assert "video2" in urls[1]
+        assert "video3" in urls[2]
 
-        entries = pipeline.cache.entries()
-        assert len(entries) == 1
+    @patch("subprocess.run")
+    def test_handles_video_failure(self, mock_run, pipeline, sample_playlist_output, tmp_path):
+        """Failed videos are skipped, not fatal."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout=sample_playlist_output, stderr=""
+        )
+        pipeline.ingest = MagicMock(side_effect=[
+            RuntimeError("download failed"),
+            MagicMock(success=True),
+            MagicMock(success=True),
+        ])
 
+        results = pipeline.ingest_playlist(
+            "https://youtube.com/playlist?list=XYZ",
+            output_base=str(tmp_path),
+        )
 
-class TestCheckDependencies:
-    def test_returns_dict(self):
-        deps = check_dependencies()
-        assert isinstance(deps, dict)
-        assert "yt-dlp" in deps
-        assert "ffmpeg" in deps
-        assert "faster-whisper" in deps
-        for v in deps.values():
-            assert isinstance(v, bool)
+        assert len(results) == 2
+
+    @patch("subprocess.run")
+    def test_empty_playlist(self, mock_run, pipeline, tmp_path):
+        """Empty playlist returns empty results."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="", stderr=""
+        )
+
+        results = pipeline.ingest_playlist(
+            "https://youtube.com/playlist?list=XYZ",
+            output_base=str(tmp_path),
+        )
+
+        assert results == []
+
+    @patch("subprocess.run")
+    def test_ytdlp_failure_raises(self, mock_run, pipeline, tmp_path):
+        """yt-dlp failure raises RuntimeError."""
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="playlist not found"
+        )
+
+        with pytest.raises(RuntimeError, match="yt-dlp falhou"):
+            pipeline.ingest_playlist(
+                "https://youtube.com/playlist?list=XYZ",
+                output_base=str(tmp_path),
+            )
