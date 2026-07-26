@@ -61,6 +61,8 @@ CAPABILITIES = [
                "<path> [--batch] [--dry-run] [--model MODEL]", False, False, None),
     Capability("14", "teach", "Teach mode (6 Judaic sessions)", "teach.py",
                "<skill_dir> [start|status|complete] [--session N]", False, False, None),
+    Capability("15", "wizard", "Interactive guided workflow", "wizard.py",
+               "", False, False, None),
 ]
 
 
