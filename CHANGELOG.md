@@ -5,6 +5,95 @@ All notable changes to **sop-extractor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-07-26
+
+### Added
+
+#### Anti-Hallucination Pipeline (Layer 4)
+- **Refutation Chain (`scripts/refutation_chain.py`).** Per-claim
+  adversarial stress-testing: generates `strongest_alternative` (best
+  counter-argument), `disconfirming_evidence` (what would falsify the
+  claim), and `dissent_type` (qualifies/contradicts/context_limited).
+  Deterministic validation via Jaccard overlap on salient terms
+  (threshold 0.7). Negation overrides overlap threshold — same words,
+  opposite meaning = valid dissent. Integrated into compile.py
+  post-grounding-check; refutation fields added to principle nodes
+  in semantic_field.py.
+- **Evidence Ledger (`scripts/evidence_ledger.py`).** Deterministic
+  provenance per claim: `entry_id` (content-based hash), `locator`
+  (SRT timestamps or line numbers), `excerpt_hash`, `evidence_text`,
+  `upload_date`. Uses canonical `build_ledger()` module — no divergent
+  schemas. Integrated into compile.py (preserves original SRT text for
+  locator extraction) and semantic_field.py (entry_id replaces
+  positional evidence_id).
+- **Emerging Questions (`scripts/emerging_questions.py`).** Detects
+  gaps (undefined concepts, principles without evidence, SOPs without
+  conditions, orphan concepts), tensions (refutation tensions,
+  epistemic uncertainty), and limits (sparse connections). Output:
+  emerging_questions.json + emerging_questions.md. 7 detectors, 14 tests.
+
+#### Teaching System (Layer 9-10)
+- **Chavruta Engine (`scripts/chavruta/`)** — debate motor with 7 depth
+  levels (chess analogy: Opening → Mastery).
+  - `sf_matcher.py`: 3-layer node matching (exact ID, substring,
+    salient-term overlap coefficient). Unified with depth_tracker.
+  - `drift_detector.py`: drift detection with 2 active anchors
+    (strongest_alternative + user_goal via salient_terms). Anchor #3
+    (evidence_text) active via Evidence Ledger. Contradiction detection
+    overrides anchor — negation/challenge words force drift.
+  - `depth_tracker.py`: grounded depth scoring (1-7) using observable
+    graph events, NOT LLM subjectivity. Monotonicity: depth = max().
+  - `engine.py`: stateful debate motor with depth-specific challenges.
+    Handles drift, contradiction, and depth transitions.
+
+#### Teach Mode (Layer 9)
+- **Session Manager (`scripts/teach/`).** 6 Judaic study sessions with
+  stateful progress tracking. Gates enforced: sequential ordering +
+  file existence. E2E tested without manual file creation.
+  - `session_manager.py`: progress, ZPD calibration, status display.
+  - `session_1_pergunta.py` through `session_6_aplicacao.py`: each
+    session creates its own output via public API. Session 2 wires to
+    evidence_ledger.build_ledger() (canonical schema).
+
+#### Knowledge Export (Layer 8)
+- **HTML Viewer (`export_html()` in semantic_field.py).** Self-contained
+  interactive HTML with force-directed layout, color-coded nodes,
+  click-to-detail. No external dependencies.
+- **LightRAG/Cognee Adapter (`export_lightrag()` in semantic_field.py).**
+  Compatible JSON format: `nodes: [{id, type, content, metadata}]`.
+  Includes refutation data in content strings.
+
+#### CLI
+- **`sopx teach` (capability 14).** Start/status/complete subcommands
+  for teach mode sessions.
+- **`sopx wizard` (capability 15).** Interactive guided workflow:
+  compile source, ingest video, teach skill, view status. subprocess.run
+  (no shell injection), non-interactive handling, returncode checking.
+
+### Fixed
+- **Silent reconciliation bug (drift detector).** Contradictions with
+  high lexical overlap were accepted as "anchored". Now: negation +
+  challenge words + disconfirming_evidence check force drift. Tests
+  rewritten with specific assertions (not OR-assert that never fails).
+- **Depth 4 crash.** `TypeError` when Depth 4 fired — connected list
+  passed incorrectly. Fixed: both matched nodes used as connected pair.
+- **Depth 5 false positive.** Superficial repetition triggered depth 5.
+  Fixed: subtract parent principle terms before overlap check.
+- **Matcher unification.** sf_matcher.py and depth_tracker.py now use
+  same overlap coefficient (|A∩B| / min(|A|,|B|)), threshold 0.4.
+- **Evidence Ledger honest status.** Docs updated from "✅ 100%" to
+  actual status. Canonical module used, no divergent schemas.
+- **Command injection (wizard).** `os.system(f-string)` replaced with
+  `subprocess.run([...])` — args as list, no shell.
+- **Non-interactive loop.** `prompt_choice` returns default on EOFError.
+- **F401 ruff errors** (3 occurrences across sessions).
+- **Batch playlist tests.** 6 tests added for `ingest_playlist()`.
+
+### Changed
+- **Renamed "Método Judaico" → "Método Hebraico"** across code and docs.
+- **Threshold aligned** to 0.25 across drift_detector (was 0.2/0.25/0.3).
+- **SESSION_FILES aligned** with actual file outputs (fixed .md→.json).
+
 ## [2.2.0] - 2026-07-24
 
 ### Added
