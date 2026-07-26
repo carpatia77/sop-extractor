@@ -72,6 +72,10 @@ def check_quantitative_consistency(
 ) -> list[dict]:
     """Check if quantitative claims in response are consistent with SF.
 
+    Checks two things:
+    1. Same unit with different magnitude (10x+ difference)
+    2. Same concept context but different unit type (type confusion)
+
     Returns list of potential issues: [{type, message, severity, evidence}]
     """
     issues = []
@@ -80,8 +84,8 @@ def check_quantitative_consistency(
     for claim in response_claims:
         number = claim["number"]
         unit = claim["unit"]
+        context = claim["context"]
 
-        # Check if SF has a claim with the same unit but different magnitude
         for node in sf.get("nodes", []):
             statement = node.get("statement", "")
             if not statement:
@@ -89,24 +93,62 @@ def check_quantitative_consistency(
 
             sf_claims = extract_quantitative_claims(statement)
             for sf_claim in sf_claims:
-                if sf_claim["unit"].lower() == unit.lower():
-                    # Same unit — check if magnitudes differ significantly
-                    sf_num = sf_claim["number"]
+                sf_num = sf_claim["number"]
+                sf_unit = sf_claim["unit"]
+
+                # Check 1: Same unit, different magnitude (10x+ difference)
+                if sf_unit.lower() == unit.lower():
                     if sf_num > 0 and number > 0:
                         ratio = max(number, sf_num) / min(number, sf_num)
-                        if ratio > 10:  # 10x difference is suspicious
+                        if ratio > 10:
                             issues.append({
                                 "type": "quantitative_mismatch",
                                 "severity": "high",
                                 "message": (
                                     f"Response claims {number} {unit} but SF states "
-                                    f"{sf_num} {unit} — {ratio:.0f}x difference"
+                                    f"{sf_num} {sf_unit} — {ratio:.0f}x difference"
                                 ),
-                                "evidence": claim["context"],
+                                "evidence": context,
                                 "sf_claim": sf_claim["context"],
                             })
 
+                # Check 2: Different unit type for same concept (type confusion)
+                # If both mention the same concept context but use incompatible units
+                elif _units_are_incompatible(unit, sf_unit):
+                    # Check if the concept context overlaps
+                    ctx_terms = set(salient_terms(context))
+                    sf_ctx_terms = set(salient_terms(sf_claim["context"]))
+                    if ctx_terms and sf_ctx_terms and ctx_terms & sf_ctx_terms:
+                        issues.append({
+                            "type": "type_confusion",
+                            "severity": "high",
+                            "message": (
+                                f"Possible type confusion: response uses {number} {unit} "
+                                f"but SF states {sf_num} {sf_unit} — different unit types "
+                                f"for same concept"
+                            ),
+                            "evidence": context,
+                            "sf_claim": sf_claim["context"],
+                        })
+
     return issues
+
+
+def _units_are_incompatible(unit1: str, unit2: str) -> bool:
+    """Check if two unit types are incompatible (can't be compared)."""
+    # Group units by category (check both singular and plural)
+    digital = {"gb", "mb", "kb", "tb", "bytes", "bps", "bits", "chars", "lines", "rows", "entries", "records", "gigabyte", "megabyte", "kilobyte", "terabyte"}
+    count = {"snapshots", "snapshot", "frames", "frame", "pixels", "pixel", "entries", "entry", "records", "record", "samples", "sample"}
+    time = {"seconds", "second", "minutes", "minute", "hours", "hour", "days", "day", "ms", "ns", "hz", "mhz", "ghz"}
+
+    u1 = unit1.lower().rstrip("s")
+    u2 = unit2.lower().rstrip("s")
+
+    cat1 = "digital" if u1 in digital else "count" if u1 in count else "time" if u1 in time else "other"
+    cat2 = "digital" if u2 in digital else "count" if u2 in count else "time" if u2 in time else "other"
+
+    # Different categories = incompatible
+    return cat1 != cat2 and cat1 != "other" and cat2 != "other"
 
 
 # ---------------------------------------------------------------------------
