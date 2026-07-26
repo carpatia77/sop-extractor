@@ -216,6 +216,22 @@ def detect_drift(
     matched_nodes = _find(user_response, sf, threshold=0.3)
     matched_ids = [n["id"] for n in matched_nodes]
 
+    # Semantic guard: secondary defense for subtle errors
+    # Only runs if main check passed (not already drift/contradiction)
+    semantic_result = {"issues": []}
+    if not is_drift:
+        try:
+            from chavruta.semantic_guard import check_semantic_errors
+            semantic_result = check_semantic_errors(user_response, sf)
+            # If semantic guard finds high-severity issues, escalate to drift
+            if not semantic_result["is_valid"]:
+                is_drift = True
+                confidence = 0.8
+                high_issues = [i for i in semantic_result["issues"] if i["severity"] == "high"]
+                reason = f"Semantic error detected: {high_issues[0]['message'][:100]}"
+        except ImportError:
+            pass  # semantic_guard not available, skip
+
     return {
         "is_drift": is_drift,
         "is_contradiction": is_contradiction,
@@ -223,6 +239,7 @@ def detect_drift(
         "reason": reason,
         "matched_nodes": matched_ids,
         "anchor_used": anchor,
+        "semantic_issues": semantic_result.get("issues", []),
     }
 
 

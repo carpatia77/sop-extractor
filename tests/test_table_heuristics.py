@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from table_heuristics import TABULAR_LINE_RE, SHORT_LINE_RE
 from extract_tables import (
-    extract_tables_from_page,
     extract_all_tables,
     save_tables_csv,
     save_tables_json,
@@ -49,57 +48,7 @@ class TestShortLineRe:
 
 
 # ---------------------------------------------------------------------------
-# Table extraction from page text
-# ---------------------------------------------------------------------------
-
-class TestExtractTablesFromPage:
-    def test_gurs_style_table(self):
-        """GURPS-style equipment table with TL/Name/DR/Cost/Weight."""
-        text = """Low-Tech Armor Table
-TL Armor Location DR Cost Weight LC Notes
-0 Fur Loincloth groin 1* $10 neg. – [1]
-0 Fur Tunic torso 1* $25 2 – [1]
-1 Bronze Breastplate torso 4F $400 20 3 [2]
-1 Cloth Armor torso, groin 1* $30 6 – [1]"""
-        tables = extract_tables_from_page(text, 285)
-        assert len(tables) >= 1
-        assert tables[0]["page"] == 285
-        assert tables[0]["n_rows"] >= 3
-
-    def test_narrative_no_table(self):
-        """Narrative text should not produce tables."""
-        text = """The quick brown fox jumps over the lazy dog.
-This is a paragraph of text that describes something.
-It contains no tabular data whatsoever."""
-        tables = extract_tables_from_page(text, 1)
-        assert len(tables) == 0
-
-    def test_two_separate_tables(self):
-        """Two tables separated by multiple blank lines."""
-        text = """1 Sword 1d6 cut 1 10 3
-2 Axe 1d+1 cut 2 15 4
-3 Dagger 1d-2 imp 1 5 1
-
-
-1 Shield 2 $50 10 4
-2 Buckler 1 $25 5 4
-3 Tower 4 $200 30 3"""
-        tables = extract_tables_from_page(text, 10)
-        assert len(tables) >= 2
-
-    def test_empty_page(self):
-        tables = extract_tables_from_page("", 1)
-        assert tables == []
-
-    def test_page_number_preserved(self):
-        text = "1 Sword 1d6 cut 1 10 3\n2 Axe 1d+1 cut 2 15 4\n3 Dagger 1d-2 imp 1 5 1"
-        tables = extract_tables_from_page(text, 42)
-        assert len(tables) >= 1
-        assert tables[0]["page"] == 42
-
-
-# ---------------------------------------------------------------------------
-# Page parsing
+# Table extraction (extract_all_tables)
 # ---------------------------------------------------------------------------
 
 class TestExtractAllTables:

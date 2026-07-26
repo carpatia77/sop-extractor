@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Table Extractor — extract tables from PDFs using pypdf heuristics.
+"""Table Extractor — extract tables from PDFs using pdfplumber.
 
-Since pdfplumber/camelot are not available, this module uses pypdf's text
-extraction with heuristics to identify and extract tabular data.
+Uses pdfplumber's table detection which parses the actual PDF layout
+(coordinates, column positions) to extract properly separated columns.
+
+Falls back to pypdf heuristics if pdfplumber is not installed.
 
 Usage:
     python scripts/extract_tables.py <pdf_path> [--output <dir>]
@@ -14,188 +16,147 @@ import argparse
 import csv
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
-try:
-    from table_heuristics import TABULAR_LINE_RE, SHORT_LINE_RE, MIN_BURST_RUN
-except ImportError:
-    from scripts.table_heuristics import TABULAR_LINE_RE, SHORT_LINE_RE, MIN_BURST_RUN
-
-
-def detect_table_regions(text: str) -> list[dict]:
-    """Detect table regions in extracted text using heuristics.
-
-    Returns list of regions: [{start_line, end_line, confidence, type}]
-    """
-    lines = text.splitlines()
-    regions = []
-    i = 0
-
-    while i < len(lines):
-        line = lines[i].strip()
-
-        # Check for tabular lines (multi-space aligned)
-        if TABULAR_LINE_RE.search(line):
-            start = i
-            # Look ahead for continuation
-            while i < len(lines) and (
-                TABULAR_LINE_RE.search(lines[i].strip()) or
-                (lines[i].strip() and len(lines[i].strip()) < 50)
-            ):
-                i += 1
-            if i - start >= 3:  # Minimum 3 lines for a table
-                regions.append({
-                    "start_line": start,
-                    "end_line": i - 1,
-                    "confidence": "medium",
-                    "type": "tabular_aligned",
-                    "n_lines": i - start,
-                })
-            continue
-
-        # Check for burst runs (collapsed tables)
-        if SHORT_LINE_RE.match(line):
-            start = i
-            while i < len(lines) and SHORT_LINE_RE.match(lines[i].strip()):
-                i += 1
-            if i - start >= MIN_BURST_RUN:
-                regions.append({
-                    "start_line": start,
-                    "end_line": i - 1,
-                    "confidence": "low" if i - start < 8 else "medium",
-                    "type": "collapsed",
-                    "n_lines": i - start,
-                })
-            continue
-
-        i += 1
-
-    return regions
-
 
 # ---------------------------------------------------------------------------
-# Table extraction
+# pdfplumber extraction (preferred)
 # ---------------------------------------------------------------------------
 
-def extract_tables_from_page(page_text: str, page_num: int) -> list[dict]:
-    """Extract table-like structures from a single page's text.
+def extract_with_pdfplumber(pdf_path: str, pages: list[int] | None = None) -> list[dict]:
+    """Extract tables using pdfplumber's layout-aware parser.
 
-    Uses two detection strategies:
-    1. Multi-space aligned columns (standard tables)
-    2. Lines with multiple numeric values (GURPS-style equipment tables)
-
-    Returns list of tables: [{page, rows: [[cells]], type, confidence}]
+    Returns list of tables: [{page, rows: [[cells]], n_rows, method}]
     """
-    lines = page_text.splitlines()
-    tables = []
-    current_table = []
-    in_table = False
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            if in_table and len(current_table) >= 3:
-                tables.append({
-                    "page": page_num,
-                    "rows": current_table,
-                    "type": "detected",
-                    "confidence": "medium" if len(current_table) >= 5 else "low",
-                    "n_rows": len(current_table),
-                })
-                current_table = []
-                in_table = False
-            continue
-
-        # Check if line looks tabular (multi-space aligned OR multiple numbers)
-        is_tabular = TABULAR_LINE_RE.search(stripped)
-        if not is_tabular:
-            # Check for GURPS-style tables: lines with 3+ numbers and text
-            nums = re.findall(r'\b\d+\b', stripped)
-            has_text = bool(re.search(r'[A-Za-z]{3,}', stripped))
-            if len(nums) >= 3 and has_text:
-                is_tabular = True
-
-        if is_tabular:
-            # Split by multiple spaces, tabs, or $ signs (for cost columns)
-            cells = re.split(r'\s{2,}|\t|\$|(?<=\d) (?=[A-Z])', stripped)
-            cells = [c.strip() for c in cells if c.strip()]
-            if len(cells) >= 2:
-                current_table.append(cells)
-                in_table = True
-            elif in_table and len(stripped) < 30:
-                current_table.append([stripped])
-            else:
-                if in_table and len(current_table) >= 3:
-                    tables.append({
-                        "page": page_num,
-                        "rows": current_table,
-                        "type": "detected",
-                        "confidence": "medium",
-                        "n_rows": len(current_table),
-                    })
-                current_table = []
-                in_table = False
-        else:
-            if in_table and len(current_table) >= 3:
-                tables.append({
-                    "page": page_num,
-                    "rows": current_table,
-                    "type": "detected",
-                    "confidence": "medium",
-                    "n_rows": len(current_table),
-                })
-            current_table = []
-            in_table = False
-
-    # Don't forget the last table
-    if in_table and len(current_table) >= 3:
-        tables.append({
-            "page": page_num,
-            "rows": current_table,
-            "type": "detected",
-            "confidence": "medium",
-            "n_rows": len(current_table),
-        })
-
-    return tables
-
-
-def extract_all_tables(pdf_path: str, pages: list[int] | None = None) -> list[dict]:
-    """Extract tables from all pages (or specified pages) of a PDF.
-
-    Returns list of tables with page number and rows.
-    """
-    if not os.path.exists(pdf_path):
+    try:
+        import pdfplumber
+    except ImportError:
         return []
 
+    all_tables = []
+    with pdfplumber.open(pdf_path) as pdf:
+        page_indices = pages if pages else range(len(pdf.pages))
+
+        for page_num in page_indices:
+            if page_num >= len(pdf.pages):
+                continue
+            page = pdf.pages[page_num]
+
+            try:
+                tables = page.extract_tables()
+            except Exception:
+                tables = []
+
+            for table in tables:
+                if not table or len(table) < 2:
+                    continue
+                # Clean rows: strip whitespace, replace None with empty string
+                clean_rows = []
+                for row in table:
+                    clean_row = [str(cell).strip() if cell else "" for cell in row]
+                    if any(clean_row):  # Skip empty rows
+                        clean_rows.append(clean_row)
+
+                if len(clean_rows) >= 2:
+                    all_tables.append({
+                        "page": page_num + 1,  # 1-indexed
+                        "rows": clean_rows,
+                        "n_rows": len(clean_rows),
+                        "n_cols": max(len(r) for r in clean_rows),
+                        "method": "pdfplumber",
+                    })
+
+    return all_tables
+
+
+# ---------------------------------------------------------------------------
+# pypdf fallback (heuristics)
+# ---------------------------------------------------------------------------
+
+def extract_with_pypdf(pdf_path: str, pages: list[int] | None = None) -> list[dict]:
+    """Fallback extraction using pypdf text + heuristics."""
     try:
         import pypdf
     except ImportError:
-        print("pypdf não instalado — instale com: pip install '.[pdf]'", file=sys.stderr)
         return []
 
+    try:
+        from table_heuristics import TABULAR_LINE_RE
+    except ImportError:
+        from scripts.table_heuristics import TABULAR_LINE_RE
+
+    all_tables = []
     with open(pdf_path, "rb") as f:
         reader = pypdf.PdfReader(f)
-        total_pages = len(reader.pages)
+        page_indices = pages if pages else range(len(reader.pages))
 
-        if pages is None:
-            pages = list(range(total_pages))
-
-        all_tables = []
-        for page_num in pages:
-            if page_num >= total_pages:
+        for page_num in page_indices:
+            if page_num >= len(reader.pages):
                 continue
             try:
                 text = reader.pages[page_num].extract_text() or ""
             except Exception:
                 continue
 
-            tables = extract_tables_from_page(text, page_num + 1)  # 1-indexed
-            all_tables.extend(tables)
+            lines = [l for l in text.splitlines() if l.strip()]
+            if not lines:
+                continue
+
+            # Detect table regions
+            current_table = []
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    if current_table and len(current_table) >= 3:
+                        all_tables.append({
+                            "page": page_num + 1,
+                            "rows": current_table,
+                            "n_rows": len(current_table),
+                            "n_cols": max(len(r) for r in current_table) if current_table else 0,
+                            "method": "pypdf-heuristic",
+                        })
+                    current_table = []
+                    continue
+
+                if TABULAR_LINE_RE.search(stripped):
+                    import re
+                    cells = re.split(r'\s{2,}|\t|\$|(?<=\d) (?=[A-Z])', stripped)
+                    cells = [c.strip() for c in cells if c.strip()]
+                    if len(cells) >= 2:
+                        current_table.append(cells)
+
+            if current_table and len(current_table) >= 3:
+                all_tables.append({
+                    "page": page_num + 1,
+                    "rows": current_table,
+                    "n_rows": len(current_table),
+                    "n_cols": max(len(r) for r in current_table) if current_table else 0,
+                    "method": "pypdf-heuristic",
+                })
 
     return all_tables
+
+
+# ---------------------------------------------------------------------------
+# Unified extraction
+# ---------------------------------------------------------------------------
+
+def extract_all_tables(pdf_path: str, pages: list[int] | None = None) -> list[dict]:
+    """Extract tables from PDF. Uses pdfplumber if available, falls back to pypdf.
+
+    Returns list of tables with page number, rows, and column count.
+    """
+    if not os.path.exists(pdf_path):
+        return []
+
+    # Try pdfplumber first (layout-aware, proper column separation)
+    tables = extract_with_pdfplumber(pdf_path, pages)
+    if tables:
+        return tables
+
+    # Fallback to pypdf heuristics
+    return extract_with_pypdf(pdf_path, pages)
 
 
 # ---------------------------------------------------------------------------
@@ -239,12 +200,24 @@ def print_table_summary(tables: list[dict]) -> None:
         print("  Nenhuma tabela detectada.")
         return
 
+    # Group by method
+    methods = {}
+    for t in tables:
+        m = t.get("method", "unknown")
+        methods[m] = methods.get(m, 0) + 1
+
     print(f"\n  {len(tables)} tabelas detectadas:")
-    for i, table in enumerate(tables):
+    for method, count in methods.items():
+        print(f"    Método: {method} ({count} tabelas)")
+
+    for i, table in enumerate(tables[:10]):
         n_rows = table.get("n_rows", len(table.get("rows", [])))
+        n_cols = table.get("n_cols", 0)
         page = table.get("page", "?")
-        conf = table.get("confidence", "?")
-        print(f"    Tabela {i+1}: página {page}, {n_rows} linhas, confiança {conf}")
+        print(f"    Tabela {i+1}: página {page}, {n_rows}x{n_cols}")
+
+    if len(tables) > 10:
+        print(f"    ... e mais {len(tables) - 10} tabelas")
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +226,7 @@ def print_table_summary(tables: list[dict]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extrair tabelas de PDFs usando heurísticas pypdf",
+        description="Extrair tabelas de PDFs (pdfplumber ou pypdf fallback)",
     )
     parser.add_argument("pdf_path", help="Caminho do PDF")
     parser.add_argument("--output", "-o", default=None,
@@ -287,6 +260,14 @@ def main():
         output_dir = str(Path(args.pdf_path).parent / "tables")
 
     print(f"\nExtraindo tabelas de: {args.pdf_path}")
+
+    # Check available libraries
+    try:
+        import pdfplumber  # noqa: F401
+        print("  Método: pdfplumber (layout-aware)")
+    except ImportError:
+        print("  Método: pypdf heuristics (pdfplumber não disponível)")
+
     tables = extract_all_tables(args.pdf_path, pages)
     print_table_summary(tables)
 
@@ -296,7 +277,7 @@ def main():
         else:
             save_tables_json(tables, output_dir)
     else:
-        print("  Nenhuma tabela encontrada. Tente ajustar os parâmetros ou usar modo técnico.")
+        print("  Nenhuma tabela encontrada.")
 
 
 if __name__ == "__main__":
