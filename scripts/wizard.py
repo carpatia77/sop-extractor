@@ -9,12 +9,11 @@ Reduces CLI friction by guiding users through common workflows:
 
 Usage:
     python scripts/wizard.py              # interactive mode
-    python scripts/wizard.py --auto       # auto-detect from args
 """
 from __future__ import annotations
 
 import argparse
-import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -26,6 +25,8 @@ CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+SCRIPTS_DIR = Path(__file__).parent
+
 
 def colored(text: str, color: str) -> str:
     """Wrap text in ANSI color codes."""
@@ -35,7 +36,14 @@ def colored(text: str, color: str) -> str:
 
 
 def prompt_choice(question: str, options: list[str]) -> int:
-    """Show numbered options and return 1-based index."""
+    """Show numbered options and return 1-based index.
+
+    Raises SystemExit on EOF/non-TTY (no infinite loop).
+    """
+    if not sys.stdin.isatty():
+        print(f"{question} (non-interactive, using default: 1)", file=sys.stderr)
+        return 1
+
     print(f"\n{colored(question, BOLD)}")
     for i, opt in enumerate(options, 1):
         print(f"  {colored(str(i), CYAN)}) {opt}")
@@ -47,9 +55,12 @@ def prompt_choice(question: str, options: list[str]) -> int:
             idx = int(choice)
             if 1 <= idx <= len(options):
                 return idx
-        except (ValueError, EOFError):
-            pass
-        print(f"  {colored('Digite um número de 1 a ' + str(len(options)), YELLOW)}")
+            print(f"  {colored('Digite um numero de 1 a ' + str(len(options)), YELLOW)}")
+        except ValueError:
+            print(f"  {colored('Digite um numero de 1 a ' + str(len(options)), YELLOW)}")
+        except EOFError:
+            return 1  # non-interactive fallback
+        # KeyboardInterrupt propagates naturally
 
 
 def prompt_text(question: str, default: str = "") -> str:
@@ -77,191 +88,202 @@ def print_step(step: int, total: int, description: str) -> None:
 
 
 def print_success(message: str) -> None:
-    print(f"\n  {colored('✓', GREEN)} {message}")
+    print(f"\n  {colored('OK', GREEN)} {message}")
 
 
 def print_warning(message: str) -> None:
-    print(f"\n  {colored('⚠', YELLOW)} {message}")
+    print(f"\n  {colored('! ', YELLOW)} {message}")
 
 
 def print_error(message: str) -> None:
-    print(f"\n  {colored('✗', RED)} {message}")
+    print(f"\n  {colored('ERRO', RED)} {message}")
+
+
+# ---------------------------------------------------------------------------
+# Subprocess runner (replaces os.system — no shell injection)
+# ---------------------------------------------------------------------------
+
+def run_script(script_name: str, args: list[str], step: str = "") -> int:
+    """Run a script via subprocess (list args, no shell).
+
+    Returns returncode. Raises on non-zero if check=True.
+    """
+    cmd = [sys.executable, str(SCRIPTS_DIR / script_name)] + args
+    if step:
+        print(f"\n{colored(step, CYAN)}")
+    try:
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
+    except FileNotFoundError:
+        print_error(f"Script nao encontrado: {script_name}")
+        return 1
 
 
 # ---------------------------------------------------------------------------
 # Workflow: Compilar fonte
 # ---------------------------------------------------------------------------
 
-def wizard_compile():
-    """Guided workflow for compiling a source file."""
-    print_header("COMPILAR FONTE → SKILL")
+def wizard_compile() -> int:
+    """Guided workflow for compiling a source file.
+
+    Returns 0 on success, 1 on error.
+    """
+    print_header("COMPILAR FONTE -> SKILL")
 
     # Step 1: Source file
-    print_step(1, 4, "Selecione a fonte")
+    print_step(1, 2, "Selecione a fonte")
     source = prompt_text("Caminho do arquivo (PDF, EPUB, TXT, SRT):")
-    if not source or not os.path.exists(source):
-        print_error(f"Arquivo não encontrado: {source}")
-        return
+    if not source:
+        print_error("Nenhum arquivo informado.")
+        return 1
 
-    # Step 2: Content type
-    print_step(2, 4, "Tipo de conteúdo")
-    content_type = prompt_choice("Qual o tipo de conteúdo?", [
-        "Técnico (decisões, procedimentos, regras)",
-        "Literário (conceitos, ideias, argumentos)",
-        "Misto (ambos)",
-    ])
-    type_map = {1: "technical", 2: "literary", 3: "mixed"}
-    book_type = type_map[content_type]
+    path = Path(source)
+    if not path.exists():
+        print_error(f"Arquivo nao encontrado: {source}")
+        return 1
 
-    # Step 3: Depth
-    print_step(3, 4, "Profundidade")
-    depth = prompt_choice("Qual profundidade desejada?", [
-        "Fundamentos (princípios, conceitos)",
-        "Procedimentos (SOPs, passo-a-passo)",
-        "Ambos (fundamentos + procedimentos)",
-    ])
-    depth_map = {1: "foundations", 2: "procedures", 3: "both"}
-    depth_val = depth_map[depth]
+    # Step 2: Confirm and run
+    print_step(2, 2, "Confirmacao")
+    print(f"\n  Arquivo: {colored(str(path.name), GREEN)}")
+    print(f"  Tamanho: {path.stat().st_size / 1024:.1f} KB")
 
-    # Step 4: Confirm and run
-    print_step(4, 4, "Confirmação")
-    print(f"\n  Arquivo: {colored(source, GREEN)}")
-    print(f"  Tipo: {colored(book_type, GREEN)}")
-    print(f"  Profundidade: {colored(depth_val, GREEN)}")
-
-    confirm = prompt_text("Confirmar compilação? (s/n)", "s")
+    confirm = prompt_text("Confirmar compilacao? (s/n)", "s")
     if confirm.lower() != "s":
-        print_warning("Compilação cancelada.")
-        return
+        print_warning("Compilacao cancelada.")
+        return 1
 
-    # Run
-    print(f"\n{colored('Iniciando compilação...', CYAN)}")
+    # Run scan + compile
+    rc1 = run_script("preflight_scan.py", [str(path)], "Pre-flight scan")
+    if rc1 != 0:
+        print_error(f"Pre-flight scan falhou (exit {rc1})")
+        return 1
 
-    # Step 1: Scan
-    print_step(1, 3, "Pre-flight scan")
-    os.system(f"python3 scripts/preflight_scan.py '{source}'")
+    rc2 = run_script("compile.py", [str(path), "--batch"], "Compilacao")
+    if rc2 != 0:
+        print_error(f"Compilacao falhou (exit {rc2})")
+        return 1
 
-    # Step 2: Compile
-    print_step(2, 3, "Compilação")
-    os.system(f"python3 scripts/compile.py '{source}' --batch")
-
-    # Step 3: Summary
-    print_step(3, 3, "Concluído")
     print_success("Skill compilada com sucesso!")
-    print(f"\n  Próximo passo: {colored('sopx teach start output/', GREEN)}<skill_dir>")
+    print(f"\n  Proximo passo: {colored('sopx teach start output/', GREEN)}<skill_dir>")
+    return 0
 
 
 # ---------------------------------------------------------------------------
-# Workflow: Ingerir vídeo
+# Workflow: Ingerir video
 # ---------------------------------------------------------------------------
 
-def wizard_ingest():
-    """Guided workflow for ingesting a YouTube video."""
-    print_header("INGERIR VÍDEO → TRANSCRIÇÃO")
+def wizard_ingest() -> int:
+    """Guided workflow for ingesting a YouTube video.
+
+    Returns 0 on success, 1 on error.
+    """
+    print_header("INGERIR VIDEO -> TRANSCRICAO")
 
     # Step 1: URL or file
-    print_step(1, 3, "Fonte do vídeo")
-    source = prompt_text("URL do YouTube ou caminho do arquivo de vídeo:")
+    print_step(1, 3, "Fonte do video")
+    source = prompt_text("URL do YouTube ou caminho do arquivo de video:")
     if not source:
         print_error("Nenhuma fonte informada.")
-        return
+        return 1
 
     # Step 2: Options
-    print_step(2, 3, "Opções")
-    rescue = prompt_choice("Extrair frames de referência visual?", [
-        "Não (só transcrição)",
+    print_step(2, 3, "Opcoes")
+    rescue = prompt_choice("Extrair frames de referencia visual?", [
+        "Nao (so transcricao)",
         "Sim (extrair frames)",
     ])
-    rescue_flag = "--rescue-frames" if rescue == 2 else ""
+    extra_args = ["--rescue-frames"] if rescue == 2 else []
 
     # Step 3: Run
-    print_step(3, 3, "Ingestão")
-    print(f"\n{colored('Iniciando ingestão...', CYAN)}")
+    print_step(3, 3, "Ingestao")
 
-    cmd = f"python3 scripts/ingest.py '{source}' {rescue_flag}"
-    os.system(cmd)
+    args = [source] + extra_args
+    rc = run_script("ingest.py", args, "Ingestao")
+    if rc != 0:
+        print_error(f"Ingestao falhou (exit {rc})")
+        return 1
 
-    print_success("Ingestão concluída!")
-    print(f"\n  Próximo passo: {colored('sopx compile output/', GREEN)}<video_dir>")
+    print_success("Ingestao concluida!")
+    print(f"\n  Proximo passo: {colored('sopx compile output/', GREEN)}<video_dir>")
+    return 0
 
 
 # ---------------------------------------------------------------------------
 # Workflow: Ensinar skill
 # ---------------------------------------------------------------------------
 
-def wizard_teach():
-    """Guided workflow for teaching a skill."""
-    print_header("ENSINAR SKILL → MÉTODO HEBRAICO")
+def wizard_teach() -> int:
+    """Guided workflow for teaching a skill.
+
+    Returns 0 on success, 1 on error.
+    """
+    print_header("ENSINAR SKILL -> METODO HEBRAICO")
 
     # Step 1: Skill directory
-    print_step(1, 3, "Diretório do skill")
+    print_step(1, 4, "Diretorio do skill")
     skill_dir = prompt_text("Caminho do skill directory:")
-    if not skill_dir or not os.path.isdir(skill_dir):
-        print_error(f"Diretório não encontrado: {skill_dir}")
-        return
+    if not skill_dir or not Path(skill_dir).is_dir():
+        print_error(f"Diretorio nao encontrado: {skill_dir}")
+        return 1
 
     # Step 2: Check existing progress
-    print_step(2, 3, "Progresso")
-    from teach.session_manager import get_status
+    print_step(2, 4, "Progresso")
+    from teach.session_manager import get_status, start_session, complete_session
     status = get_status(skill_dir)
 
     if status["completed"] == 6:
-        print_warning("Todas as 6 sessões já foram completadas!")
-        return
+        print_warning("Todas as 6 sessoes ja foram completadas!")
+        return 0
 
-    print(f"  Sessão atual: {colored(str(status['current_session']), GREEN)}/6")
+    print(f"  Sessao atual: {colored(str(status['current_session']), GREEN)}/6")
     print(f"  Progresso: {colored(str(status['progress_pct']) + '%', GREEN)}")
 
-    # Step 3: Start session
-    print_step(3, 3, "Iniciar sessão")
-    from teach.session_manager import start_session
+    # Step 3: Sessao 1 — coletar objetivo
+    print_step(3, 4, "Sessao 1: Pergunta")
+    user_goal = prompt_text("O que voce quer entender nesta obra?")
+    if not user_goal:
+        print_error("Objetivo e obrigatorio para iniciar.")
+        return 1
+
+    # Create task_contract (fecha o ciclo)
+    from teach.session_1_pergunta import create_task_contract
+    create_task_contract(skill_dir, user_goal)
+    complete_session(skill_dir, 1)
+    print_success("task_contract.json criado. Sessao 1 completa.")
+
+    # Step 4: Mostrar proxima sessao
+    print_step(4, 4, "Proxima sessao")
     session_info = start_session(skill_dir)
     num = session_info["session_number"]
     name = session_info["name"]
     desc = session_info["description"]
     gate = session_info["gate"]
 
-    print(f"\n  {colored(f'Sessao {num}: {name}', GREEN)}")
+    session_num = str(num)
+    print(f"\n  {colored('Sessao ' + session_num + ': ' + name, GREEN)}")
     print(f"  {desc}")
     print(f"  Gate: {gate}")
 
-    # Show prompt
-    from teach.session_1_pergunta import generate_pergunta_prompt
-    from teach.session_2_contexto import generate_contexto_prompt
-    from teach.session_3_analise import generate_analise_prompt
-    from teach.session_4_sintese import generate_sintese_prompt
-    from teach.session_5_conclusoes import generate_conclusoes_prompt
-    from teach.session_6_aplicacao import generate_aplicacao_prompt
-
-    prompts = {
-        1: generate_pergunta_prompt,
-        2: generate_contexto_prompt,
-        3: generate_analise_prompt,
-        4: generate_sintese_prompt,
-        5: generate_conclusoes_prompt,
-        6: generate_aplicacao_prompt,
-    }
-
-    if num in prompts:
-        print()
-        print(prompts[num](skill_dir))
-
-    print(f"\n  Próximo passo: {colored(f'sopx teach complete {skill_dir}', GREEN)}")
+    print(f"\n  Proximo passo: {colored(f'sopx teach start {skill_dir}', GREEN)}")
+    return 0
 
 
 # ---------------------------------------------------------------------------
 # Workflow: Ver status
 # ---------------------------------------------------------------------------
 
-def wizard_status():
-    """Show status of the workspace."""
+def wizard_status() -> int:
+    """Show status of the workspace.
+
+    Returns 0 on success.
+    """
     print_header("STATUS DO PROJETO")
 
     # Check output directory
     output_dir = Path("output")
     if not output_dir.exists():
-        print_warning("Nenhum diretório output/ encontrado.")
-        return
+        print_warning("Nenhum diretorio output/ encontrado.")
+        return 0
 
     # Count compilations
     comp_dir = output_dir / "compilation"
@@ -274,9 +296,9 @@ def wizard_status():
     # Count transcripts
     transcripts = list(output_dir.rglob("*.srt"))
 
-    print(f"  Compilações: {colored(str(len(compilations)), GREEN)}")
+    print(f"  Compilacoes: {colored(str(len(compilations)), GREEN)}")
     print(f"  Semantic Fields: {colored(str(len(sfs)), GREEN)}")
-    print(f"  Transcrições: {colored(str(transcripts.__len__()), GREEN)}")
+    print(f"  Transcricoes: {colored(str(len(transcripts)), GREEN)}")
 
     # Check teach status
     teach_dirs = list(output_dir.rglob("progress.json"))
@@ -286,7 +308,9 @@ def wizard_status():
             from teach.session_manager import get_status
             skill_dir = str(td.parent.parent)
             status = get_status(skill_dir)
-            print(f"    {skill_dir}: {status['completed']}/6 sessões ({status['progress_pct']}%)")
+            print(f"    {skill_dir}: {status['completed']}/6 sessoes ({status['progress_pct']}%)")
+
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -298,12 +322,12 @@ def main():
         description="sopx wizard — assistente interativo",
     )
     parser.add_argument("--auto", action="store_true",
-                        help="Modo automático (detectar de args)")
+                        help="Modo automatico (detectar de args)")
 
     args = parser.parse_args()
 
     if args.auto:
-        print("Modo automático não implementado ainda.")
+        print("Modo automatico nao implementado ainda.")
         print("Use: python scripts/wizard.py")
         sys.exit(1)
 
@@ -311,23 +335,25 @@ def main():
     print(f"\n  {colored('Bem-vindo ao assistente do sop-extractor.', BOLD)}")
     print("  Vou guia-lo pelo fluxo ideal para sua necessidade.\n")
 
-    choice = prompt_choice("O que você quer fazer?", [
+    choice = prompt_choice("O que voce quer fazer?", [
         "Compilar um livro/PDF em skill",
-        "Ingerir um vídeo do YouTube",
-        "Ensinar um skill existente (Método Hebraico)",
+        "Ingerir um video do YouTube",
+        "Ensinar um skill existente (Metodo Hebraico)",
         "Ver status do projeto",
     ])
 
+    rc = 0
     if choice == 1:
-        wizard_compile()
+        rc = wizard_compile()
     elif choice == 2:
-        wizard_ingest()
+        rc = wizard_ingest()
     elif choice == 3:
-        wizard_teach()
+        rc = wizard_teach()
     elif choice == 4:
-        wizard_status()
+        rc = wizard_status()
 
     print(f"\n{'='*50}\n")
+    sys.exit(rc)
 
 
 if __name__ == "__main__":
