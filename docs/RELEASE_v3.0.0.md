@@ -62,9 +62,26 @@ Interactive guided workflow that reduces CLI friction from 14 commands to 4 guid
 ## Stats
 - **960 tests** (955 passed + 2 skipped + 3 ambient)
 - **ruff clean** (CI command verified)
-- **~20,000 lines** of new/modified code
+- **~13,200 lines** of new/modified code (13,366 insertions, 158 deletions)
 - **13 new modules** (scripts/ + scripts/chavruta/ + scripts/teach/)
 - **Pareto ~100%** (11/13 components complete, LLM Router + VLM optional)
+
+---
+
+## Known Limitations
+
+- **Emerging Questions standalone.** The module is not yet wired to teach
+  sessions (session_4_sintese.py, session_6_aplicacao.py). It works as a
+  standalone analysis tool but doesn't auto-populate during synthesis.
+- **Depth 4 nominal challenge.** When only 1 node matches (not both connected
+  nodes), the Chavruta engine falls back to a generic challenge instead of
+  the nominal "Como X se conecta com Y?" format.
+- **Sessão 3 does not run full coherence/evolution audit.** It surfaces
+  existing refutation data but does not call validate_coherence_audit.py
+  or validate_evolution_audit.py directly. Honest downgrade documented in
+  code.
+- **Synchronous execution.** wizard and teach run synchronously — no
+  background processing, no async. Relevant for long compilations.
 
 ---
 

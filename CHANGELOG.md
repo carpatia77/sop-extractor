@@ -94,6 +94,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Threshold aligned** to 0.25 across drift_detector (was 0.2/0.25/0.3).
 - **SESSION_FILES aligned** with actual file outputs (fixed .md→.json).
 
+### Known Limitations
+- Emerging Questions module is standalone — not wired to teach sessions yet.
+- Depth 4 nominal challenge falls back to generic when only 1 node matches.
+- Sessão 3 does not run full coherence/evolution audit (honest downgrade).
+- Wizard and teach run synchronously — no background processing.
+
 ## [2.2.0] - 2026-07-24
 
 ### Added
@@ -489,6 +495,8 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
+[3.0.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v3.0.0
+[2.2.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v2.2.0
 [2.1.1]: https://github.com/carpatia77/sop-extractor/releases/tag/v2.1.1
 [2.1.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v2.1.0
 [1.3.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v1.3.0
