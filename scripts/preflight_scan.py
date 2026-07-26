@@ -27,7 +27,7 @@ try:
 except ImportError:
     from scripts.format_registry import SCANNED_TEXT_EXTENSIONS, SCANNED_SUBTITLE_EXTENSIONS
 
-TABULAR_LINE_RE = re.compile(r'(\S+\s{2,}\S+\s{2,}\S+)|(\d+\s+\d+\s+\d+)')
+TABULAR_LINE_RE = re.compile(r'(\S+\s{2,}\S+\s{2,}\S+)|(\d+\s+\d+\s+\d+)|((?:^|\s)\d+(?:\s+\d+){2,})')
 
 # A single short token (number, unit, short label) alone on its own line — the
 # signature of a table whose columns collapsed into one cell per line during
@@ -260,8 +260,33 @@ def scan_pdf(path: str, sample_n: int = 5) -> dict:
             stats["n_images"] = n_images
             pages.append(stats)
 
+        # Quick scan all pages for table count (inside with block, reader still open)
+        table_pages = 0
+        table_lines_total = 0
+        estimated_tables = 0
+        for i in range(total_pages):
+            try:
+                text = reader.pages[i].extract_text() or ""
+            except Exception:
+                continue
+            lines = [l for l in text.splitlines() if l.strip()]
+            if not lines:
+                continue
+            tabular = sum(1 for l in lines if TABULAR_LINE_RE.search(l))
+            if tabular > 3:
+                table_pages += 1
+                table_lines_total += tabular
+            if tabular > 15:
+                estimated_tables += 2
+            elif tabular > 3:
+                estimated_tables += 1
+
     result = _summarize(total_pages, indices, pages, any_images)
     result.update(analyze_re_candidacy("\n".join(sampled_text_parts)))
+    result["estimated_tables"] = estimated_tables
+    result["pages_with_tabular"] = table_pages
+    result["table_lines_total"] = table_lines_total
+
     return result
 
 
@@ -272,6 +297,22 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     avg_burst_ratio = sum(burst_ratios) / len(burst_ratios) if burst_ratios else 0.0
     pages_with_images = sum(1 for p in pages if p["n_images"] > 0)
     pages_with_burst = sum(1 for p in pages if p.get("burst_ratio", 0.0) > 0.1)
+    pages_with_tabular = sum(1 for p in pages if p.get("tabular_line_ratio", 0.0) > 0.15)
+
+    # Estimate table count from sampled pages
+    # Each page with high tabular ratio or burst run likely has 1+ tables
+    estimated_tables = 0
+    for p in pages:
+        tab_r = p.get("tabular_line_ratio", 0.0)
+        burst_r = p.get("burst_ratio", 0.0)
+        if tab_r > 0.3 or burst_r > 0.2:
+            estimated_tables += 2  # page with heavy tables
+        elif tab_r > 0.15 or burst_r > 0.1:
+            estimated_tables += 1  # page with some tables
+    # Extrapolate to full document
+    if sampled_pages and total_pages > len(pages):
+        scale = total_pages / max(len(pages), 1)
+        estimated_tables = int(estimated_tables * scale)
 
     warnings = []
     if pages_with_images > 0:
@@ -281,6 +322,10 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     if pages_with_burst > 0:
         warnings.append(
             f"{pages_with_burst}/{len(pages)} janelas com tabelas colapsadas — revise antes de confiar"
+        )
+    if estimated_tables > 0:
+        warnings.append(
+            f"~{estimated_tables} tabelas detectadas — considere extração de tabelas"
         )
 
     is_technical_signal = avg_tabular_ratio > 0.15 or any_images or avg_burst_ratio > 0.1
@@ -325,6 +370,8 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
         "any_images": any_images,
         "avg_tabular_ratio": round(avg_tabular_ratio, 3),
         "avg_burst_ratio": round(avg_burst_ratio, 3),
+        "estimated_tables": estimated_tables,
+        "pages_with_tabular": pages_with_tabular,
         "suggestion": suggestion,
         "confidence": confidence,
         "recommendation": recommendation,
@@ -477,7 +524,11 @@ def print_report(result: dict, path: str):
         tabular = result['avg_tabular_ratio'] * 100
         burst = result.get('avg_burst_ratio', 0.0) * 100
         images = sum(1 for p in result['pages'] if p['n_images'] > 0)
+        tables = result.get('estimated_tables', 0)
+        pages_tab = result.get('pages_with_tabular', 0)
         print(f"  Sinais:     Tabelas {tabular:.0f}% │ Tabelas colapsadas {burst:.0f}% │ Imagens {images}")
+        if tables > 0:
+            print(f"  Tabelas:    ~{tables} detectadas ({pages_tab} páginas com tabelas)")
 
     suggestion = result['suggestion']
     confidence = result['confidence']
@@ -501,6 +552,19 @@ def print_report(result: dict, path: str):
             print(f"    {reason}")
     print(f"{'─'*50}")
     print("  Não é automático — revise antes de confirmar.")
+
+    # Table extraction recommendation
+    tables = result.get('estimated_tables', 0)
+    if tables > 0:
+        print(f"\n{'─'*50}")
+        print("  📊 EXTRAÇÃO DE TABELAS RECOMENDADA")
+        print(f"{'─'*50}")
+        print(f"  ~{tables} tabelas detectadas neste documento.")
+        print("  Tabelas em PDFs são perdidas na extração de texto puro.")
+        print("  Opções:")
+        print("    1) Extrair tabelas separadamente (recomendado)")
+        print("    2) Ignorar tabelas (perde dados tabulares)")
+        print("    3) Usar modo técnico com LLM que lida com tabelas")
 
     if result.get("re_candidate"):
         sd = result.get("system_demonstration", {})
