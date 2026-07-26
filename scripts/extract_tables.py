@@ -18,17 +18,10 @@ import re
 import sys
 from pathlib import Path
 
-
-# ---------------------------------------------------------------------------
-# Table detection heuristics
-# ---------------------------------------------------------------------------
-
-# Lines with multi-space-aligned columns
-TABULAR_LINE_RE = re.compile(r'(\S+\s{2,}\S+\s{2,}\S+)|(\d+\s+\d+\s+\d+)|((?:^|\s)\d+(?:\s+\d+){2,})')
-
-# Single short token alone on its line (collapsed table signature)
-SHORT_LINE_RE = re.compile(r'^\S{1,20}$')
-MIN_BURST_RUN = 4
+try:
+    from table_heuristics import TABULAR_LINE_RE, SHORT_LINE_RE, MIN_BURST_RUN
+except ImportError:
+    from scripts.table_heuristics import TABULAR_LINE_RE, SHORT_LINE_RE, MIN_BURST_RUN
 
 
 def detect_table_regions(text: str) -> list[dict]:
@@ -174,6 +167,9 @@ def extract_all_tables(pdf_path: str, pages: list[int] | None = None) -> list[di
 
     Returns list of tables with page number and rows.
     """
+    if not os.path.exists(pdf_path):
+        return []
+
     try:
         import pypdf
     except ImportError:

@@ -27,14 +27,10 @@ try:
 except ImportError:
     from scripts.format_registry import SCANNED_TEXT_EXTENSIONS, SCANNED_SUBTITLE_EXTENSIONS
 
-TABULAR_LINE_RE = re.compile(r'(\S+\s{2,}\S+\s{2,}\S+)|(\d+\s+\d+\s+\d+)|((?:^|\s)\d+(?:\s+\d+){2,})')
-
-# A single short token (number, unit, short label) alone on its own line — the
-# signature of a table whose columns collapsed into one cell per line during
-# PDF-to-text conversion (column layout lost, but not the content). A lone
-# short line doesn't mean much; a *run* of several in a row is the signal.
-SHORT_LINE_RE = re.compile(r'^\S{1,20}$')
-MIN_BURST_RUN = 4
+try:
+    from table_heuristics import TABULAR_LINE_RE, SHORT_LINE_RE, MIN_BURST_RUN
+except ImportError:
+    from scripts.table_heuristics import TABULAR_LINE_RE, SHORT_LINE_RE, MIN_BURST_RUN
 
 # --- Reverse-engineering ("Blackhat Mode", Item 11) candidacy signals ---------
 # On-screen / UI deixis: the speaker points at something visual instead of
@@ -299,21 +295,6 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     pages_with_burst = sum(1 for p in pages if p.get("burst_ratio", 0.0) > 0.1)
     pages_with_tabular = sum(1 for p in pages if p.get("tabular_line_ratio", 0.0) > 0.15)
 
-    # Estimate table count from sampled pages
-    # Each page with high tabular ratio or burst run likely has 1+ tables
-    estimated_tables = 0
-    for p in pages:
-        tab_r = p.get("tabular_line_ratio", 0.0)
-        burst_r = p.get("burst_ratio", 0.0)
-        if tab_r > 0.3 or burst_r > 0.2:
-            estimated_tables += 2  # page with heavy tables
-        elif tab_r > 0.15 or burst_r > 0.1:
-            estimated_tables += 1  # page with some tables
-    # Extrapolate to full document
-    if sampled_pages and total_pages > len(pages):
-        scale = total_pages / max(len(pages), 1)
-        estimated_tables = int(estimated_tables * scale)
-
     warnings = []
     if pages_with_images > 0:
         warnings.append(
@@ -322,10 +303,6 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
     if pages_with_burst > 0:
         warnings.append(
             f"{pages_with_burst}/{len(pages)} janelas com tabelas colapsadas — revise antes de confiar"
-        )
-    if estimated_tables > 0:
-        warnings.append(
-            f"~{estimated_tables} tabelas detectadas — considere extração de tabelas"
         )
 
     is_technical_signal = avg_tabular_ratio > 0.15 or any_images or avg_burst_ratio > 0.1
@@ -370,7 +347,6 @@ def _summarize(total_pages: int, sampled_pages: list, pages: list, any_images: b
         "any_images": any_images,
         "avg_tabular_ratio": round(avg_tabular_ratio, 3),
         "avg_burst_ratio": round(avg_burst_ratio, 3),
-        "estimated_tables": estimated_tables,
         "pages_with_tabular": pages_with_tabular,
         "suggestion": suggestion,
         "confidence": confidence,
