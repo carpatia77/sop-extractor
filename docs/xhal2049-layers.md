@@ -86,7 +86,7 @@
 │  Responsável: export-team                                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  LAYER 9: ENSINO (Debate Socrático)                              │
+│  LAYER 9: ENSINO (Método Hebraico)                              │
 │  • Session Manager (6 sessões stateful)                         │
 │  • Task Contract Builder (Sessão 1)                             │
 │  • ZPD Calculator (Zone of Proximal Development)                │

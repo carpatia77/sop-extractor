@@ -83,7 +83,7 @@ flowchart TB
         H3["JSON-LD / GraphML export"]
     end
 
-    subgraph M7["🎓 MÓDULO 7: ENSINO (Debate Socrático)"]
+    subgraph M7["🎓 MÓDULO 7: ENSINO (Método Hebraico)"]
         I1["Sessão 1: Pergunta<br/>task_contract"]
         I2["Sessão 2: Contexto<br/>evidence_ledger"]
         I3["Sessão 3: Análise<br/>coherence + evolution"]
