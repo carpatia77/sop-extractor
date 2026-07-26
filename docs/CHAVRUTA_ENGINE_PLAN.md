@@ -7,7 +7,7 @@
 
 ## O que é Chavruta
 
-**Chavruta** (חַבְרוּתָא) — aramaico para "parceria". Método tradicional de estudo judaico em dupla: dois estudiosos debatem um texto juntos, desafiando um ao outro.
+**Chavruta** (חַבְרוּתָא) — aramaico para "parceria". Método tradicional de estudo em dupla: dois estudiosos debatem um texto juntos, desafiando um ao outro.
 
 > "Na diversidade de pensamento se produz mais conhecimento.
 > Atinge-se a depth — como no xadrez, uma jogada de alta profundidade."

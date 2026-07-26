@@ -191,7 +191,7 @@ def wizard_ingest():
 
 def wizard_teach():
     """Guided workflow for teaching a skill."""
-    print_header("ENSINAR SKILL → MÉTODO JUDAICO")
+    print_header("ENSINAR SKILL → DEBATE SOCRATICO")
 
     # Step 1: Skill directory
     print_step(1, 3, "Diretório do skill")
@@ -314,7 +314,7 @@ def main():
     choice = prompt_choice("O que você quer fazer?", [
         "Compilar um livro/PDF em skill",
         "Ingerir um vídeo do YouTube",
-        "Ensinar um skill existente (Método Judaico)",
+        "Ensinar um skill existente (Debate Socratico)",
         "Ver status do projeto",
     ])
 

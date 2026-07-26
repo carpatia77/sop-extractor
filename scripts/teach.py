@@ -81,7 +81,7 @@ def cmd_complete(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="sopx teach — Ensino interativo Metodo Judaico",
+        description="sopx teach — Ensino interativo Debate Socratico",
     )
     subparsers = parser.add_subparsers(dest="command", help="Comando")
 

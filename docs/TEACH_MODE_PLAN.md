@@ -1,4 +1,4 @@
-# Teach Mode — 6 Sessões (Método Judaico)
+# Teach Mode — 6 Sessões (Debate Socrático)
 
 > Plano de implementação do ensino interativo multi-sessão com workspace stateful.
 > Fonte: `.mimocode/plans/sop-xtrata-1.md` §450-§825
@@ -7,7 +7,7 @@
 
 ## Visão Geral
 
-**Base filosófica**: Método Judaico de Estudo — "Aprender não é luxo, é um dever e uma disciplina contínua. Sabedoria que não vira vida, para no papel."
+**Base filosófica**: Debate Socrático — "Aprender não é luxo, é um dever e uma disciplina contínua. Sabedoria que não vira vida, para no papel."
 
 **Comandos CLI**:
 ```bash
@@ -24,38 +24,38 @@ sopx teach close caminho/para/skill-dir               # Sessão 6 (encerramento)
 
 ```
                     ┌──────────────────┐
-                    │  Pergunta inicial │  ← Sessão 1 (judaico)
+                    │  Pergunta inicial │  ← Sessão 1 (socrático)
                     │  task_contract    │     /grill-me (Pocock)
                     └────────┬─────────┘
                              │
                     ┌────────▼─────────┐
-                    │  Leitura +       │  ← Sessão 2 (judaico)
+                    │  Leitura +       │  ← Sessão 2 (socrático)
                     │  Contexto        │     CONTEXT.md (Pocock)
                     │  evidence_ledger │     pre-flight (sop-extractor)
                     └────────┬─────────┘
                              │
                     ┌────────▼─────────┐
-                    │  Análise e       │  ← Sessão 3 (judaico)
+                    │  Análise e       │  ← Sessão 3 (socrático)
                     │  Comparação      │     /domain-modeling (Pocock)
                     │  coherence +     │     4 temporal gates
                     │  evolution audit │     (sop-extractor)
                     └────────┬─────────┘
                              │
                     ┌────────▼─────────┐
-                    │  Síntese         │  ← Sessão 4 (judaico)
+                    │  Síntese         │  ← Sessão 4 (socrático)
                     │  Semantic Field  │     /grill-with-docs (Pocock)
                     │  + epistemic     │     Semantic Field
                     │  status          │     (sop-extractor)
                     └────────┬─────────┘
                              │
                     ┌────────▼─────────┐
-                    │  Conclusões      │  ← Sessão 5 (judaico)
+                    │  Conclusões      │  ← Sessão 5 (socrático)
                     │  Publicação      │     /to-spec (Pocock)
                     │  canônica        │     validators (sop-extractor)
                     └────────┬─────────┘
                              │
                     ┌────────▼─────────┐
-                    │  APLICAÇÃO       │  ← Sessão 6 (judaico)
+                    │  APLICAÇÃO       │  ← Sessão 6 (socrático)
                     │  Reflexão        │     /teach stateful (Pocock)
                     │  Próximo passo   │     "Agency > Intel" (Karpathy)
                     │  application_log │     NENHUM OUTRO TEM ISTO
@@ -320,7 +320,7 @@ def calibrate_depth(skill_dir: str, progress: dict) -> int:
 
 | Capacidade | sop-xtrata | Pocock | LightRAG | Cognee |
 |------------|-----------|--------|----------|--------|
-| Método Judaico completo (6 passos) | **SIM** | - | - | - |
+| Debate Socrático completo (6 passos) | **SIM** | - | - | - |
 | Compilar doutrina + ensinar | **SIM** | parcial | - | - |
 | Epistemic status + gates | **SIM** | - | - | - |
 | Provenance → Refutation | **SIM** | - | - | - |
