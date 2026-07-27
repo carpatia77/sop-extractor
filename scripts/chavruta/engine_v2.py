@@ -7,9 +7,10 @@ Improvements over v1:
   3. Safety valve — always asks for evidence when uncertain
   4. Depth-aware templates — qualitatively different challenges per level
   5. Semantic guard integration — catches subtle errors
+  6. Camada 4 (embeddings) active — paraphrase matching via sf_matcher
 
 Architecture:
-  sf_matcher → drift_detector → depth_tracker → engine_v2
+  sf_matcher (4 layers) → drift_detector → semantic_guard → depth_tracker → engine_v2
   All stateful, all deterministic, all grounded in graph events.
 """
 from __future__ import annotations
@@ -21,10 +22,12 @@ try:
     from scripts.chavruta.sf_matcher import find_nodes, find_best_match
     from scripts.chavruta.drift_detector import detect_drift
     from scripts.chavruta.depth_tracker import evaluate_depth, depth_bar
+    from scripts.chavruta.semantic_guard import check_semantic_errors
 except ImportError:
     from chavruta.sf_matcher import find_nodes, find_best_match
     from chavruta.drift_detector import detect_drift
     from chavruta.depth_tracker import evaluate_depth, depth_bar
+    from chavruta.semantic_guard import check_semantic_errors
 
 
 # ---------------------------------------------------------------------------
@@ -148,23 +151,28 @@ class ChavrutaEngineV2:
             user_response, self.sf, self.task_contract, self.evidence_ledger,
         )
 
-        # Step 3: Find primary matched node (prefer nodes with evidence_id)
-        best_node, _layer = find_best_match(user_response, self.sf)
+        # Step 3: Find primary matched node (with layer tracking)
+        best_node, match_layer = find_best_match(user_response, self.sf)
         # For contradiction challenges, prefer nodes with evidence_id
         if drift_result["is_contradiction"] and best_node and not best_node.get("evidence_id"):
             all_matches = find_nodes(user_response, self.sf)
             for node in all_matches:
                 if node.get("evidence_id"):
                     best_node = node
+                    match_layer = "substring"  # upgraded via find_nodes
                     break
 
-        # Step 4: Generate evidence-backed challenge
+        # Step 4: Semantic guard — catch type confusion, definition drift, scope expansion
+        semantic_result = check_semantic_errors(user_response, self.sf)
+        semantic_issues = semantic_result.get("issues", [])
+
+        # Step 5: Generate evidence-backed challenge
         depth = depth_result["depth"]
         challenge = self._generate_challenge(
-            user_response, best_node, depth, drift_result,
+            user_response, best_node, depth, drift_result, semantic_issues,
         )
 
-        # Step 5: Update state
+        # Step 6: Update state
         self.max_depth_seen = max(self.max_depth_seen, depth)
         node_id = best_node["id"] if best_node else None
         if node_id:
@@ -177,7 +185,10 @@ class ChavrutaEngineV2:
             "is_contradiction": drift_result["is_contradiction"],
             "anchor_used": drift_result["anchor_used"],
             "matched_node_id": node_id,
-            "semantic_issues": drift_result.get("semantic_issues", []),
+            "match_layer": match_layer,
+            "semantic_issues": [
+                {"type": i["type"], "severity": i["severity"]} for i in semantic_issues
+            ],
         })
 
         return {
@@ -188,9 +199,10 @@ class ChavrutaEngineV2:
             "depth_bar": depth_bar(depth),
             "challenge": challenge,
             "matched_node": best_node,
+            "match_layer": match_layer,
             "anchor_used": drift_result["anchor_used"],
             "max_depth_seen": self.max_depth_seen,
-            "semantic_issues": drift_result.get("semantic_issues", []),
+            "semantic_issues": semantic_issues,
         }
 
     def _generate_challenge(
@@ -199,6 +211,7 @@ class ChavrutaEngineV2:
         best_node: dict | None,
         depth: int,
         drift_result: dict,
+        semantic_issues: list[dict] | None = None,
     ) -> str:
         """Generate an evidence-backed challenge."""
         # Contradiction — challenge with the principle
@@ -209,7 +222,12 @@ class ChavrutaEngineV2:
                         f"Qual é a sua evidência? {citation}")
             return "Qual é a evidência para essa afirmação?"
 
-        # Semantic issues — challenge the specific error
+        # Semantic issues — challenge the specific error (from semantic_guard)
+        if semantic_issues:
+            issue = semantic_issues[0]
+            return f"Atenção: {issue['message'][:100]}. Verifique suas fontes."
+
+        # Legacy semantic issues from drift_detector (if any)
         if drift_result.get("semantic_issues"):
             issue = drift_result["semantic_issues"][0]
             return f"Atenção: {issue['message'][:100]}. Verifique suas fontes."
@@ -257,6 +275,7 @@ class ChavrutaEngineV2:
             "is_contradiction": False,
             "anchor_used": "none",
             "matched_node_id": None,
+            "match_layer": "none",
             "semantic_issues": drift_result.get("semantic_issues", []),
         })
 
@@ -269,6 +288,7 @@ class ChavrutaEngineV2:
             "challenge": ("Isso parece estar fora do tema. "
                           "Vamos voltar ao que o autor ensina?"),
             "matched_node": None,
+            "match_layer": "none",
             "anchor_used": "none",
             "max_depth_seen": self.max_depth_seen,
             "semantic_issues": drift_result.get("semantic_issues", []),

@@ -3,7 +3,7 @@
 
 Orchestrates the Socratic debate loop:
   1. User makes a claim
-  2. Engine validates against SF (drift + contradiction check)
+  2. Engine validates against SF (drift + contradiction + semantic guard)
   3. Engine evaluates depth (1-7)
   4. Engine generates challenge based on depth level
   5. Engine updates SF if new insight emerged
@@ -12,8 +12,9 @@ The Semantic Field is the ground truth (Talmud). The refutation chain
 provides stress-test data. The depth tracker measures progress.
 
 Architecture:
-  - sf_matcher: finds nodes in SF
+  - sf_matcher: finds nodes in SF (4 layers incl. Camada 4 embeddings)
   - drift_detector: blocks drift + detects contradictions
+  - semantic_guard: catches type confusion, definition drift, scope expansion
   - depth_tracker: measures debate depth
   - evidence_ledger: provides evidence_text for anchor #3
 """
@@ -24,11 +25,13 @@ try:
     from scripts.chavruta.sf_matcher import find_nodes, find_best_match
     from scripts.chavruta.drift_detector import detect_drift
     from scripts.chavruta.depth_tracker import evaluate_depth, depth_bar
+    from scripts.chavruta.semantic_guard import check_semantic_errors
 except ImportError:
     from verify_concept_presence import salient_terms  # noqa: F401
     from chavruta.sf_matcher import find_nodes, find_best_match
     from chavruta.drift_detector import detect_drift
     from chavruta.depth_tracker import evaluate_depth, depth_bar
+    from chavruta.semantic_guard import check_semantic_errors
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +135,9 @@ class ChavrutaEngine:
             - depth_bar: str (visual bar)
             - challenge: str (next challenge question)
             - matched_node: dict | None (primary node matched)
+            - match_layer: str (id/substring/salient/embedding/none)
             - anchor_used: str
+            - semantic_issues: list (type confusion, drift, scope expansion)
             - max_depth_seen: int (all-time high)
         """
         # Step 1: Drift + contradiction check
@@ -151,7 +156,9 @@ class ChavrutaEngine:
                 "challenge": ("Isso parece estar fora do tema. "
                               "Vamos voltar ao que o autor ensina?"),
                 "matched_node": None,
+                "match_layer": "none",
                 "anchor_used": drift_result["anchor_used"],
+                "semantic_issues": [],
                 "max_depth_seen": self.max_depth_seen,
             }
 
@@ -160,10 +167,14 @@ class ChavrutaEngine:
             user_response, self.sf, self.task_contract, self.evidence_ledger,
         )
 
-        # Step 3: Find primary matched node
-        best_node, _layer = find_best_match(user_response, self.sf)
+        # Step 3: Find primary matched node (with layer tracking)
+        best_node, match_layer = find_best_match(user_response, self.sf)
 
-        # Step 4: Generate challenge
+        # Step 4: Semantic guard — catch type confusion, definition drift, scope expansion
+        semantic_result = check_semantic_errors(user_response, self.sf)
+        semantic_issues = semantic_result.get("issues", [])
+
+        # Step 5: Generate challenge
         depth = depth_result["depth"]
         if drift_result["is_contradiction"]:
             # Contradiction — challenge with the principle
@@ -173,6 +184,10 @@ class ChavrutaEngine:
                              f"{best_node.get('epistemic_status', '?')}")
             else:
                 challenge = "Qual é a evidência para essa afirmação?"
+        elif semantic_issues:
+            # Semantic error — challenge the specific issue
+            issue = semantic_issues[0]
+            challenge = f"Atenção: {issue['message'][:100]}. Verifique suas fontes."
         elif best_node and depth in CHALLENGE_FNS:
             # Normal depth-specific challenge
             connected = []
@@ -203,7 +218,7 @@ class ChavrutaEngine:
         else:
             challenge = "Pode elaborar mais sobre o que o autor ensina?"
 
-        # Step 5: Update max depth
+        # Step 6: Update max depth
         self.max_depth_seen = max(self.max_depth_seen, depth)
 
         # Record in history
@@ -212,6 +227,10 @@ class ChavrutaEngine:
             "depth": depth,
             "is_contradiction": drift_result["is_contradiction"],
             "anchor_used": drift_result["anchor_used"],
+            "match_layer": match_layer,
+            "semantic_issues": [
+                {"type": i["type"], "severity": i["severity"]} for i in semantic_issues
+            ],
         })
 
         return {
@@ -222,7 +241,9 @@ class ChavrutaEngine:
             "depth_bar": depth_bar(depth),
             "challenge": challenge,
             "matched_node": best_node,
+            "match_layer": match_layer,
             "anchor_used": drift_result["anchor_used"],
+            "semantic_issues": semantic_issues,
             "max_depth_seen": self.max_depth_seen,
         }
 
