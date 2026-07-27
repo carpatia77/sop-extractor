@@ -161,23 +161,23 @@ def embed_sf(
     cached = _cache_get(h)
     if cached is not None:
         emb, meta = cached
-        # Validate dim: if model changed upstream, dim may diverge
+        # Validate dim: if model changed upstream, dim may diverge.
+        # Use property lookup (zero inference) instead of encode(["probe"]).
         model = _get_model(model_name)
         if model is not None:
             try:
-                probe = model.encode(["probe"], convert_to_numpy=True)
-                expected_dim = probe.shape[1]
-                if meta.get("dim") != expected_dim:
-                    log.warning(
-                        "Cache dim mismatch: cached=%s, expected=%s — recomputing",
-                        meta.get("dim"), expected_dim,
-                    )
-                    _embeddings_cache.pop(h, None)
-                    # Fall through to recompute
-                else:
-                    return emb
+                expected_dim = model.get_sentence_embedding_dimension()
             except Exception:
-                return emb  # Can't validate, trust cache
+                expected_dim = meta.get("dim")  # Can't check, trust cache
+            if meta.get("dim") != expected_dim:
+                log.warning(
+                    "Cache dim mismatch: cached=%s, expected=%s — recomputing",
+                    meta.get("dim"), expected_dim,
+                )
+                _embeddings_cache.pop(h, None)
+                # Fall through to recompute
+            else:
+                return emb
         else:
             return emb
 
