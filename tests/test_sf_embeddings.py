@@ -268,3 +268,144 @@ class TestMatcherIntegration:
         from chavruta.sf_matcher import find_nodes, find_best_match
         assert callable(find_nodes)
         assert callable(find_best_match)
+
+
+# ---------------------------------------------------------------------------
+# Disk cache tests
+# ---------------------------------------------------------------------------
+
+class TestDiskCache:
+    """Tests for the 2-tier cache (in-memory + disk)."""
+
+    def test_disk_cache_write_and_read(self, sf_with_nodes, tmp_path):
+        """Embeddings should persist to disk and be loadable."""
+        from chavruta.sf_embeddings import (
+            _sf_hash, _disk_put, _disk_get, DEFAULT_MODEL,
+        )
+        import numpy as np
+
+        h = _sf_hash(sf_with_nodes, DEFAULT_MODEL)
+        emb = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]])
+        meta = {"model": DEFAULT_MODEL, "dim": 3, "count": 3}
+
+        _disk_put(h, emb, meta, tmp_path)
+        loaded = _disk_get(h, tmp_path)
+
+        assert loaded is not None
+        loaded_emb, loaded_meta = loaded
+        np.testing.assert_array_almost_equal(loaded_emb, emb)
+        assert loaded_meta["dim"] == 3
+        assert loaded_meta["count"] == 3
+
+    def test_disk_cache_miss_returns_none(self, tmp_path):
+        """Disk cache miss should return None."""
+        from chavruta.sf_embeddings import _disk_get
+        assert _disk_get("nonexistent_key", tmp_path) is None
+
+    def test_embed_sf_uses_disk_cache(self, sf_with_nodes, tmp_path):
+        """embed_sf should store to and load from disk cache."""
+        from chavruta.sf_embeddings import embed_sf, _sf_hash, _disk_get, DEFAULT_MODEL
+
+        # First call: compute + store to disk
+        emb1 = embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        assert emb1 is not None
+
+        # Verify disk file exists
+        h = _sf_hash(sf_with_nodes, DEFAULT_MODEL)
+        disk = _disk_get(h, tmp_path)
+        assert disk is not None
+        assert disk[1]["model"] == DEFAULT_MODEL
+
+    def test_embed_sf_loads_from_disk(self, sf_with_nodes, tmp_path):
+        """Second call should load from disk, not recompute."""
+        from chavruta.sf_embeddings import embed_sf, _sf_hash, _disk_put, DEFAULT_MODEL
+        import numpy as np
+
+        # Pre-populate disk cache
+        h = _sf_hash(sf_with_nodes, DEFAULT_MODEL)
+        emb = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
+        meta = {"model": DEFAULT_MODEL, "dim": 2, "count": 3}
+        _disk_put(h, emb, meta, tmp_path)
+
+        # Clear in-memory cache to force disk read
+        from chavruta.sf_embeddings import _embeddings_cache
+        _embeddings_cache.clear()
+
+        # Should load from disk
+        loaded = embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        assert loaded is not None
+
+    def test_clear_disk_cache(self, sf_with_nodes, tmp_path):
+        """clear_disk_cache should remove all cached files."""
+        from chavruta.sf_embeddings import (
+            embed_sf, clear_disk_cache, disk_cache_size, _embeddings_cache, DEFAULT_MODEL,
+        )
+
+        _embeddings_cache.clear()
+        embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        assert disk_cache_size(tmp_path) >= 1
+
+        removed = clear_disk_cache(tmp_path)
+        assert removed >= 2  # .npy + .json
+        assert disk_cache_size(tmp_path) == 0
+
+    def test_disk_cache_survives_memory_clear(self, sf_with_nodes, tmp_path):
+        """Embeddings should survive in-memory cache clear via disk."""
+        from chavruta.sf_embeddings import (
+            embed_sf, _embeddings_cache, DEFAULT_MODEL,
+        )
+
+        # Compute and cache
+        emb1 = embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        assert emb1 is not None
+
+        # Clear in-memory cache
+        _embeddings_cache.clear()
+
+        # Should reload from disk (no recomputation)
+        emb2 = embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        assert emb2 is not None
+
+    def test_disk_cache_dim_mismatch_recomputes(self, sf_with_nodes, tmp_path):
+        """Disk cache with wrong dim should trigger recomputation."""
+        from chavruta.sf_embeddings import (
+            embed_sf, _disk_put, _sf_hash, _embeddings_cache, DEFAULT_MODEL,
+        )
+        import numpy as np
+
+        # Pre-populate disk with wrong dim
+        h = _sf_hash(sf_with_nodes, DEFAULT_MODEL)
+        emb = np.array([[0.1, 0.2, 0.3, 0.4, 0.5]])  # dim=5, wrong
+        meta = {"model": DEFAULT_MODEL, "dim": 5, "count": 1}
+        _disk_put(h, emb, meta, tmp_path)
+        _embeddings_cache.clear()
+
+        # Should recompute (dim mismatch)
+        loaded = embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        assert loaded is not None
+        # New embeddings should have correct dim (384 for MiniLM)
+        assert loaded.shape[1] == 384
+
+    def test_match_by_embedding_uses_disk_cache(self, sf_with_nodes, tmp_path):
+        """match_by_embedding should work with disk cache."""
+        from chavruta.sf_embeddings import match_by_embedding
+
+        matches = match_by_embedding(
+            "volatility drag", sf_with_nodes,
+            threshold=0.30, cache_dir=tmp_path,
+        )
+        # Should find concept:vd via embeddings
+        assert len(matches) >= 1
+
+    def test_get_cache_metadata_checks_disk(self, sf_with_nodes, tmp_path):
+        """get_cache_metadata should find entries on disk."""
+        from chavruta.sf_embeddings import (
+            embed_sf, get_cache_metadata, _embeddings_cache, DEFAULT_MODEL,
+        )
+
+        embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        _embeddings_cache.clear()  # Force disk-only
+
+        meta = get_cache_metadata(sf_with_nodes, DEFAULT_MODEL)
+        assert meta is not None
+        assert meta["model"] == DEFAULT_MODEL

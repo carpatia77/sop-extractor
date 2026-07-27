@@ -7,7 +7,9 @@ salient-term Jaccard). Uses sentence-transformers for cosine similarity matching
 Behavior:
   - If sentence-transformers is NOT installed → returns empty (layers 1-3 suffice)
   - If model fails to load → returns empty
-  - If embeddings are not cached → computes on first call, caches in-memory
+  - Embeddings are cached in 2 tiers:
+    1. In-memory (fast, FIFO eviction at 8 entries)
+    2. Disk (persistent, survives restarts, at cache_dir/embeddings/)
 
 This layer catches cases keyword matching misses:
   - Synonyms: "memory usage" vs "RAM consumption"
@@ -23,6 +25,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +46,9 @@ _HAS_EMBEDDINGS = SentenceTransformer is not None and _HAS_NUMPY
 # Default model — small, fast, good quality
 DEFAULT_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_THRESHOLD = 0.50  # Calibrated: catches synonyms (0.62+), rejects noise (<0.10)
+
+# Default cache directory
+_DEFAULT_CACHE_DIR = Path.home() / ".cache" / "sopx" / "embeddings"
 
 # In-memory cache: model_name → loaded model
 _model_cache: dict[str, object] = {}
@@ -97,12 +103,12 @@ def _sf_hash(sf: dict, model_name: str) -> str:
 
 
 def _cache_get(key: str) -> tuple[object, dict] | None:
-    """Get from embeddings cache."""
+    """Get from in-memory cache."""
     return _embeddings_cache.get(key)
 
 
 def _cache_put(key: str, emb: object, meta: dict) -> None:
-    """Put into embeddings cache with FIFO eviction."""
+    """Put into in-memory cache with FIFO eviction."""
     if len(_embeddings_cache) >= _MAX_CACHE:
         # Evict oldest entry
         oldest_key = next(iter(_embeddings_cache))
@@ -110,16 +116,91 @@ def _cache_put(key: str, emb: object, meta: dict) -> None:
     _embeddings_cache[key] = (emb, meta)
 
 
+# ---------------------------------------------------------------------------
+# Disk cache
+# ---------------------------------------------------------------------------
+
+def _disk_cache_path(key: str, cache_dir: Path | None = None) -> Path:
+    """Get disk cache path for a given key."""
+    d = cache_dir or _DEFAULT_CACHE_DIR
+    return d / f"{key}.npy"
+
+
+def _disk_meta_path(key: str, cache_dir: Path | None = None) -> Path:
+    """Get disk metadata path for a given key."""
+    d = cache_dir or _DEFAULT_CACHE_DIR
+    return d / f"{key}.json"
+
+
+def _disk_get(key: str, cache_dir: Path | None = None) -> tuple[object, dict] | None:
+    """Load embeddings from disk cache. Returns (numpy_array, metadata) or None."""
+    if not _HAS_NUMPY:
+        return None
+    emb_path = _disk_cache_path(key, cache_dir)
+    meta_path = _disk_meta_path(key, cache_dir)
+    if not emb_path.exists() or not meta_path.exists():
+        return None
+    try:
+        emb = np.load(emb_path)
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        return emb, meta
+    except Exception as exc:
+        log.debug("Disk cache read failed for %s: %s", key, exc)
+        return None
+
+
+def _disk_put(key: str, emb: object, meta: dict, cache_dir: Path | None = None) -> None:
+    """Save embeddings to disk cache."""
+    if not _HAS_NUMPY:
+        return
+    d = cache_dir or _DEFAULT_CACHE_DIR
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        np.save(d / f"{key}.npy", emb)
+        with open(d / f"{key}.json", "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        log.debug("Disk cache write failed for %s: %s", key, exc)
+
+
+def clear_disk_cache(cache_dir: Path | None = None) -> int:
+    """Remove all disk-cached embeddings. Returns number of files removed."""
+    d = cache_dir or _DEFAULT_CACHE_DIR
+    if not d.exists():
+        return 0
+    count = 0
+    for p in d.glob("*.npy"):
+        p.unlink(missing_ok=True)
+        count += 1
+    for p in d.glob("*.json"):
+        p.unlink(missing_ok=True)
+        count += 1
+    return count
+
+
+def disk_cache_size(cache_dir: Path | None = None) -> int:
+    """Return number of cached SFs on disk."""
+    d = cache_dir or _DEFAULT_CACHE_DIR
+    if not d.exists():
+        return 0
+    return len(list(d.glob("*.npy")))
+
+
 def get_cache_metadata(sf: dict, model_name: str = DEFAULT_MODEL) -> dict | None:
     """Get provenance metadata for cached embeddings.
 
     Returns dict with model, dim, computed_at, count — or None if not cached.
+    Checks in-memory first, then disk.
     """
     h = _sf_hash(sf, model_name)
     cached = _cache_get(h)
-    if cached is None:
-        return None
-    return cached[1].copy()
+    if cached is not None:
+        return cached[1].copy()
+    disk = _disk_get(h)
+    if disk is not None:
+        return disk[1].copy()
+    return None
 
 
 def _compute_embeddings(
@@ -151,36 +232,65 @@ def _compute_embeddings(
 def embed_sf(
     sf: dict,
     model_name: str = DEFAULT_MODEL,
+    cache_dir: Path | None = None,
 ) -> object | None:
     """Pre-compute embeddings for all SF nodes. Returns None if unavailable.
 
-    Results are cached in-memory by SF hash + model name.
+    2-tier cache:
+      1. In-memory (fast, FIFO eviction at 8 entries)
+      2. Disk (persistent at cache_dir/embeddings/, survives restarts)
+
     Cache includes provenance metadata (model, dim, timestamp).
     """
     h = _sf_hash(sf, model_name)
+
+    # Tier 1: in-memory
     cached = _cache_get(h)
     if cached is not None:
         emb, meta = cached
         # Validate dim: if model changed upstream, dim may diverge.
-        # Use property lookup (zero inference) instead of encode(["probe"]).
         model = _get_model(model_name)
         if model is not None:
             try:
                 expected_dim = model.get_embedding_dimension()
             except Exception:
-                expected_dim = meta.get("dim")  # Can't check, trust cache
+                expected_dim = meta.get("dim")
             if meta.get("dim") != expected_dim:
                 log.warning(
                     "Cache dim mismatch: cached=%s, expected=%s — recomputing",
                     meta.get("dim"), expected_dim,
                 )
                 _embeddings_cache.pop(h, None)
-                # Fall through to recompute
             else:
                 return emb
         else:
             return emb
 
+    # Tier 2: disk
+    disk = _disk_get(h, cache_dir)
+    if disk is not None:
+        emb, meta = disk
+        # Validate dim
+        model = _get_model(model_name)
+        if model is not None:
+            try:
+                expected_dim = model.get_embedding_dimension()
+            except Exception:
+                expected_dim = meta.get("dim")
+            if meta.get("dim") != expected_dim:
+                log.warning(
+                    "Disk cache dim mismatch: cached=%s, expected=%s — recomputing",
+                    meta.get("dim"), expected_dim,
+                )
+            else:
+                # Promote to in-memory cache
+                _cache_put(h, emb, meta)
+                return emb
+        else:
+            _cache_put(h, emb, meta)
+            return emb
+
+    # Tier 3: compute
     nodes = sf.get("nodes", [])
     if not nodes:
         return None
@@ -198,7 +308,10 @@ def embed_sf(
     if result is None:
         return None
     emb, meta = result
+
+    # Store in both caches
     _cache_put(h, emb, meta)
+    _disk_put(h, emb, meta, cache_dir)
     return emb
 
 
@@ -207,6 +320,7 @@ def match_by_embedding(
     sf: dict,
     threshold: float = DEFAULT_THRESHOLD,
     model_name: str = DEFAULT_MODEL,
+    cache_dir: Path | None = None,
 ) -> list[tuple[dict, float]]:
     """Match query against SF nodes using embedding cosine similarity.
 
@@ -221,7 +335,7 @@ def match_by_embedding(
     if not nodes:
         return []
 
-    sf_emb = embed_sf(sf, model_name)
+    sf_emb = embed_sf(sf, model_name, cache_dir)
     if sf_emb is None:
         return []
 
