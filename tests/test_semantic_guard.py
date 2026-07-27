@@ -136,7 +136,7 @@ class TestQuantitativeConsistency:
         assert issues[0]["type"] == "quantitative_mismatch"
 
     def test_generic_word_no_false_positive(self):
-        """Two unrelated claims about the same system must NOT flag."""
+        """Two unrelated claims sharing only generic words must NOT flag."""
         sf = {
             "nodes": [{
                 "id": "p1",
@@ -150,9 +150,27 @@ class TestQuantitativeConsistency:
             "The system uses 500 MB of RAM",
             sf,
         )
-        # Hz vs MB = incompatible, but "system" is the only shared term.
-        # With 2+ term requirement, this should NOT flag.
+        # "system" is generic → filtered out. No meaningful overlap.
         assert len(issues) == 0
+
+    def test_single_specific_term_detected(self):
+        """Single specific term (not generic) is enough for detection."""
+        sf = {
+            "nodes": [{
+                "id": "p1",
+                "type": "principle",
+                "statement": "The volatility_drag metric uses 100 snapshots",
+                "epistemic_status": "certain",
+            }],
+            "edges": [],
+        }
+        issues = check_quantitative_consistency(
+            "The volatility_drag metric is 1.6GB",
+            sf,
+        )
+        # "volatility_drag" is specific → overlap counts → detected
+        assert len(issues) >= 1
+        assert issues[0]["type"] == "type_confusion"
 
     def test_different_units_no_issue(self, sf_with_quantitative):
         issues = check_quantitative_consistency(
@@ -185,16 +203,16 @@ class TestQuantitativeConsistency:
             "nodes": [{
                 "id": "p1",
                 "type": "principle",
-                "statement": "The process clock runs at 500 seconds",
+                "statement": "The oscillator completes 500 seconds per cycle",
                 "epistemic_status": "certain",
             }],
             "edges": [],
         }
         issues = check_quantitative_consistency(
-            "The process clock frequency is 500Hz",
+            "The oscillator frequency is 500Hz",
             sf,
         )
-        # Hz (frequency) vs seconds (time) — incompatible, "process"+"clock" shared
+        # Hz (frequency) vs seconds (time) — incompatible, "oscillator" specific
         assert len(issues) >= 1
         assert issues[0]["type"] == "type_confusion"
 

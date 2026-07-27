@@ -119,9 +119,16 @@ def check_quantitative_consistency(
                     ctx_terms = set(salient_terms(context))
                     sf_ctx_terms = set(salient_terms(sf_claim["context"]))
                     overlap = ctx_terms & sf_ctx_terms if ctx_terms and sf_ctx_terms else set()
-                    # Require 2+ shared terms to avoid false positives on
-                    # generic words like "system", "process", "file"
-                    if len(overlap) >= 2:
+                    # Filter out generic domain words that appear in almost any
+                    # technical claim — they're too weak to establish "same concept".
+                    # Specific terms (e.g. "volatility drag") still count.
+                    _GENERIC_OVERLAP = {
+                        "system", "process", "file", "data", "value", "thing",
+                        "use", "run", "set", "get", "make", "take", "put",
+                        "total", "per", "each", "the", "is", "are", "was",
+                    }
+                    meaningful_overlap = overlap - _GENERIC_OVERLAP
+                    if meaningful_overlap:
                         issues.append({
                             "type": "type_confusion",
                             "severity": "high",
