@@ -171,32 +171,30 @@ class TestQuantitativeConsistency:
             }],
             "edges": [],
         }
-        # Same entity word "process" — triggers entity fallback
         issues = check_quantitative_consistency(
             "The process runs at 500Hz frequency",
             sf,
         )
-        # Hz (frequency) vs seconds (time) — incompatible
+        # Hz (frequency) vs seconds (time) — incompatible, "process" shared
         assert len(issues) >= 1
         assert issues[0]["type"] == "type_confusion"
 
-    def test_hz_cross_unit_different_entity_not_detected(self):
-        # Limitation: different entity words ("process" vs "CPU") won't
-        # trigger detection without embeddings. This is a known limitation.
+    def test_ms_same_category_not_flagged(self):
+        """ms and seconds are the same physical quantity — must NOT flag."""
         sf = {
             "nodes": [{
                 "id": "p1",
                 "type": "principle",
-                "statement": "The process takes 500 seconds to complete",
+                "statement": "The request takes 2 seconds to complete",
                 "epistemic_status": "certain",
             }],
             "edges": [],
         }
         issues = check_quantitative_consistency(
-            "The CPU runs at 500Hz frequency",
+            "The latency is 2000ms for this request",
             sf,
         )
-        # Different entity words — no detection (known limitation)
+        # 2000ms = 2s — same quantity, consistent. No flag.
         assert len(issues) == 0
 
     def test_cross_unit_confusion_detected(self):

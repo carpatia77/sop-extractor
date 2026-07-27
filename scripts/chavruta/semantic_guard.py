@@ -118,10 +118,7 @@ def check_quantitative_consistency(
                 elif _units_are_incompatible(unit, sf_unit):
                     ctx_terms = set(salient_terms(context))
                     sf_ctx_terms = set(salient_terms(sf_claim["context"]))
-                    overlap = ctx_terms & sf_ctx_terms if ctx_terms and sf_ctx_terms else set()
-
-                    if overlap:
-                        # Strong signal: same vocabulary + different units
+                    if ctx_terms and sf_ctx_terms and ctx_terms & sf_ctx_terms:
                         issues.append({
                             "type": "type_confusion",
                             "severity": "high",
@@ -133,47 +130,18 @@ def check_quantitative_consistency(
                             "evidence": context,
                             "sf_claim": sf_claim["context"],
                         })
-                    else:
-                        # Weaker signal: paraphrase — different vocabulary but both
-                        # quantify the same entity. Check if the SF's core entity
-                        # word appears in the response context (as a substring,
-                        # not just salient term match).
-                        sf_stripped = sf_claim["context"].lower()
-                        ctx_lower = context.lower()
-                        # Extract the main subject from the SF context
-                        # (first 1-2 words after common starters)
-                        sf_words = sf_stripped.split()
-                        entity_word = ""
-                        for w in sf_words:
-                            if w in ("the", "a", "an", "it", "this", "um", "uma"):
-                                continue
-                            entity_word = w.rstrip(".,;:!?")
-                            break
-                        if entity_word and len(entity_word) > 2 and entity_word in ctx_lower:
-                            issues.append({
-                                "type": "type_confusion",
-                                "severity": "high",
-                                "message": (
-                                    f"Possible type confusion: response uses {number} {unit} "
-                                    f"but SF states {sf_num} {sf_unit} — different unit types, "
-                                    f"both quantify entity '{entity_word}'"
-                                ),
-                                "evidence": context,
-                                "sf_claim": sf_claim["context"],
-                            })
 
     return issues
 
 
 def _units_are_incompatible(unit1: str, unit2: str) -> bool:
     """Check if two unit types are incompatible (can't be compared)."""
-    # Group units by category
-    # Special-case "ms" and "ns" before rstrip — they aren't plural of "m"/"n"
+    # Group units by physical category
+    # ms/ns/μs are the same quantity as seconds (time) — just different scales
     digital = {"gb", "mb", "kb", "tb", "bytes", "bps", "bits", "chars", "lines", "rows", "entries", "records", "gigabyte", "megabyte", "kilobyte", "terabyte"}
     count = {"snapshots", "snapshot", "frames", "frame", "pixels", "pixel", "entries", "entry", "records", "record", "samples", "sample"}
-    time = {"seconds", "second", "minutes", "minute", "hours", "hour", "days", "day"}
+    time = {"seconds", "second", "minutes", "minute", "hours", "hour", "days", "day", "ms", "ns", "μs", "us"}
     frequency = {"hz", "mhz", "ghz", "khz"}
-    duration_ms = {"ms", "ns", "μs", "us"}  # millisecond-scale durations
 
     def _categorize(u: str) -> str:
         u = u.lower()
@@ -183,8 +151,6 @@ def _units_are_incompatible(unit1: str, unit2: str) -> bool:
             return "count"
         if u in frequency:
             return "frequency"
-        if u in duration_ms:
-            return "duration_ms"
         if u in time:
             return "time"
         # Fallback: strip trailing "s" for plural detection
@@ -195,8 +161,6 @@ def _units_are_incompatible(unit1: str, unit2: str) -> bool:
             return "count"
         if stripped in frequency:
             return "frequency"
-        if stripped in duration_ms:
-            return "duration_ms"
         if stripped in time:
             return "time"
         return "other"
