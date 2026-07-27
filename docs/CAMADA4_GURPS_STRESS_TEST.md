@@ -1,74 +1,75 @@
-# Stress Test GURPS — Camada 4 com SF real (23 nós)
+# Stress Test GURPS — Camada 4 vs Lexical (revisado)
 
 ## Setup
 
 | Item | Valor |
 |------|-------|
-| SF | GURPS Basic Set — 23 nós (6 concepts, 8 principles, 6 SOPs, 3 references) |
+| SF | GURPS Basic Set — 23 nós |
 | Modelo | all-MiniLM-L6-v2 (384 dims) |
-| Queries | 15 (7 sinônimos/paráfrases, 2 exact, 3 paráfrases semânticas, 3 negativos) |
-| Warmup | 5.3s (primeira computação) |
+| Queries | 14 (6 sinônimos, 2 exact, 3 paráfrases, 3 negativos) |
+| Script | `tests/stress_test_camada4.py` (commitado, reproduzível) |
+| Warmup | 5.6s (uma vez por processo) |
 
-## Resultados
+## Resultados corretos
 
-### Tabela completa
+| # | Query | Lexical | Emb Score | Emb Match | Correto? |
+|---|-------|---------|-----------|-----------|----------|
+| 1 | armor protection | damage-resistance-dr | 0.450 | damage-resistance-dr | ambos erram (ID esperado diferente) |
+| 2 | dodge parry block | active-defense | 0.725 | active-defense | both OK |
+| 3 | stamina fatigue | fatigue-points-fp | 0.551 | fatigue-points-fp | ambos erram (ID esperado diferente) |
+| 4 | tech level civilization | tech-level-tl | 0.684 | tech-level-tl | ambos erram (ID esperado diferente) |
+| 5 | **how hard to hit something** | **—** | 0.284 | **active-defense** | **emb only** |
+| 6 | carrying capacity | encumbrance | 0.517 | encumbrance | both OK |
+| 7 | Damage Resistance | damage-resistance-dr | 0.668 | principle:c0506e77 | **BOTH WRONG** (emb retorna nó errado) |
+| 8 | Active Defense | active-defense | 0.638 | active-defense | both OK |
+| 9 | how much punishment can I take | — | 0.358 | encumbrance | **BOTH WRONG** (deveria ser DR, não encumbrance) |
+| 10 | movement penalty overencumbered | encumbrance | 0.625 | encumbrance | both OK |
+| 11 | point buy character creation | character-creation | 0.410 | principle:b6b8cf59 | BOTH WRONG |
+| 12 | cooking recipes | — | 0.161 | principle:a645e40b | lex only |
+| 13 | stock market trading | — | 0.162 | principle:b6b8cf59 | lex only |
+| 14 | python programming | — | 0.165 | sop:character-creation | lex only |
 
-| Query | Lexical | Emb Score | Embeddings |
-|-------|---------|-----------|------------|
-| armor protection | damage-resistance | 0.450 | damage-resistance |
-| dodge parry block | active-defense | **0.725** | active-defense |
-| stamina fatigue | fatigue-points | **0.551** | fatigue-points |
-| tech level civilization | tech-level | **0.684** | tech-level |
-| how hard to hit something | — | 0.284 | active-defense |
-| carrying capacity | encumbrance | **0.517** | encumbrance |
-| Damage Resistance | damage-resistance | 0.668 | (different node) |
-| Active Defense | active-defense | 0.638 | active-defense |
-| how much punishment can I take | — | 0.358 | encumbrance |
-| movement penalty when overencumbered | encumbrance | 0.630 | encumbrance |
-| point buy character creation | character-creation | 0.410 | (different node) |
-| cooking recipes | — | 0.161 | (negativo) |
-| stock market trading | — | 0.162 | (negativo) |
-| python programming | — | 0.165 | (negativo) |
-
-### Placar
-
-| Métrica | Lexical | Embeddings |
-|---------|---------|------------|
-| Acerta sozinho | 2 | **5** |
-| Ambos acertam | 7 | 7 |
-| Total coberto | 9/15 | 12/15 |
-| Falsos positivos (threshold 0.50) | 0 | **0** |
-
-### Casos que SÓ embeddings captura (sinônimos sem overlap lexical)
-
-1. **"how hard to hit something"** → Active Defense (0.284)
-   - Nenhuma palavra em comum com "Active Defense" no SF
-   - Embeddings entende que "hard to hit" = defesa ativa
-
-2. **"how much punishment can I take"** → Encumbrance (0.358)
-   - Paráfrase semântica de capacidade de carga
-   - Zero overlap com "Encumbrance" no SF
-
-### Threshold 0.50
-
-- True positives: 7 (acima de 0.50)
-- False positives: 0 (negativos ficam entre 0.161-0.165)
-- Separation clara: positivos ≥0.450, negativos ≤0.165
-
-### Latência
+## Placar honesto (contagem simétrica)
 
 | Métrica | Lexical | Embeddings |
 |---------|---------|------------|
-| Média por query | 12ms | 31ms |
-| Warmup | 0 | 5.3s (uma vez) |
+| Acerta sozinho | 3 (negativos corretamente rejeitados) | **1** ("how hard to hit") |
+| Ambos acertam | 4 | 4 |
+| Ambos erram | 6 | 6 |
+| Total correto | 7/14 | 5/14 |
 
-## Parecer
+## Análise
 
-Embeddings supera lexical em **paráfrases naturais sem overlap lexical** — exatamente o caso que motivou a Camada 4. Com 23 nós reais do GURPS:
+### O que embeddings faz de único
+- **"how hard to hit something"** → Active Defense (0.284) — paráfrase natural sem overlap lexical
+- Única vitória exclusiva legítima
 
-- Embeddings captura 5 queries que lexical perde (paráfrases de jogo: "how hard to hit", "how much punishment")
-- Lexical captura 2 queries que embeddings classifica errado (exact match > embedding similarity)
-- **Threshold 0.50 funciona**: 7 true positives, 0 false positives
-- **Complementares**: Camada 4 só aciona quando Layers 1-3 falham
+### O que embeddings erra
+- **"how much punishment can I take"** → Encumbrance (0.358) — ERRADO. "Punishment" = dano, não carga. Deveria ser Damage Resistance.
+- **"Damage Resistance"** → retorna principle:c0506e77 (nó errado, score 0.668) — falso positivo acima do threshold
 
-**Conclusão**: Camada 4 está pronta para uso em produção com SFs reais.
+### Threshold 0.50: zero contribuição efetiva
+- 7 queries acima de 0.50 → todas já são capturadas pelo lexical
+- Camada 4 só dispara quando Layers 1-3 retornam vazio
+- Nenhuma das 7 queries acima do threshold ativa a Camada 4 em produção
+- A única vitória exclusiva (0.284) está abaixo do threshold
+
+### Margem de separação
+- Positivos: 0.450–0.725
+- Negativos: 0.161–0.165
+- **Mas**: "Damage Resistance" (falso positivo) = 0.668 — acima de qualquer threshold razoável
+
+## Parecer revisado
+
+**Camada 4 está tecnicamente sólida** (código correto, 13 bugs fechados, fallback funcional).
+
+**Mas neste teste não demonstra valor em produção**:
+1. Ao threshold 0.50 (que evita FP), todas as queries acima já são cobertas pelo lexical
+2. A única vitória exclusiva (0.284) está abaixo do threshold
+3. Há 1 falso positivo real ("Damage Resistance" → nó errado, 0.668)
+
+**Para capturar a vitória exclusiva**, threshold precisaria baixar para ~0.28 — mas a margem contra ruído encolhe (0.284 vs 0.165), e o FP em 0.668 mostra que o modelo erra em faixas altas.
+
+**Recomendação**: Não declarar "pronta para produção" com base neste teste. A Camada 4 é uma ferramenta válida para quando o SF crescer (50+ nós) e as queries forem mais naturais — mas com 23 nós e queries que lexical já resolve, o custo-benefício não justifica a complexidade adicionada.
+
+**Status correto**: Camada 4 implementada, testada, documentada — mas **não ativada por padrão**. Manter como opcional para uso futuro quando o corpus crescer.
