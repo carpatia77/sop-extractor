@@ -119,15 +119,34 @@ def check_quantitative_consistency(
                     ctx_terms = set(salient_terms(context))
                     sf_ctx_terms = set(salient_terms(sf_claim["context"]))
                     overlap = ctx_terms & sf_ctx_terms if ctx_terms and sf_ctx_terms else set()
-                    # Filter out generic domain words that appear in almost any
-                    # technical claim — they're too weak to establish "same concept".
-                    # Specific terms (e.g. "volatility drag") still count.
-                    _GENERIC_OVERLAP = {
-                        "system", "process", "file", "data", "value", "thing",
-                        "use", "run", "set", "get", "make", "take", "put",
-                        "total", "per", "each", "the", "is", "are", "was",
+                    # Require at least one SPECIFIC (non-generic) term in overlap.
+                    # Generic terms appear in almost any technical claim and are
+                    # too weak to establish "same concept". This list covers the
+                    # most common generic nouns/verbs in system/tech domains.
+                    _GENERIC = {
+                        # system / infrastructure
+                        "system", "server", "client", "node", "cluster",
+                        "service", "component", "module", "engine",
+                        # data / storage
+                        "data", "file", "disk", "disk", "memory", "ram",
+                        "storage", "cache", "buffer", "pool",
+                        # network / io
+                        "network", "request", "response", "connection",
+                        "socket", "port", "packet", "stream",
+                        # compute
+                        "cpu", "process", "thread", "task", "job",
+                        "queue", "worker", "handler",
+                        # measurement / generic
+                        "rate", "speed", "size", "number", "amount",
+                        "count", "total", "value", "level", "type",
+                        "kind", "mode", "state", "status", "result",
+                        # actions (generic)
+                        "use", "run", "set", "get", "make", "take",
+                        "put", "send", "read", "write", "open", "close",
+                        # determiners / function words
+                        "per", "each", "the", "is", "are", "was", "has",
                     }
-                    meaningful_overlap = overlap - _GENERIC_OVERLAP
+                    meaningful_overlap = overlap - _GENERIC
                     if meaningful_overlap:
                         issues.append({
                             "type": "type_confusion",

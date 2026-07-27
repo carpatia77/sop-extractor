@@ -185,16 +185,16 @@ class TestQuantitativeConsistency:
             "nodes": [{
                 "id": "p1",
                 "type": "principle",
-                "statement": "The system memory is 1.6GB total",
+                "statement": "The heap_allocation is 1.6GB total",
                 "epistemic_status": "certain",
             }],
             "edges": [],
         }
         issues = check_quantitative_consistency(
-            "The system memory latency is 50ms",
+            "The heap_allocation latency is 50ms",
             sf,
         )
-        # ms (time) vs GB (digital) — incompatible, "system"+"memory" shared
+        # ms (time) vs GB (digital) — incompatible, "heap_allocation" specific
         assert len(issues) >= 1
         assert issues[0]["type"] == "type_confusion"
 
