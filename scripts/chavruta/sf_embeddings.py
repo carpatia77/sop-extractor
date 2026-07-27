@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """SF Embeddings Matcher — Camada 4: semantic similarity via embeddings.
 
-Optional layer on top of sf_matcher's existing 3 layers (exact ID, substring,
+Active layer on top of sf_matcher's existing 3 layers (exact ID, substring,
 salient-term Jaccard). Uses sentence-transformers for cosine similarity matching.
 
-Fallback behavior:
+Behavior:
   - If sentence-transformers is NOT installed → returns empty (layers 1-3 suffice)
   - If model fails to load → returns empty
   - If embeddings are not cached → computes on first call, caches in-memory

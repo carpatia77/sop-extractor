@@ -8,6 +8,9 @@ this module catches:
   3. Scope expansion (extending claims beyond their evidence)
 
 Uses rules-based detection — no embeddings required.
+The overlap check uses a generic-word stoplist to avoid false positives from
+shared but meaningless terms (e.g. "system", "data", "process"). For paraphrases
+with different vocabulary, Camada 4 (embeddings) in sf_matcher handles those.
 
 Used by:
   - Chavruta Engine: secondary defense after drift_detector
@@ -20,6 +23,38 @@ try:
     from scripts.verify_concept_presence import salient_terms
 except ImportError:
     from verify_concept_presence import salient_terms
+
+
+# ---------------------------------------------------------------------------
+# Generic-word stoplist for overlap checks
+# ---------------------------------------------------------------------------
+
+# Terms that appear in almost any technical claim and are too weak to establish
+# "same concept" for type_confusion detection. Paraphrases with different
+# vocabulary are handled by Camada 4 (embeddings) in sf_matcher.
+_GENERIC_WORDS = frozenset({
+    # system / infrastructure
+    "system", "server", "client", "node", "cluster",
+    "service", "component", "module", "engine",
+    # data / storage
+    "data", "file", "disk", "memory", "ram",
+    "storage", "cache", "buffer", "pool",
+    # network / io
+    "network", "request", "response", "connection",
+    "socket", "port", "packet", "stream",
+    # compute
+    "cpu", "process", "thread", "task", "job",
+    "queue", "worker", "handler",
+    # measurement / generic
+    "rate", "speed", "size", "number", "amount",
+    "count", "total", "value", "level", "type",
+    "kind", "mode", "state", "status", "result",
+    # actions (generic)
+    "use", "run", "set", "get", "make", "take",
+    "put", "send", "read", "write", "open", "close",
+    # determiners / function words
+    "per", "each", "the", "is", "are", "was", "has",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -121,33 +156,9 @@ def check_quantitative_consistency(
                     overlap = ctx_terms & sf_ctx_terms if ctx_terms and sf_ctx_terms else set()
                     # Require at least one SPECIFIC (non-generic) term in overlap.
                     # Generic terms appear in almost any technical claim and are
-                    # too weak to establish "same concept". This list covers the
-                    # most common generic nouns/verbs in system/tech domains.
-                    _GENERIC = {
-                        # system / infrastructure
-                        "system", "server", "client", "node", "cluster",
-                        "service", "component", "module", "engine",
-                        # data / storage
-                        "data", "file", "disk", "disk", "memory", "ram",
-                        "storage", "cache", "buffer", "pool",
-                        # network / io
-                        "network", "request", "response", "connection",
-                        "socket", "port", "packet", "stream",
-                        # compute
-                        "cpu", "process", "thread", "task", "job",
-                        "queue", "worker", "handler",
-                        # measurement / generic
-                        "rate", "speed", "size", "number", "amount",
-                        "count", "total", "value", "level", "type",
-                        "kind", "mode", "state", "status", "result",
-                        # actions (generic)
-                        "use", "run", "set", "get", "make", "take",
-                        "put", "send", "read", "write", "open", "close",
-                        # determiners / function words
-                        "per", "each", "the", "is", "are", "was", "has",
-                    }
-                    meaningful_overlap = overlap - _GENERIC
-                    if meaningful_overlap:
+                    # too weak to establish "same concept". Paraphrases with
+                    # different vocabulary are handled by Camada 4 (embeddings).
+                    if (overlap - _GENERIC_WORDS):
                         issues.append({
                             "type": "type_confusion",
                             "severity": "high",
