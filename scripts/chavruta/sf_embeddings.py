@@ -21,24 +21,46 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+import logging
+from datetime import datetime, timezone
+
+log = logging.getLogger(__name__)
 
 try:
     from sentence_transformers import SentenceTransformer
-    import numpy as np
-    _HAS_EMBEDDINGS = True
 except ImportError:
-    _HAS_EMBEDDINGS = False
+    SentenceTransformer = None
+
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    np = None  # type: ignore[assignment]
+    _HAS_NUMPY = False
+
+_HAS_EMBEDDINGS = SentenceTransformer is not None and _HAS_NUMPY
 
 # Default model — small, fast, good quality
 DEFAULT_MODEL = "all-MiniLM-L6-v2"
-DEFAULT_THRESHOLD = 0.55
+DEFAULT_THRESHOLD = 0.7  # Conservative: avoid false positives
 
 # In-memory cache: model_name → loaded model
 _model_cache: dict[str, object] = {}
 
-# In-memory cache: sf_hash → embeddings array
-_embeddings_cache: dict[str, np.ndarray] = {}
+# In-memory cache: cache_key → (embeddings, metadata)
+# Max 8 entries to prevent memory leak (FIFO eviction)
+_MAX_CACHE = 8
+_embeddings_cache: dict[str, tuple[object, dict]] = {}
+
+
+def is_installed() -> bool:
+    """Check if sentence-transformers is importable (cheap, no I/O)."""
+    return _HAS_EMBEDDINGS
+
+
+def is_model_loadable(model_name: str = DEFAULT_MODEL) -> bool:
+    """Check if model can be loaded (expensive: may download ~80MB)."""
+    return _get_model(model_name) is not None
 
 
 def _get_model(model_name: str = DEFAULT_MODEL) -> object | None:
@@ -51,46 +73,82 @@ def _get_model(model_name: str = DEFAULT_MODEL) -> object | None:
         model = SentenceTransformer(model_name)
         _model_cache[model_name] = model
         return model
-    except Exception:
+    except Exception as exc:
+        log.warning("Failed to load embedding model %r: %s", model_name, exc)
         return None
 
 
-def _sf_hash(sf: dict) -> str:
-    """Deterministic hash of SF nodes for cache key."""
+def _sf_hash(sf: dict, model_name: str) -> str:
+    """Deterministic hash of SF nodes for cache key.
+
+    Includes all fields that go into the embedding text:
+    id, statement, term, definition, name, when_to_use.
+    Also includes model_name to prevent cross-model cache collision.
+    """
     nodes = sf.get("nodes", [])
     key = json.dumps(
-        [(n.get("id", ""), n.get("statement", ""), n.get("term", ""))
+        [(n.get("id", ""), n.get("statement", ""), n.get("term", ""),
+          n.get("definition", ""), n.get("name", ""), n.get("when_to_use", ""))
          for n in nodes],
         sort_keys=True, ensure_ascii=False,
     )
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+    combined = f"{model_name}::{key}"
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+
+def _cache_get(key: str) -> tuple[object, dict] | None:
+    """Get from embeddings cache."""
+    return _embeddings_cache.get(key)
+
+
+def _cache_put(key: str, emb: object, meta: dict) -> None:
+    """Put into embeddings cache with FIFO eviction."""
+    if len(_embeddings_cache) >= _MAX_CACHE:
+        # Evict oldest entry
+        oldest_key = next(iter(_embeddings_cache))
+        del _embeddings_cache[oldest_key]
+    _embeddings_cache[key] = (emb, meta)
 
 
 def _compute_embeddings(
     texts: list[str],
     model_name: str = DEFAULT_MODEL,
-) -> np.ndarray | None:
-    """Compute embeddings for a list of texts. Returns None if unavailable."""
+) -> tuple[object, dict] | None:
+    """Compute embeddings for a list of texts.
+
+    Returns (embeddings_array, metadata_dict) or None if unavailable.
+    Metadata includes model name, dimension, and computation timestamp.
+    """
     model = _get_model(model_name)
     if model is None:
         return None
     try:
-        return model.encode(texts, convert_to_numpy=True)
-    except Exception:
+        emb = model.encode(texts, convert_to_numpy=True)
+        meta = {
+            "model": model_name,
+            "dim": int(emb.shape[1]),
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(texts),
+        }
+        return emb, meta
+    except Exception as exc:
+        log.warning("Embedding computation failed for model %r: %s", model_name, exc)
         return None
 
 
 def embed_sf(
     sf: dict,
     model_name: str = DEFAULT_MODEL,
-) -> np.ndarray | None:
+) -> object | None:
     """Pre-compute embeddings for all SF nodes. Returns None if unavailable.
 
-    Results are cached in-memory by SF hash.
+    Results are cached in-memory by SF hash + model name.
+    Cache includes provenance metadata (model, dim, timestamp).
     """
-    h = _sf_hash(sf)
-    if h in _embeddings_cache:
-        return _embeddings_cache[h]
+    h = _sf_hash(sf, model_name)
+    cached = _cache_get(h)
+    if cached is not None:
+        return cached[0]
 
     nodes = sf.get("nodes", [])
     if not nodes:
@@ -105,9 +163,11 @@ def embed_sf(
         ]
         texts.append(" ".join(p for p in parts if p).strip())
 
-    emb = _compute_embeddings(texts, model_name)
-    if emb is not None:
-        _embeddings_cache[h] = emb
+    result = _compute_embeddings(texts, model_name)
+    if result is None:
+        return None
+    emb, meta = result
+    _cache_put(h, emb, meta)
     return emb
 
 
@@ -140,11 +200,11 @@ def match_by_embedding(
 
     try:
         query_emb = model.encode([query], convert_to_numpy=True)
-    except Exception:
+    except Exception as exc:
+        log.warning("Query embedding failed: %s", exc)
         return []
 
     # Cosine similarity (manual, no sklearn dependency)
-    # Normalize and dot product
     query_norm = query_emb / (np.linalg.norm(query_emb, axis=1, keepdims=True) + 1e-8)
     sf_norms = sf_emb / (np.linalg.norm(sf_emb, axis=1, keepdims=True) + 1e-8)
     similarities = (query_norm @ sf_norms.T)[0]
@@ -157,8 +217,3 @@ def match_by_embedding(
 
     matches.sort(key=lambda x: x[1], reverse=True)
     return matches
-
-
-def is_available() -> bool:
-    """Check if embedding layer is available."""
-    return _HAS_EMBEDDINGS and _get_model() is not None

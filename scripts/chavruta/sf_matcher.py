@@ -17,19 +17,23 @@ Used by:
 """
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 try:
     from scripts.verify_concept_presence import salient_terms
 except ImportError:
     from verify_concept_presence import salient_terms
 
 try:
-    from scripts.chavruta.sf_embeddings import match_by_embedding, is_available as embeddings_available
+    from scripts.chavruta.sf_embeddings import match_by_embedding, is_installed as embeddings_installed
 except ImportError:
     try:
-        from chavruta.sf_embeddings import match_by_embedding, is_available as embeddings_available
+        from chavruta.sf_embeddings import match_by_embedding, is_installed as embeddings_installed
     except ImportError:
         match_by_embedding = None
-        def embeddings_available() -> bool:
+        def embeddings_installed() -> bool:
             return False
 
 
@@ -124,7 +128,7 @@ def find_nodes(
     query: str,
     sf: dict,
     threshold: float = 0.4,
-    embedding_threshold: float = 0.55,
+    embedding_threshold: float = 0.7,
 ) -> list[dict]:
     """Find nodes in Semantic Field matching query.
 
@@ -164,8 +168,8 @@ def find_nodes(
                 if node["id"] not in seen_ids:
                     result.append(node)
                     seen_ids.add(node["id"])
-        except Exception:
-            pass  # Embeddings unavailable — layers 1-3 suffice
+        except Exception as exc:
+            log.debug("Embedding layer fallback: %s", exc)
 
     return result
 
@@ -174,7 +178,7 @@ def find_best_match(
     query: str,
     sf: dict,
     threshold: float = 0.3,
-    embedding_threshold: float = 0.55,
+    embedding_threshold: float = 0.7,
 ) -> tuple[dict | None, str]:
     """Find the single best matching node.
 
@@ -204,7 +208,7 @@ def find_best_match(
             emb_matches = match_by_embedding(query, sf, embedding_threshold)
             if emb_matches:
                 return emb_matches[0][0], "embedding"
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Embedding layer fallback: %s", exc)
 
     return None, "none"

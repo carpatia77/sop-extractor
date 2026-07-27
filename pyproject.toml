@@ -39,6 +39,7 @@ ingest = [
     "pyyaml>=6.0",
 ]
 semantic-field = ["networkx>=3.0"]
+embeddings = ["sentence-transformers>=2.2", "numpy>=1.24"]
 
 
 # Tooling config so `ruff check .` and `pytest` locally match CI without flags.
