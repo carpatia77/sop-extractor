@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SF Embeddings Matcher — Camada 4: semantic similarity via embeddings.
 
-Active layer on top of sf_matcher's existing 3 layers (exact ID, substring,
+Fallback layer on top of sf_matcher's existing 3 layers (exact ID, substring,
 salient-term Jaccard). Uses sentence-transformers for cosine similarity matching.
 
 Behavior:
@@ -10,6 +10,7 @@ Behavior:
   - Embeddings are cached in 2 tiers:
     1. In-memory (fast, FIFO eviction at 8 entries)
     2. Disk (persistent, survives restarts, at cache_dir/embeddings/)
+  - Only fires when layers 1-3 return no results (conservative fallback)
 
 This layer catches cases keyword matching misses:
   - Synonyms: "memory usage" vs "RAM consumption"
@@ -133,8 +134,12 @@ def _disk_meta_path(key: str, cache_dir: Path | None = None) -> Path:
 
 
 def _disk_get(key: str, cache_dir: Path | None = None) -> tuple[object, dict] | None:
-    """Load embeddings from disk cache. Returns (numpy_array, metadata) or None."""
-    if not _HAS_NUMPY:
+    """Load embeddings from disk cache. Returns (numpy_array, metadata) or None.
+
+    Returns None if sentence-transformers is not installed — cached embeddings
+    are useless without the model to compute query embeddings.
+    """
+    if not _HAS_EMBEDDINGS:
         return None
     emb_path = _disk_cache_path(key, cache_dir)
     meta_path = _disk_meta_path(key, cache_dir)
@@ -266,29 +271,30 @@ def embed_sf(
         else:
             return emb
 
-    # Tier 2: disk
-    disk = _disk_get(h, cache_dir)
-    if disk is not None:
-        emb, meta = disk
-        # Validate dim
-        model = _get_model(model_name)
-        if model is not None:
-            try:
-                expected_dim = model.get_embedding_dimension()
-            except Exception:
-                expected_dim = meta.get("dim")
-            if meta.get("dim") != expected_dim:
-                log.warning(
-                    "Disk cache dim mismatch: cached=%s, expected=%s — recomputing",
-                    meta.get("dim"), expected_dim,
-                )
+    # Tier 2: disk (only if model can run)
+    if _HAS_EMBEDDINGS:
+        disk = _disk_get(h, cache_dir)
+        if disk is not None:
+            emb, meta = disk
+            # Validate dim
+            model = _get_model(model_name)
+            if model is not None:
+                try:
+                    expected_dim = model.get_embedding_dimension()
+                except Exception:
+                    expected_dim = meta.get("dim")
+                if meta.get("dim") != expected_dim:
+                    log.warning(
+                        "Disk cache dim mismatch: cached=%s, expected=%s — recomputing",
+                        meta.get("dim"), expected_dim,
+                    )
+                else:
+                    # Promote to in-memory cache
+                    _cache_put(h, emb, meta)
+                    return emb
             else:
-                # Promote to in-memory cache
                 _cache_put(h, emb, meta)
                 return emb
-        else:
-            _cache_put(h, emb, meta)
-            return emb
 
     # Tier 3: compute
     nodes = sf.get("nodes", [])

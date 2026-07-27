@@ -274,8 +274,26 @@ class TestMatcherIntegration:
 # Disk cache tests
 # ---------------------------------------------------------------------------
 
+_HasEmbeddings = None  # Lazy check
+
+
+def _has_embeddings():
+    global _HasEmbeddings
+    if _HasEmbeddings is None:
+        try:
+            from chavruta.sf_embeddings import _HAS_EMBEDDINGS
+            _HasEmbeddings = _HAS_EMBEDDINGS
+        except Exception:
+            _HasEmbeddings = False
+    return _HasEmbeddings
+
+
+@pytest.mark.skipif(not _has_embeddings(), reason="sentence-transformers not installed")
 class TestDiskCache:
-    """Tests for the 2-tier cache (in-memory + disk)."""
+    """Tests for the 2-tier cache (in-memory + disk).
+
+    All tests use tmp_path to avoid polluting $HOME.
+    """
 
     def test_disk_cache_write_and_read(self, sf_with_nodes, tmp_path):
         """Embeddings should persist to disk and be loadable."""

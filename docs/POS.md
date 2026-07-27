@@ -6,18 +6,20 @@
 
 ## Resumo Executivo
 
-**Conclusão geral: ~78%** (era 72% no POS anterior desta sessão, 65% no POS original)
+**Conclusão geral: ~74%** (era 78% nesta sessão — revertido "active by default" + stress test corrigido)
 
-### Ganhos desta sessão (4 commits)
+### Ganhos desta sessão (commits corrigidos)
 
 | Commit | Mudança | Impacto |
 |--------|---------|---------|
-| `6c334a5` | Camada 4 ativa por padrão | Embeddings sempre contribuem, não só como fallback |
-| `6c334a5` | T2 fechado (context-overlap) | Stoplist `_GENERIC_WORDS` extraída, docstrings atualizadas |
-| `2c4fa9f` | Engine v1+v2 integram semantic_guard | match_layer + semantic_issues no output/history |
-| `2c4fa9f` | 18 testes de integração sf_matcher | Camada 4 contribuição, deduplicação, engine flow |
+| `6c334a5` | T2 fechado (context-overlap) | Stoplist `_GENERIC_WORDS` extraída |
+| `2c4fa9f` | Engine v1+v2 integram semantic_guard | match_layer + semantic_issues no output |
 | `82f26a8` | 34 testes E2E pipeline completo | sf_matcher → drift → semantic → depth → engine |
-| `0957b13` | Cache em disco 2 tiers | memory + disk (~/.cache/sopx/embeddings/), 9 testes |
+| `0957b13` | Cache em disco 2 tiers | memory + disk (~/.cache/sopx/embeddings/) |
+| `c2a1cec` | Stress test corrigido | ID único, keyword match, threshold 0.50 |
+| `corrige` | Fallback gate restaurado | Camada 4: fallback, não ativa por padrão |
+| `corrige` | `_disk_get` + `_HAS_EMBEDDINGS` | Fallback gracioso preservado em ambientes sem ST |
+| `corrige` | `TestDiskCache` com `skipif` + `tmp_path` | Testes não poluem `$HOME`, CI não quebra |
 
 ### Números da sessão
 
@@ -65,19 +67,19 @@
 | VLM (análise visual) | ❌ Não iniciado | — | Pareto score 3.00 |
 | Hardware Detection | ✅ Pronto | 25 | Auto-detect CPU/RAM, batch sizing |
 
-### Fase 4 — Polimento: 65% (era 45%)
+### Fase 4 — Polimento: 55% (era 65%)
 
 | Componente | Status | Testes | Última mudança |
 |------------|--------|--------|----------------|
-| Camada 4 (Embeddings) | ✅ **Pronto** | 27+31+9 | **Ativa por padrão + cache disco 2 tiers** |
+| Camada 4 (Embeddings) | ✅ Pronto | 27+31+9 | **Fallback gate (não ativa por padrão)** + cache disco 2 tiers |
 | Semantic Guard | ✅ Pronto | 28 | 6 rounds, stoplist 60+ termos, T2 fechado |
-| Chavruta Engine v1 | ✅ **Pronto** | 19+34 | **Integrado: semantic_guard + match_layer** |
-| Chavruta Engine v2 | ✅ **Pronto** | 19+34 | **Integrado: evidence-backed + repetition detection** |
-| sf_matcher | ✅ **Pronto** | 25+18 | **4 camadas ativas, testes de integração** |
-| E2E Tests | ✅ **Pronto** | **34** | **Pipeline completo testado** |
-| Disk Cache | ✅ **Pronto** | **9** | **2 tiers: memory + ~/.cache/sopx/embeddings/** |
+| Chavruta Engine v1 | ✅ Pronto | 19+34 | Integrado: semantic_guard + match_layer |
+| Chavruta Engine v2 | ✅ Pronto | 19+34 | Integrado: evidence-backed + repetition detection |
+| sf_matcher | ✅ Pronto | 25+18 | 4 camadas, Camada 4 como fallback |
+| E2E Tests | ✅ Pronto | 34 | Pipeline completo testado |
+| Disk Cache | ✅ Pronto | 9 | 2 tiers: memory + ~/.cache/sopx/embeddings/ |
 | Docs | ⚠️ Parcial | — | Architecture, plans, POS — README incompleto |
-| Stress Tests | ✅ Pronto | — | GURPS (23n) + QuantGuild (72n) |
+| Stress Tests | ✅ Pronto | — | GURPS (23n) + QuantGuild (267n) — critério keyword match |
 
 ---
 

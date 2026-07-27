@@ -7,7 +7,7 @@ graph nodes. Four layers, from exact to semantic:
   1. Exact ID match (e.g. "principle:abc123")
   2. Substring match in statement/term/definition
   3. Salient-term Jaccard overlap (threshold 0.4)
-  4. Embedding cosine similarity (active when sentence-transformers installed)
+  4. Embedding cosine similarity (fallback if layers 1-3 find nothing)
 
 Used by:
   - drift_detector.py: checks if user response maps to SF nodes
@@ -161,15 +161,15 @@ def find_nodes(
             result.append(node)
             seen_ids.add(node["id"])
 
-    # Layer 4: embeddings (always active when available)
-    if match_by_embedding is not None:
+    # Layer 4: embeddings (fallback — only when layers 1-3 find nothing)
+    if match_by_embedding is not None and not result:
         try:
             for node, _score in match_by_embedding(query, sf, embedding_threshold):
                 if node["id"] not in seen_ids:
                     result.append(node)
                     seen_ids.add(node["id"])
         except Exception as exc:
-            log.debug("Embedding layer error: %s", exc)
+            log.debug("Embedding layer fallback: %s", exc)
 
     return result
 
