@@ -116,10 +116,12 @@ def check_quantitative_consistency(
                 # The most dangerous semantic error: "1.6GB" (storage) confused
                 # with "1,600 snapshots" (count) for the same system/entity.
                 elif _units_are_incompatible(unit, sf_unit):
-                    # Check if the concept context overlaps
                     ctx_terms = set(salient_terms(context))
                     sf_ctx_terms = set(salient_terms(sf_claim["context"]))
-                    if ctx_terms and sf_ctx_terms and ctx_terms & sf_ctx_terms:
+                    overlap = ctx_terms & sf_ctx_terms if ctx_terms and sf_ctx_terms else set()
+
+                    if overlap:
+                        # Strong signal: same vocabulary + different units
                         issues.append({
                             "type": "type_confusion",
                             "severity": "high",
@@ -131,24 +133,78 @@ def check_quantitative_consistency(
                             "evidence": context,
                             "sf_claim": sf_claim["context"],
                         })
+                    else:
+                        # Weaker signal: paraphrase — different vocabulary but both
+                        # quantify the same entity. Check if the SF's core entity
+                        # word appears in the response context (as a substring,
+                        # not just salient term match).
+                        sf_stripped = sf_claim["context"].lower()
+                        ctx_lower = context.lower()
+                        # Extract the main subject from the SF context
+                        # (first 1-2 words after common starters)
+                        sf_words = sf_stripped.split()
+                        entity_word = ""
+                        for w in sf_words:
+                            if w in ("the", "a", "an", "it", "this", "um", "uma"):
+                                continue
+                            entity_word = w.rstrip(".,;:!?")
+                            break
+                        if entity_word and len(entity_word) > 2 and entity_word in ctx_lower:
+                            issues.append({
+                                "type": "type_confusion",
+                                "severity": "high",
+                                "message": (
+                                    f"Possible type confusion: response uses {number} {unit} "
+                                    f"but SF states {sf_num} {sf_unit} — different unit types, "
+                                    f"both quantify entity '{entity_word}'"
+                                ),
+                                "evidence": context,
+                                "sf_claim": sf_claim["context"],
+                            })
 
     return issues
 
 
 def _units_are_incompatible(unit1: str, unit2: str) -> bool:
     """Check if two unit types are incompatible (can't be compared)."""
-    # Group units by category (check both singular and plural)
+    # Group units by category
+    # Special-case "ms" and "ns" before rstrip — they aren't plural of "m"/"n"
     digital = {"gb", "mb", "kb", "tb", "bytes", "bps", "bits", "chars", "lines", "rows", "entries", "records", "gigabyte", "megabyte", "kilobyte", "terabyte"}
     count = {"snapshots", "snapshot", "frames", "frame", "pixels", "pixel", "entries", "entry", "records", "record", "samples", "sample"}
-    time = {"seconds", "second", "minutes", "minute", "hours", "hour", "days", "day", "ms", "ns", "hz", "mhz", "ghz"}
+    time = {"seconds", "second", "minutes", "minute", "hours", "hour", "days", "day"}
+    frequency = {"hz", "mhz", "ghz", "khz"}
+    duration_ms = {"ms", "ns", "μs", "us"}  # millisecond-scale durations
 
-    u1 = unit1.lower().rstrip("s")
-    u2 = unit2.lower().rstrip("s")
+    def _categorize(u: str) -> str:
+        u = u.lower()
+        if u in digital:
+            return "digital"
+        if u in count:
+            return "count"
+        if u in frequency:
+            return "frequency"
+        if u in duration_ms:
+            return "duration_ms"
+        if u in time:
+            return "time"
+        # Fallback: strip trailing "s" for plural detection
+        stripped = u.rstrip("s")
+        if stripped in digital:
+            return "digital"
+        if stripped in count:
+            return "count"
+        if stripped in frequency:
+            return "frequency"
+        if stripped in duration_ms:
+            return "duration_ms"
+        if stripped in time:
+            return "time"
+        return "other"
 
-    cat1 = "digital" if u1 in digital else "count" if u1 in count else "time" if u1 in time else "other"
-    cat2 = "digital" if u2 in digital else "count" if u2 in count else "time" if u2 in time else "other"
+    cat1 = _categorize(unit1)
+    cat2 = _categorize(unit2)
 
-    # Different categories = incompatible
+    # Different categories = incompatible (including frequency ≠ time)
     return cat1 != cat2 and cat1 != "other" and cat2 != "other"
 
 

@@ -79,6 +79,34 @@ class TestExtractQuantitativeClaims:
         assert claims[0]["number"] == 1234.56
 
 
+class TestUnitsIncompatible:
+    """Tests for _units_are_incompatible — cross-category detection."""
+
+    def test_ms_vs_gb(self):
+        from scripts.chavruta.semantic_guard import _units_are_incompatible
+        assert _units_are_incompatible("ms", "GB") is True
+
+    def test_ns_vs_mb(self):
+        from scripts.chavruta.semantic_guard import _units_are_incompatible
+        assert _units_are_incompatible("ns", "MB") is True
+
+    def test_hz_vs_seconds(self):
+        from scripts.chavruta.semantic_guard import _units_are_incompatible
+        assert _units_are_incompatible("Hz", "seconds") is True
+
+    def test_ghz_vs_mb(self):
+        from scripts.chavruta.semantic_guard import _units_are_incompatible
+        assert _units_are_incompatible("GHz", "MB") is True
+
+    def test_same_category_compatible(self):
+        from scripts.chavruta.semantic_guard import _units_are_incompatible
+        assert _units_are_incompatible("Hz", "MHz") is False
+
+    def test_gb_vs_mb_same_category(self):
+        from scripts.chavruta.semantic_guard import _units_are_incompatible
+        assert _units_are_incompatible("GB", "MB") is False
+
+
 class TestQuantitativeConsistency:
     def test_matching_magnitude(self, sf_with_quantitative):
         issues = check_quantitative_consistency(
@@ -113,6 +141,62 @@ class TestQuantitativeConsistency:
             sf_with_quantitative,
         )
         # Unrelated context — no entity overlap, no issue
+        assert len(issues) == 0
+
+    def test_ms_cross_unit_detected(self):
+        sf = {
+            "nodes": [{
+                "id": "p1",
+                "type": "principle",
+                "statement": "The system has 1.6GB of memory",
+                "epistemic_status": "certain",
+            }],
+            "edges": [],
+        }
+        issues = check_quantitative_consistency(
+            "The system responds in 50ms latency",
+            sf,
+        )
+        # ms (duration) vs GB (digital) — incompatible, "system" shared
+        assert len(issues) >= 1
+        assert issues[0]["type"] == "type_confusion"
+
+    def test_hz_cross_unit_detected(self):
+        sf = {
+            "nodes": [{
+                "id": "p1",
+                "type": "principle",
+                "statement": "The process takes 500 seconds to complete",
+                "epistemic_status": "certain",
+            }],
+            "edges": [],
+        }
+        # Same entity word "process" — triggers entity fallback
+        issues = check_quantitative_consistency(
+            "The process runs at 500Hz frequency",
+            sf,
+        )
+        # Hz (frequency) vs seconds (time) — incompatible
+        assert len(issues) >= 1
+        assert issues[0]["type"] == "type_confusion"
+
+    def test_hz_cross_unit_different_entity_not_detected(self):
+        # Limitation: different entity words ("process" vs "CPU") won't
+        # trigger detection without embeddings. This is a known limitation.
+        sf = {
+            "nodes": [{
+                "id": "p1",
+                "type": "principle",
+                "statement": "The process takes 500 seconds to complete",
+                "epistemic_status": "certain",
+            }],
+            "edges": [],
+        }
+        issues = check_quantitative_consistency(
+            "The CPU runs at 500Hz frequency",
+            sf,
+        )
+        # Different entity words — no detection (known limitation)
         assert len(issues) == 0
 
     def test_cross_unit_confusion_detected(self):
