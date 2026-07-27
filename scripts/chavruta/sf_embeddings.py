@@ -110,6 +110,18 @@ def _cache_put(key: str, emb: object, meta: dict) -> None:
     _embeddings_cache[key] = (emb, meta)
 
 
+def get_cache_metadata(sf: dict, model_name: str = DEFAULT_MODEL) -> dict | None:
+    """Get provenance metadata for cached embeddings.
+
+    Returns dict with model, dim, computed_at, count — or None if not cached.
+    """
+    h = _sf_hash(sf, model_name)
+    cached = _cache_get(h)
+    if cached is None:
+        return None
+    return cached[1].copy()
+
+
 def _compute_embeddings(
     texts: list[str],
     model_name: str = DEFAULT_MODEL,
@@ -148,7 +160,26 @@ def embed_sf(
     h = _sf_hash(sf, model_name)
     cached = _cache_get(h)
     if cached is not None:
-        return cached[0]
+        emb, meta = cached
+        # Validate dim: if model changed upstream, dim may diverge
+        model = _get_model(model_name)
+        if model is not None:
+            try:
+                probe = model.encode(["probe"], convert_to_numpy=True)
+                expected_dim = probe.shape[1]
+                if meta.get("dim") != expected_dim:
+                    log.warning(
+                        "Cache dim mismatch: cached=%s, expected=%s — recomputing",
+                        meta.get("dim"), expected_dim,
+                    )
+                    _embeddings_cache.pop(h, None)
+                    # Fall through to recompute
+                else:
+                    return emb
+            except Exception:
+                return emb  # Can't validate, trust cache
+        else:
+            return emb
 
     nodes = sf.get("nodes", [])
     if not nodes:

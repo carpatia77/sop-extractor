@@ -8,7 +8,7 @@ Tests cover:
 """
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -144,6 +144,22 @@ class TestCacheEviction:
         assert _cache_get("key_1") is None
         # Newest keys retained
         assert _cache_get(f"key_{_MAX_CACHE + 1}") is not None
+
+    def test_get_cache_metadata_returns_none_when_not_cached(self, sf_with_nodes):
+        from chavruta.sf_embeddings import get_cache_metadata, _embeddings_cache
+        _embeddings_cache.clear()
+        result = get_cache_metadata(sf_with_nodes, "nonexistent_model")
+        assert result is None
+
+    def test_get_cache_metadata_returns_provenance(self, sf_with_nodes):
+        from chavruta.sf_embeddings import _cache_put, _embeddings_cache, get_cache_metadata, _sf_hash
+        _embeddings_cache.clear()
+        h = _sf_hash(sf_with_nodes, "test_model")
+        _cache_put(h, "fake_emb", {"model": "test_model", "dim": 384, "computed_at": "now"})
+        meta = get_cache_metadata(sf_with_nodes, "test_model")
+        assert meta is not None
+        assert meta["model"] == "test_model"
+        assert meta["dim"] == 384
 
 
 # ---------------------------------------------------------------------------
