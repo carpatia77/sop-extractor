@@ -67,6 +67,17 @@ class TestExtractQuantitativeClaims:
         assert len(claims) == 1
         assert claims[0]["number"] == 1.6
 
+    def test_comma_thousands_separator(self):
+        claims = extract_quantitative_claims("1,600 snapshots per second")
+        assert len(claims) == 1
+        assert claims[0]["number"] == 1600.0
+        assert claims[0]["unit"] == "snapshots"
+
+    def test_comma_with_decimal(self):
+        claims = extract_quantitative_claims("1,234.56 MB of data")
+        assert len(claims) == 1
+        assert claims[0]["number"] == 1234.56
+
 
 class TestQuantitativeConsistency:
     def test_matching_magnitude(self, sf_with_quantitative):
@@ -87,13 +98,43 @@ class TestQuantitativeConsistency:
         assert issues[0]["type"] == "quantitative_mismatch"
         assert issues[0]["severity"] == "high"
 
-    def test_different_units_no_issue(self, sf_with_quantitative):
+    def test_exactly_10x_boundary(self, sf_with_quantitative):
         issues = check_quantitative_consistency(
-            "The system uses 500ms of memory",
+            "The system processes 1000 snapshots per second",
             sf_with_quantitative,
         )
-        # Different units — no comparison possible
+        # Exactly 10x difference (100 vs 1000) — should flag with >= 10
+        assert len(issues) >= 1
+        assert issues[0]["type"] == "quantitative_mismatch"
+
+    def test_different_units_no_issue(self, sf_with_quantitative):
+        issues = check_quantitative_consistency(
+            "The API has 50 endpoints total",
+            sf_with_quantitative,
+        )
+        # Unrelated context — no entity overlap, no issue
         assert len(issues) == 0
+
+    def test_cross_unit_confusion_detected(self):
+        # The motivating case from auditor: 1.6GB (storage) vs 1,600 snapshots (count)
+        # Same entity "system" in both contexts — triggers type_confusion
+        sf = {
+            "nodes": [{
+                "id": "principle:throughput",
+                "type": "principle",
+                "statement": "The system processes 1,600 snapshots per second",
+                "epistemic_status": "certain",
+            }],
+            "edges": [],
+        }
+        issues = check_quantitative_consistency(
+            "The system uses 1.6GB of storage",
+            sf,
+        )
+        # "system" appears in both contexts, GB vs snapshots = incompatible units
+        assert len(issues) >= 1
+        assert issues[0]["type"] == "type_confusion"
+        assert issues[0]["severity"] == "high"
 
 
 # ---------------------------------------------------------------------------

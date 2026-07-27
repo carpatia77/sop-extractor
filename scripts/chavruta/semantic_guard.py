@@ -26,9 +26,9 @@ except ImportError:
 # Quantitative claim detection
 # ---------------------------------------------------------------------------
 
-# Patterns for numbers with units
+# Patterns for numbers with units (supports comma as thousands separator: 1,600)
 NUMBER_UNIT_RE = re.compile(
-    r'(\d+(?:\.\d+)?)\s*'           # number
+    r'(\d+(?:,\d{3})*(?:\.\d+)?)\s*'  # number (with optional comma-groups)
     r'(GB|MB|KB|TB|bytes|bps|Hz|MHz|GHz|'  # digital units
     r'snapshots?|frames?|pixels?|bits|chars?|lines?|rows?|entries?|records?|'  # data units
     r'seconds?|minutes?|hours?|days?|ms|ns|μs)',  # time units
@@ -50,7 +50,7 @@ def extract_quantitative_claims(text: str) -> list[dict]:
     """
     claims = []
     for match in NUMBER_UNIT_RE.finditer(text):
-        number = float(match.group(1))
+        number = float(match.group(1).replace(",", ""))
         unit = match.group(2)
         # Get surrounding context (50 chars before and after)
         start = max(0, match.start() - 50)
@@ -100,7 +100,7 @@ def check_quantitative_consistency(
                 if sf_unit.lower() == unit.lower():
                     if sf_num > 0 and number > 0:
                         ratio = max(number, sf_num) / min(number, sf_num)
-                        if ratio > 10:
+                        if ratio >= 10:
                             issues.append({
                                 "type": "quantitative_mismatch",
                                 "severity": "high",
@@ -113,7 +113,8 @@ def check_quantitative_consistency(
                             })
 
                 # Check 2: Different unit type for same concept (type confusion)
-                # If both mention the same concept context but use incompatible units
+                # The most dangerous semantic error: "1.6GB" (storage) confused
+                # with "1,600 snapshots" (count) for the same system/entity.
                 elif _units_are_incompatible(unit, sf_unit):
                     # Check if the concept context overlaps
                     ctx_terms = set(salient_terms(context))
