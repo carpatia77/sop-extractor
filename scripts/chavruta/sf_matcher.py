@@ -2,16 +2,18 @@
 """SF Matcher — multi-layer node matching against Semantic Field.
 
 Solves the "find_node" problem: matching natural language queries against
-graph nodes. Three layers, from exact to fuzzy:
+graph nodes. Four layers, from exact to semantic:
 
   1. Exact ID match (e.g. "principle:abc123")
   2. Substring match in statement/term/definition
-  3. Salient-term Jaccard overlap (threshold 0.3)
+  3. Salient-term Jaccard overlap (threshold 0.4)
+  4. Embedding cosine similarity (optional, fallback if unavailable)
 
 Used by:
   - drift_detector.py: checks if user response maps to SF nodes
   - depth_tracker.py: checks if response references SF concepts
   - chavruta engine: locates claims in the knowledge graph
+  - semantic_guard.py: type confusion detection
 """
 from __future__ import annotations
 
@@ -19,6 +21,16 @@ try:
     from scripts.verify_concept_presence import salient_terms
 except ImportError:
     from verify_concept_presence import salient_terms
+
+try:
+    from scripts.chavruta.sf_embeddings import match_by_embedding, is_available as embeddings_available
+except ImportError:
+    try:
+        from chavruta.sf_embeddings import match_by_embedding, is_available as embeddings_available
+    except ImportError:
+        match_by_embedding = None
+        def embeddings_available() -> bool:
+            return False
 
 
 # ---------------------------------------------------------------------------
@@ -112,13 +124,15 @@ def find_nodes(
     query: str,
     sf: dict,
     threshold: float = 0.4,
+    embedding_threshold: float = 0.55,
 ) -> list[dict]:
     """Find nodes in Semantic Field matching query.
 
-    Combines results from all 3 layers (deduplicated):
+    Combines results from all 4 layers (deduplicated):
       1. Exact ID match (highest priority)
       2. Substring match in statement/term/definition/name
       3. Salient-term Jaccard overlap above threshold
+      4. Embedding cosine similarity (optional fallback)
 
     Returns deduplicated list of matched nodes.
     """
@@ -143,6 +157,16 @@ def find_nodes(
             result.append(node)
             seen_ids.add(node["id"])
 
+    # Layer 4: embeddings (optional, silent fallback)
+    if match_by_embedding is not None and not result:
+        try:
+            for node, _score in match_by_embedding(query, sf, embedding_threshold):
+                if node["id"] not in seen_ids:
+                    result.append(node)
+                    seen_ids.add(node["id"])
+        except Exception:
+            pass  # Embeddings unavailable — layers 1-3 suffice
+
     return result
 
 
@@ -150,11 +174,12 @@ def find_best_match(
     query: str,
     sf: dict,
     threshold: float = 0.3,
+    embedding_threshold: float = 0.55,
 ) -> tuple[dict | None, str]:
     """Find the single best matching node.
 
     Returns (node, match_layer) or (None, "none").
-    match_layer is "id", "substring", "salient", or "none".
+    match_layer is "id", "substring", "salient", "embedding", or "none".
     """
     nodes = sf.get("nodes", [])
 
@@ -172,5 +197,14 @@ def find_best_match(
     salient_matches = match_by_salient(query, nodes, threshold)
     if salient_matches:
         return salient_matches[0][0], "salient"
+
+    # Layer 4: embeddings (optional fallback)
+    if match_by_embedding is not None:
+        try:
+            emb_matches = match_by_embedding(query, sf, embedding_threshold)
+            if emb_matches:
+                return emb_matches[0][0], "embedding"
+        except Exception:
+            pass
 
     return None, "none"
