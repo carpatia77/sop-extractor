@@ -135,6 +135,25 @@ class TestQuantitativeConsistency:
         assert len(issues) >= 1
         assert issues[0]["type"] == "quantitative_mismatch"
 
+    def test_generic_word_no_false_positive(self):
+        """Two unrelated claims about the same system must NOT flag."""
+        sf = {
+            "nodes": [{
+                "id": "p1",
+                "type": "principle",
+                "statement": "The system runs at 100 Hz",
+                "epistemic_status": "certain",
+            }],
+            "edges": [],
+        }
+        issues = check_quantitative_consistency(
+            "The system uses 500 MB of RAM",
+            sf,
+        )
+        # Hz vs MB = incompatible, but "system" is the only shared term.
+        # With 2+ term requirement, this should NOT flag.
+        assert len(issues) == 0
+
     def test_different_units_no_issue(self, sf_with_quantitative):
         issues = check_quantitative_consistency(
             "The API has 50 endpoints total",
@@ -148,16 +167,16 @@ class TestQuantitativeConsistency:
             "nodes": [{
                 "id": "p1",
                 "type": "principle",
-                "statement": "The system has 1.6GB of memory",
+                "statement": "The system memory is 1.6GB total",
                 "epistemic_status": "certain",
             }],
             "edges": [],
         }
         issues = check_quantitative_consistency(
-            "The system responds in 50ms latency",
+            "The system memory latency is 50ms",
             sf,
         )
-        # ms (duration) vs GB (digital) — incompatible, "system" shared
+        # ms (time) vs GB (digital) — incompatible, "system"+"memory" shared
         assert len(issues) >= 1
         assert issues[0]["type"] == "type_confusion"
 
@@ -166,16 +185,16 @@ class TestQuantitativeConsistency:
             "nodes": [{
                 "id": "p1",
                 "type": "principle",
-                "statement": "The process takes 500 seconds to complete",
+                "statement": "The process clock runs at 500 seconds",
                 "epistemic_status": "certain",
             }],
             "edges": [],
         }
         issues = check_quantitative_consistency(
-            "The process runs at 500Hz frequency",
+            "The process clock frequency is 500Hz",
             sf,
         )
-        # Hz (frequency) vs seconds (time) — incompatible, "process" shared
+        # Hz (frequency) vs seconds (time) — incompatible, "process"+"clock" shared
         assert len(issues) >= 1
         assert issues[0]["type"] == "type_confusion"
 
@@ -199,7 +218,7 @@ class TestQuantitativeConsistency:
 
     def test_cross_unit_confusion_detected(self):
         # The motivating case from auditor: 1.6GB (storage) vs 1,600 snapshots (count)
-        # Same entity "system" in both contexts — triggers type_confusion
+        # 2+ shared terms triggers type_confusion
         sf = {
             "nodes": [{
                 "id": "principle:throughput",
@@ -210,7 +229,7 @@ class TestQuantitativeConsistency:
             "edges": [],
         }
         issues = check_quantitative_consistency(
-            "The system uses 1.6GB of storage",
+            "The system processes data using 1.6GB of storage",
             sf,
         )
         # "system" appears in both contexts, GB vs snapshots = incompatible units

@@ -118,7 +118,10 @@ def check_quantitative_consistency(
                 elif _units_are_incompatible(unit, sf_unit):
                     ctx_terms = set(salient_terms(context))
                     sf_ctx_terms = set(salient_terms(sf_claim["context"]))
-                    if ctx_terms and sf_ctx_terms and ctx_terms & sf_ctx_terms:
+                    overlap = ctx_terms & sf_ctx_terms if ctx_terms and sf_ctx_terms else set()
+                    # Require 2+ shared terms to avoid false positives on
+                    # generic words like "system", "process", "file"
+                    if len(overlap) >= 2:
                         issues.append({
                             "type": "type_confusion",
                             "severity": "high",
