@@ -42,7 +42,7 @@ _HAS_EMBEDDINGS = SentenceTransformer is not None and _HAS_NUMPY
 
 # Default model — small, fast, good quality
 DEFAULT_MODEL = "all-MiniLM-L6-v2"
-DEFAULT_THRESHOLD = 0.7  # Conservative: avoid false positives
+DEFAULT_THRESHOLD = 0.50  # Calibrated: catches synonyms (0.62+), rejects noise (<0.10)
 
 # In-memory cache: model_name → loaded model
 _model_cache: dict[str, object] = {}
@@ -166,7 +166,7 @@ def embed_sf(
         model = _get_model(model_name)
         if model is not None:
             try:
-                expected_dim = model.get_sentence_embedding_dimension()
+                expected_dim = model.get_embedding_dimension()
             except Exception:
                 expected_dim = meta.get("dim")  # Can't check, trust cache
             if meta.get("dim") != expected_dim:

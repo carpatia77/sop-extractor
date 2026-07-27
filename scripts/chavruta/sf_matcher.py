@@ -128,7 +128,7 @@ def find_nodes(
     query: str,
     sf: dict,
     threshold: float = 0.4,
-    embedding_threshold: float = 0.7,
+    embedding_threshold: float = 0.50,
 ) -> list[dict]:
     """Find nodes in Semantic Field matching query.
 
@@ -178,7 +178,7 @@ def find_best_match(
     query: str,
     sf: dict,
     threshold: float = 0.3,
-    embedding_threshold: float = 0.7,
+    embedding_threshold: float = 0.50,
 ) -> tuple[dict | None, str]:
     """Find the single best matching node.
 
