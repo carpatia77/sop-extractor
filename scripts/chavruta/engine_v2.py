@@ -22,12 +22,10 @@ try:
     from scripts.chavruta.sf_matcher import find_nodes, find_best_match
     from scripts.chavruta.drift_detector import detect_drift
     from scripts.chavruta.depth_tracker import evaluate_depth, depth_bar
-    from scripts.chavruta.semantic_guard import check_semantic_errors
 except ImportError:
     from chavruta.sf_matcher import find_nodes, find_best_match
     from chavruta.drift_detector import detect_drift
     from chavruta.depth_tracker import evaluate_depth, depth_bar
-    from chavruta.semantic_guard import check_semantic_errors
 
 
 # ---------------------------------------------------------------------------
@@ -162,9 +160,8 @@ class ChavrutaEngineV2:
                     match_layer = "substring"  # upgraded via find_nodes
                     break
 
-        # Step 4: Semantic guard — catch type confusion, definition drift, scope expansion
-        semantic_result = check_semantic_errors(user_response, self.sf)
-        semantic_issues = semantic_result.get("issues", [])
+        # Step 4: Semantic issues — reuse from drift_detector (already ran check_semantic_errors)
+        semantic_issues = drift_result.get("semantic_issues", [])
 
         # Step 5: Generate evidence-backed challenge
         depth = depth_result["depth"]
@@ -222,14 +219,9 @@ class ChavrutaEngineV2:
                         f"Qual é a sua evidência? {citation}")
             return "Qual é a evidência para essa afirmação?"
 
-        # Semantic issues — challenge the specific error (from semantic_guard)
+        # Semantic issues — challenge the specific error (from drift_detector's check_semantic_errors)
         if semantic_issues:
             issue = semantic_issues[0]
-            return f"Atenção: {issue['message'][:100]}. Verifique suas fontes."
-
-        # Legacy semantic issues from drift_detector (if any)
-        if drift_result.get("semantic_issues"):
-            issue = drift_result["semantic_issues"][0]
             return f"Atenção: {issue['message'][:100]}. Verifique suas fontes."
 
         # Depth-specific challenge with evidence

@@ -25,13 +25,11 @@ try:
     from scripts.chavruta.sf_matcher import find_nodes, find_best_match
     from scripts.chavruta.drift_detector import detect_drift
     from scripts.chavruta.depth_tracker import evaluate_depth, depth_bar
-    from scripts.chavruta.semantic_guard import check_semantic_errors
 except ImportError:
     from verify_concept_presence import salient_terms  # noqa: F401
     from chavruta.sf_matcher import find_nodes, find_best_match
     from chavruta.drift_detector import detect_drift
     from chavruta.depth_tracker import evaluate_depth, depth_bar
-    from chavruta.semantic_guard import check_semantic_errors
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +168,8 @@ class ChavrutaEngine:
         # Step 3: Find primary matched node (with layer tracking)
         best_node, match_layer = find_best_match(user_response, self.sf)
 
-        # Step 4: Semantic guard — catch type confusion, definition drift, scope expansion
-        semantic_result = check_semantic_errors(user_response, self.sf)
-        semantic_issues = semantic_result.get("issues", [])
+        # Step 4: Semantic issues — reuse from drift_detector (already ran check_semantic_errors)
+        semantic_issues = drift_result.get("semantic_issues", [])
 
         # Step 5: Generate challenge
         depth = depth_result["depth"]
