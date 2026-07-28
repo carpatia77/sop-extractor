@@ -30,6 +30,8 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Item 12's menu map, flattened
 CAPABILITIES = [
+    Capability("0", "run", "Run — paste a link, system handles everything", "run.py",
+               "<URL_or_path> [--workers N] [--gpu]", False, False, None),
     Capability("1", "scan", "Scan a source (pre-flight)", "preflight_scan.py",
                "<path> [--emit-prompt]", False, False, None),
     Capability("2", "extract", "Extract a skill (hand-off to your agent)", None,
