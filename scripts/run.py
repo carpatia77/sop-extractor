@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """run — one command, paste a link, system handles everything.
 
-Auto-detects input type (single video / playlist / channel / local file),
-runs ingest + compile, shows live progress.
+Auto-detects input type and runs the appropriate pipeline.
+
+Supported:
+    YouTube URLs (video, playlist, channel)
+    Local video (.mp4, .mkv, .avi, .mov)
+    Local audio (.mp3, .wav, .m4a, .ogg, .flac)
+    Books (.pdf, .epub, .docx)
+    Transcripts (.txt, .srt, .vtt, .md)
 
 Usage:
     sopx run <URL_or_path>                  # auto-detect, ingest + compile
     sopx run <URL> --workers 4              # parallel ingest
     sopx run <URL> --max 10                 # limit videos
     sopx run <URL> --gpu                    # force Colab GPU
-    sopx run <path>                         # local file → compile directly
+    sopx run ./book.pdf                     # compile directly
+    sopx run ./audio.mp3                    # transcribe + compile
 """
 from __future__ import annotations
 
@@ -19,6 +26,11 @@ import sys
 from pathlib import Path
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".wma", ".opus"}
+VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v"}
+COMPILABLE_EXTS = {".txt", ".srt", ".vtt", ".md", ".pdf", ".epub", ".docx", ".rst", ".html"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".svg"}
 
 # ANSI colors
 BOLD = "\033[1m"
@@ -53,7 +65,7 @@ def _detect_source_type(source: str) -> str:
             return "playlist"
         return "video_url"
     if source.startswith("http://") or source.startswith("https://"):
-        return "video_url"
+        return "url"
     return "unknown"
 
 
@@ -79,7 +91,7 @@ def run_source(source: str, workers: int = 1, max_videos: int | None = None,
         return _run_playlist(source, workers=workers, max_videos=max_videos,
                              gpu=gpu, model=model)
 
-    if source_type == "video_url":
+    if source_type in ("video_url", "url"):
         return _run_single_video(source, gpu=gpu, model=model)
 
     print(f"  {_c('ERRO', RED)} Não consegui identificar a fonte: {source}")
@@ -88,27 +100,52 @@ def run_source(source: str, workers: int = 1, max_videos: int | None = None,
 
 
 def _run_file(path: str, model: str | None = None) -> int:
-    """Local file → compile directly (skip ingest)."""
+    """Local file → route to correct pipeline."""
     p = Path(path)
     if not p.exists():
         print(f"  {_c('ERRO', RED)} Arquivo não encontrado: {path}")
         return 1
 
     ext = p.suffix.lower()
-    is_compilable = ext in (".txt", ".srt", ".vtt", ".md", ".pdf", ".epub", ".docx")
 
-    if is_compilable:
-        print(f"  📄 Arquivo local detectado: {_c(p.name, GREEN)}")
-        print("  → Compilando diretamente (pulando ingest)\n")
+    # Compilable: books, transcripts, docs → compile directly
+    if ext in COMPILABLE_EXTS:
+        print(f"  📄 Arquivo compilável detectado: {_c(p.name, GREEN)}")
+        print("  → Compilando diretamente\n")
         cmd = [sys.executable, os.path.join(SCRIPTS_DIR, "compile.py"), str(p)]
         if model:
             cmd.extend(["--model", model])
         return _run_cmd(cmd)
 
-    # Non-compilable file (video) → ingest then compile
-    print(f"  🎬 Vídeo local detectado: {_c(p.name, GREEN)}")
-    print("  → Ingerindo + compilando\n")
-    cmd = [sys.executable, os.path.join(SCRIPTS_DIR, "ingest.py"), str(p), "--compile"]
+    # Audio: needs transcription → ingest (whisper) + compile
+    if ext in AUDIO_EXTS:
+        print(f"  🔊 Áudio detectado: {_c(p.name, GREEN)}")
+        print("  → Transcrevendo + compilando\n")
+        cmd = [sys.executable, os.path.join(SCRIPTS_DIR, "ingest.py"), str(p), "--compile"]
+        if model:
+            cmd.extend(["--model", model])
+        return _run_cmd(cmd)
+
+    # Video: needs download+transcription → ingest + compile
+    if ext in VIDEO_EXTS:
+        print(f"  🎬 Vídeo detectado: {_c(p.name, GREEN)}")
+        print("  → Ingerindo + compilando\n")
+        cmd = [sys.executable, os.path.join(SCRIPTS_DIR, "ingest.py"), str(p), "--compile"]
+        if model:
+            cmd.extend(["--model", model])
+        return _run_cmd(cmd)
+
+    # Images: not supported yet (VLM not implemented)
+    if ext in IMAGE_EXTS:
+        print(f"  🖼️  Imagem detectada: {_c(p.name, YELLOW)}")
+        print(f"  {_c('Não suportado', YELLOW)} — análise de imagem requer VLM (Fase 3)")
+        print(f"  {DIM}Formatos suportados: PDF, EPUB, DOCX, TXT, SRT, MD, audio, video{RESET}")
+        return 1
+
+    # Unknown: try as text
+    print(f"  ⚠ Formato desconhecido: {_c(ext or '(sem extensão)', YELLOW)}")
+    print(f"  {DIM}Tentando como texto...{RESET}")
+    cmd = [sys.executable, os.path.join(SCRIPTS_DIR, "compile.py"), str(p)]
     if model:
         cmd.extend(["--model", model])
     return _run_cmd(cmd)
@@ -160,7 +197,9 @@ def main(argv=None):
             "  sopx run https://youtube.com/playlist?list=XYZ\n"
             "  sopx run https://youtube.com/@channel\n"
             "  sopx run ./meu-video.mp4\n"
-            "  sopx run ./transcript.txt\n"
+            "  sopx run ./audio.mp3              # transcreve + compila\n"
+            "  sopx run ./livro.pdf              # compila direto\n"
+            "  sopx run ./transcript.srt         # compila direto\n"
             "  sopx run URL --workers 4          # paralelo\n"
             "  sopx run URL --max 10 --gpu       # Colab GPU, 10 vídeos\n"
         ),
