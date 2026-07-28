@@ -435,8 +435,10 @@ class TestDiskCache:
     def test_dim_mismatch_triggers_recompute(self, sf_with_nodes, tmp_path):
         """When cached dim ≠ model dim, embed_sf must recompute (not trust cache).
 
-        This tests the get_embedding_dimension() code path — critical because
-        get_sentence_embedding_dimension() is deprecated and must not regress.
+        Validates the get_embedding_dimension() code path. Note:
+        get_sentence_embedding_dimension() is the OLD name (FutureWarning).
+        If the code regresses to the old name, this test catches it because
+        the mock provides get_embedding_dimension (new) and the code must call it.
         """
         from unittest.mock import patch, MagicMock
         from chavruta.sf_embeddings import (
