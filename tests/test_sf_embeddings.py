@@ -182,7 +182,7 @@ class TestWithMockModel:
             return fake_emb, meta
         return fake_compute
 
-    def test_cosine_similarity_orthogonal(self, sf_with_nodes, mock_embeddings):
+    def test_cosine_similarity_orthogonal(self, sf_with_nodes, mock_embeddings, tmp_path):
         """Orthogonal vectors → similarity ~0 for non-matching queries."""
         import numpy as np
         with patch("chavruta.sf_embeddings._compute_embeddings", side_effect=mock_embeddings):
@@ -191,14 +191,14 @@ class TestWithMockModel:
                     # Mock model.encode to return [1,0,0] for any query
                     mock_model.return_value.encode.return_value = np.array([[1.0, 0.0, 0.0]])
                     from chavruta.sf_embeddings import match_by_embedding
-                    result = match_by_embedding("anything", sf_with_nodes, threshold=0.5)
+                    result = match_by_embedding("anything", sf_with_nodes, threshold=0.5, cache_dir=tmp_path)
                     # Query [1,0,0] matches node 0 [1,0,0] with sim=1.0
                     # Others are orthogonal → sim=0
                     assert len(result) == 1
                     assert result[0][0]["id"] == "concept:vd"
                     assert result[0][1] == 1.0
 
-    def test_threshold_filters_low_scores(self, sf_with_nodes, mock_embeddings):
+    def test_threshold_filters_low_scores(self, sf_with_nodes, mock_embeddings, tmp_path):
         """Nodes below threshold are excluded."""
         import numpy as np
         with patch("chavruta.sf_embeddings._compute_embeddings", side_effect=mock_embeddings):
@@ -208,13 +208,13 @@ class TestWithMockModel:
                     mock_model.return_value.encode.return_value = np.array([[0.5, 0.5, 0.0]])
                     from chavruta.sf_embeddings import match_by_embedding
                     # With threshold 0.8, partial matches excluded
-                    result = match_by_embedding("partial", sf_with_nodes, threshold=0.8)
+                    result = match_by_embedding("partial", sf_with_nodes, threshold=0.8, cache_dir=tmp_path)
                     assert len(result) == 0
                     # With threshold 0.4, partial matches included
-                    result = match_by_embedding("partial", sf_with_nodes, threshold=0.4)
+                    result = match_by_embedding("partial", sf_with_nodes, threshold=0.4, cache_dir=tmp_path)
                     assert len(result) >= 1
 
-    def test_results_sorted_by_score(self, sf_with_nodes, mock_embeddings):
+    def test_results_sorted_by_score(self, sf_with_nodes, mock_embeddings, tmp_path):
         """Results must be sorted by similarity descending."""
         import numpy as np
         with patch("chavruta.sf_embeddings._compute_embeddings", side_effect=mock_embeddings):
@@ -223,7 +223,7 @@ class TestWithMockModel:
                     # Query closer to node 1 than node 0
                     mock_model.return_value.encode.return_value = np.array([[0.1, 0.9, 0.0]])
                     from chavruta.sf_embeddings import match_by_embedding
-                    result = match_by_embedding("test", sf_with_nodes, threshold=0.0)
+                    result = match_by_embedding("test", sf_with_nodes, threshold=0.0, cache_dir=tmp_path)
                     scores = [s for _, s in result]
                     assert scores == sorted(scores, reverse=True)
 
@@ -418,12 +418,53 @@ class TestDiskCache:
     def test_get_cache_metadata_checks_disk(self, sf_with_nodes, tmp_path):
         """get_cache_metadata should find entries on disk."""
         from chavruta.sf_embeddings import (
-            embed_sf, get_cache_metadata, _embeddings_cache, DEFAULT_MODEL,
+            embed_sf, _sf_hash, _disk_get, _embeddings_cache, DEFAULT_MODEL,
         )
 
-        embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
-        _embeddings_cache.clear()  # Force disk-only
+        # Clear all caches to force compute + disk write
+        _embeddings_cache.clear()
+        emb = embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+        assert emb is not None
 
-        meta = get_cache_metadata(sf_with_nodes, DEFAULT_MODEL)
-        assert meta is not None
-        assert meta["model"] == DEFAULT_MODEL
+        # Verify it's on disk
+        h = _sf_hash(sf_with_nodes, DEFAULT_MODEL)
+        disk = _disk_get(h, tmp_path)
+        assert disk is not None
+        assert disk[1]["model"] == DEFAULT_MODEL
+
+    def test_dim_mismatch_triggers_recompute(self, sf_with_nodes, tmp_path):
+        """When cached dim ≠ model dim, embed_sf must recompute (not trust cache).
+
+        This tests the get_embedding_dimension() code path — critical because
+        get_sentence_embedding_dimension() is deprecated and must not regress.
+        """
+        from unittest.mock import patch, MagicMock
+        from chavruta.sf_embeddings import (
+            embed_sf, _disk_put, _sf_hash, _embeddings_cache, DEFAULT_MODEL,
+        )
+        import numpy as np
+
+        # Pre-populate disk cache with dim=5 (wrong — model outputs 384)
+        h = _sf_hash(sf_with_nodes, DEFAULT_MODEL)
+        wrong_emb = np.zeros((3, 5))
+        wrong_meta = {"model": DEFAULT_MODEL, "dim": 5, "count": 3}
+        _disk_put(h, wrong_emb, wrong_meta, tmp_path)
+        _embeddings_cache.clear()
+
+        # Mock model whose get_embedding_dimension() returns 384 (correct)
+        mock_model = MagicMock()
+        mock_model.get_embedding_dimension.return_value = 384
+
+        # Mock compute to return correct-dim embeddings
+        correct_emb = np.zeros((3, 384))
+
+        def fake_compute(texts, model_name="test"):
+            return correct_emb, {"model": model_name, "dim": 384, "count": len(texts)}
+
+        with patch("chavruta.sf_embeddings._get_model", return_value=mock_model):
+            with patch("chavruta.sf_embeddings._compute_embeddings", side_effect=fake_compute):
+                loaded = embed_sf(sf_with_nodes, DEFAULT_MODEL, tmp_path)
+
+        # Should have recomputed (dim mismatch detected)
+        assert loaded is not None
+        assert loaded.shape == (3, 384)  # correct dim, not 5
