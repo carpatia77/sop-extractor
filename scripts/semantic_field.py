@@ -8,8 +8,8 @@ Consumes the JSON output from scripts/compile.py and produces:
 
 Principle and sop nodes carry evidence_id (anti-hallucination gate).
 Edges carry a type from a fixed enum (used_in, supports, requires,
-references, contradicts).  Contradicts edges are generated from
-refutation_chain dissent_type data.
+references).  Refutation data (dissent_type, strongest_alternative,
+disconfirming_evidence) lives on principle nodes, not as edges.
 """
 from __future__ import annotations
 
@@ -134,19 +134,6 @@ def build_edges(
                     "evidence_id": None,
                     "inferred": True,
                 })
-
-    # Principle ↔ Principle (contradicts) — from refutation_chain dissent_type
-    for node in principle_nodes:
-        if node.get("dissent_type") == "contradicts":
-            edges.append({
-                "id": _make_edge_id(counter),
-                "type": "contradicts",
-                "source": node["id"],
-                "target": node["id"],
-                "evidence_id": None,
-                "inferred": True,
-                "note": "self-contradiction flagged by refutation_chain",
-            })
 
     return edges
 
@@ -299,7 +286,7 @@ def build_semantic_field(compilation: dict, evidence_ledger: dict | None = None)
 # ---------------------------------------------------------------------------
 
 VALID_EPHEMERAL = {"certain", "probable", "speculative"}
-VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references", "contradicts"}
+VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references"}
 VALID_NODE_TYPES = {"concept", "principle", "sop", "reference"}
 
 

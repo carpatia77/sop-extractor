@@ -293,11 +293,6 @@ class TestValidation:
         errors = validate_semantic_field(sf)
         assert errors == []
 
-    def test_edge_type_contradicts_accepted(self):
-        sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}, {"id": "b", "type": "concept", "source_file": "x"}], "edges": [{"id": "e1", "type": "contradicts", "source": "a", "target": "b"}], "metadata": {"total_nodes": 2, "total_edges": 1, "node_counts": {}, "edge_counts": {}}}
-        errors = validate_semantic_field(sf)
-        assert errors == []
-
     def test_invalid_edge_type_rejected(self):
         sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}, {"id": "b", "type": "concept", "source_file": "x"}], "edges": [{"id": "e1", "type": "unknown_type", "source": "a", "target": "b"}], "metadata": {"total_nodes": 2, "total_edges": 1, "node_counts": {}, "edge_counts": {}}}
         errors = validate_semantic_field(sf)
@@ -403,35 +398,6 @@ class TestIntegration:
         assert json_path.exists()
         assert ld_path.exists()
         assert md_path.exists()
-
-    def test_contradicts_edge_from_refutation(self):
-        comp = {
-            "concepts": [],
-            "principles": [
-                {"statement": "A is true", "evidence": "because X", "epistemic_status": "certain",
-                 "refutation": {"dissent_type": "contradicts", "strongest_alternative": "A is false"}},
-                {"statement": "B is true", "evidence": "because Y", "epistemic_status": "probable"},
-            ],
-            "sops": [],
-            "references": [],
-        }
-        sf = build_semantic_field(comp)
-        contradicts_edges = [e for e in sf["edges"] if e["type"] == "contradicts"]
-        assert len(contradicts_edges) == 1
-        assert contradicts_edges[0]["source"] == contradicts_edges[0]["target"]
-
-    def test_no_contradicts_without_dissent(self):
-        comp = {
-            "concepts": [],
-            "principles": [
-                {"statement": "A is true", "evidence": "because X", "epistemic_status": "certain"},
-            ],
-            "sops": [],
-            "references": [],
-        }
-        sf = build_semantic_field(comp)
-        contradicts_edges = [e for e in sf["edges"] if e["type"] == "contradicts"]
-        assert len(contradicts_edges) == 0
 
     def test_real_compilation_file(self):
         """Test with a real compilation file if available."""
