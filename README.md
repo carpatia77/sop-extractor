@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="Apache 2.0 License">
-  <img src="https://img.shields.io/badge/tests-203%20passing-38a169?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1095%20passing-38a169?style=for-the-badge" alt="Tests">
   <img src="https://img.shields.io/badge/PDF%20%E2%80%A2%20EPUB%20%E2%80%A2%20DOCX%20%E2%80%A2%20SRT%2FVTT-supported-d69e2e?style=for-the-badge" alt="Formats supported">
   <a href="README-PTBR.md"><img src="https://img.shields.io/badge/PT--BR-Leia%20em%20Portugu%C3%AAs-green?style=for-the-badge" alt="Leia em Português"></a>
 </p>
@@ -172,6 +172,26 @@ sopx determinism path/to/your-skill
 python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
 ```
 
+### v3.0.0 features
+
+```bash
+# Teach Mode — 6 Judaic study sessions with Chavruta debate engine
+sopx teach start <skill_dir>    # begin session 1
+sopx teach status <skill_dir>   # check progress
+sopx teach complete <skill_dir> # mark session complete
+
+# Compile — knowledge compilation with anti-hallucination pipeline
+sopx compile path/to/source.txt            # single file
+sopx compile path/to/source.txt --batch    # recursive batch with review gate
+
+# Ingest — video ingestion with smart routing (local vs Colab GPU)
+sopx ingest https://youtube.com/watch?v=...          # single video
+sopx ingest --playlist https://youtube.com/playlist  # batch playlist
+
+# Wizard — interactive guided workflow
+sopx wizard
+```
+
 Supported source formats: PDF, EPUB, DOCX, TXT, Markdown, reStructuredText,
 AsciiDoc, HTML, RTF, MOBI/AZW — plus **SRT/VTT** video-course transcripts.
 
@@ -216,18 +236,37 @@ chapter number grounded in the text you provided.
 
 ```
 sop-extractor/
-├── SKILL.md                 # Extraction spec (books, docs, and BOOK_TYPE=transcript courses)
+├── SKILL.md                    # Extraction spec (books, docs, and BOOK_TYPE=transcript courses)
 ├── scripts/
-│   ├── extract.py               # text-extraction entrypoint (book-to-skill engine)
-│   ├── determinism_score.py     # structural SOP/Heuristic scoring
-│   ├── validate_coherence_audit.py     # single-source coherence validator
-│   ├── validate_evolution_audit.py     # cross-source 4-gate temporal validator
-│   ├── verify_concept_presence.py      # principle→transcript traceability triage
-│   └── extract_frames_at_timestamps.py # targeted video frame rescue
-├── tests/                   # pytest suite (352 tests)
+│   ├── extract.py              # text-extraction entrypoint (book-to-skill engine)
+│   ├── compile.py              # knowledge compilation (--batch for multi-file)
+│   ├── ingest.py               # video ingestion (URL, playlist, Colab GPU)
+│   ├── menu.py                 # interactive CLI menu (all capabilities)
+│   ├── wizard.py               # guided workflow wizard
+│   ├── determinism_score.py    # structural SOP/Heuristic scoring
+│   ├── semantic_field.py       # semantic field builder, validation, exports (GraphML, JSON-LD, HTML)
+│   ├── validate_all.py         # unified validation harness (7+ gates)
+│   ├── validate_semantic_field.py  # standalone SF validator
+│   ├── validate_coherence_audit.py    # single-source coherence validator
+│   ├── validate_evolution_audit.py    # cross-source 4-gate temporal validator
+│   ├── validate_architecture_audit.py # Blackhat Mode architecture validator
+│   ├── validate_manifest.py    # set manifest validator
+│   ├── validate_run_report.py  # run report validator
+│   ├── verify_concept_presence.py     # principle→transcript traceability triage
+│   ├── extract_frames_at_timestamps.py # targeted video frame rescue
+│   ├── refutation_chain.py     # per-claim adversarial stress-testing
+│   ├── evidence_ledger.py      # deterministic provenance per claim
+│   ├── emerging_questions.py   # detect gaps, tensions, limits
+│   ├── preflight_scan.py       # source scanner + prompt generator
+│   ├── chavruta/               # Chavruta Engine (debate motor, 7 depth levels)
+│   └── teach/                  # Teach Mode (6 Judaic study sessions)
+├── sopx/                       # Ingestion pipeline package
+│   └── ingest/                 # adapters, hardware detection, Colab, router
+├── tests/                      # pytest suite (1095 tests)
 └── docs/
     ├── PIPELINE_ARCHITECTURE.md      # end-to-end diagram + how it prevents hallucination
     ├── ARCHITECTURE_AUDIT.md         # Blackhat Mode artifact grammar + gates
+    ├── POS.md                        # Point of Situation (project status)
     └── INFRA_MATURITY_PLAN.md        # maturity backlog (Items 1-14) + design rationale
 ```
 

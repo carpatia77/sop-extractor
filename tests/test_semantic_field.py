@@ -263,6 +263,36 @@ class TestValidation:
         errors = validate_semantic_field(sf)
         assert errors == []
 
+    def test_evidence_gate_pass(self):
+        sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x", "evidence_id": "ev1"}], "edges": [], "metadata": {"total_nodes": 1, "total_edges": 0, "node_counts": {}, "edge_counts": {}}}
+        errors = validate_semantic_field(sf, require_evidence=True)
+        assert errors == []
+
+    def test_evidence_gate_fail(self):
+        sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}], "edges": [], "metadata": {"total_nodes": 1, "total_edges": 0, "node_counts": {}, "edge_counts": {}}}
+        errors = validate_semantic_field(sf, require_evidence=True)
+        assert any("missing evidence_id" in e for e in errors)
+
+    def test_evidence_gate_default_off(self):
+        sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}], "edges": [], "metadata": {"total_nodes": 1, "total_edges": 0, "node_counts": {}, "edge_counts": {}}}
+        errors = validate_semantic_field(sf)
+        assert errors == []
+
+    def test_expanded_edge_type_contradicts(self):
+        sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}, {"id": "b", "type": "concept", "source_file": "x"}], "edges": [{"id": "e1", "type": "contradicts", "source": "a", "target": "b"}], "metadata": {"total_nodes": 2, "total_edges": 1, "node_counts": {}, "edge_counts": {}}}
+        errors = validate_semantic_field(sf)
+        assert errors == []
+
+    def test_expanded_edge_type_derives_from(self):
+        sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}, {"id": "b", "type": "concept", "source_file": "x"}], "edges": [{"id": "e1", "type": "derives_from", "source": "a", "target": "b"}], "metadata": {"total_nodes": 2, "total_edges": 1, "node_counts": {}, "edge_counts": {}}}
+        errors = validate_semantic_field(sf)
+        assert errors == []
+
+    def test_invalid_edge_type_still_rejected(self):
+        sf = {"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}, {"id": "b", "type": "concept", "source_file": "x"}], "edges": [{"id": "e1", "type": "unknown_type", "source": "a", "target": "b"}], "metadata": {"total_nodes": 2, "total_edges": 1, "node_counts": {}, "edge_counts": {}}}
+        errors = validate_semantic_field(sf)
+        assert any("Invalid edge type" in e for e in errors)
+
 
 # ---------------------------------------------------------------------------
 # Export: GraphML
@@ -382,3 +412,52 @@ class TestIntegration:
         assert errors == [], f"Validation errors: {errors}"
         assert sf["metadata"]["total_nodes"] > 0
         assert sf["metadata"]["node_counts"].get("concept", 0) > 0
+
+
+# ---------------------------------------------------------------------------
+# Standalone script
+# ---------------------------------------------------------------------------
+
+class TestStandaloneScript:
+    def test_valid_sf(self, sample_compilation, tmp_path):
+        sf = build_semantic_field(sample_compilation)
+        sf_path = tmp_path / "sf.json"
+        with open(sf_path, "w") as f:
+            json.dump(sf, f)
+
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "scripts/validate_semantic_field.py", str(sf_path)],
+            capture_output=True, text=True,
+            cwd=os.path.join(os.path.dirname(__file__), ".."),
+        )
+        assert result.returncode == 0
+        assert "is valid" in result.stdout
+
+    def test_invalid_sf(self, tmp_path):
+        sf_path = tmp_path / "bad.json"
+        with open(sf_path, "w") as f:
+            json.dump({"version": "2.0", "nodes": [], "edges": [], "metadata": {"total_nodes": 0, "total_edges": 0, "node_counts": {}, "edge_counts": {}}}, f)
+
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "scripts/validate_semantic_field.py", str(sf_path)],
+            capture_output=True, text=True,
+            cwd=os.path.join(os.path.dirname(__file__), ".."),
+        )
+        assert result.returncode == 1
+        assert "failed" in result.stdout.lower()
+
+    def test_require_evidence_flag(self, tmp_path):
+        sf_path = tmp_path / "noev.json"
+        with open(sf_path, "w") as f:
+            json.dump({"version": "1.0", "nodes": [{"id": "a", "type": "concept", "source_file": "x"}], "edges": [], "metadata": {"total_nodes": 1, "total_edges": 0, "node_counts": {}, "edge_counts": {}}}, f)
+
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "scripts/validate_semantic_field.py", "--require-evidence", str(sf_path)],
+            capture_output=True, text=True,
+            cwd=os.path.join(os.path.dirname(__file__), ".."),
+        )
+        assert result.returncode == 1
+        assert "evidence_id" in result.stdout

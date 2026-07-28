@@ -284,12 +284,19 @@ def build_semantic_field(compilation: dict, evidence_ledger: dict | None = None)
 # ---------------------------------------------------------------------------
 
 VALID_EPHEMERAL = {"certain", "probable", "speculative"}
-VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references"}
+VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references", "contradicts", "derives_from"}
 VALID_NODE_TYPES = {"concept", "principle", "sop", "reference"}
 
 
-def validate_semantic_field(sf: dict) -> list[str]:
-    """Validate a semantic field. Returns list of errors (empty = valid)."""
+def validate_semantic_field(sf: dict, *, require_evidence: bool = False) -> list[str]:
+    """Validate a semantic field. Returns list of errors (empty = valid).
+
+    Args:
+        sf: Semantic field dict to validate.
+        require_evidence: If True, nodes missing ``evidence_id`` are flagged
+            as errors (anti-hallucination gate).  Default False preserves
+            backwards-compatible behaviour.
+    """
     errors = []
 
     if sf.get("version") != "1.0":
@@ -318,6 +325,9 @@ def validate_semantic_field(sf: dict) -> list[str]:
 
         if not n.get("source_file"):
             errors.append(f"Node {nid} missing source_file")
+
+        if require_evidence and not n.get("evidence_id"):
+            errors.append(f"Node {nid} missing evidence_id (anti-hallucination gate)")
 
     for e in edges:
         eid = e.get("id", "")

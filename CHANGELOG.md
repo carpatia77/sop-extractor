@@ -5,6 +5,45 @@ All notable changes to **sop-extractor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-07-28
+
+### Added
+- **`validate_semantic_field` completion.** Anti-hallucination gate:
+  `require_evidence=True` flags nodes missing `evidence_id`. Expanded edge
+  types: `contradicts`, `derives_from` (6 total, up from 4). Standalone
+  script `scripts/validate_semantic_field.py` with `--require-evidence`
+  flag. Integrated into `validate_all.py` as gate 0.5.
+- **Disk cache for Camada 4 embeddings.** 2-tier persistence: in-memory
+  dict + `~/.cache/sopx/embeddings/` on disk. `_disk_get` checks
+  `_HAS_EMBEDDINGS` gate for graceful fallback in environments without
+  sentence-transformers. 9 tests.
+- **Chavruta Engine v1/v2 integration.** Semantic guard (6 rounds,
+  stoplist 60+ terms) wired into both engine variants. Double
+  `check_semantic_errors` call removed — engine reuses
+  `drift_result["semantic_issues"]`. Dead legacy branch removed.
+- **sf_matcher 4-layer matching.** Exact ID → substring → salient-term
+  overlap → embeddings (Camada 4 as fallback gate, not active by default).
+  18 integration tests.
+
+### Fixed
+- **`_HAS_EMBEDDINGS` gate.** `_disk_get` and `embed_sf` Tier 2 now check
+  `_HAS_EMBEDDINGS` before reading disk cache, preventing crashes in
+  environments without sentence-transformers.
+- **`$HOME` pollution in tests.** `conftest.py` patches `_disk_put` on
+  BOTH `scripts.chavruta.sf_embeddings` and `chavruta.sf_embeddings`
+  module objects. `TestDiskCache` uses `skipif` + `tmp_path`.
+- **Stress test methodology.** Rewritten with keyword-match criterion
+  (validates against expected answers, not "returned something"). ID
+  uniqueness enforced.
+- **Ruff F841.** Unused `lex_score` variable removed.
+
+### Changed
+- **README refreshed.** Test badge updated (203 → 1095), repository
+  structure expanded (20+ scripts, `sopx/`, `chavruta/`, `teach/`),
+  v3.0.0 features documented in Usage section.
+- **POS.md updated.** Project status ~74%, validate_semantic_field
+  marked complete, priority backlog renumbered.
+
 ## [3.0.0] - 2026-07-26
 
 ### Added
@@ -495,6 +534,7 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
+[3.1.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v3.1.0
 [3.0.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v3.0.0
 [2.2.0]: https://github.com/carpatia77/sop-extractor/releases/tag/v2.2.0
 [2.1.1]: https://github.com/carpatia77/sop-extractor/releases/tag/v2.1.1

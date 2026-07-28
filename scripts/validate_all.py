@@ -4,6 +4,7 @@ Runs determinism, concept presence, coherence, and evolution validations.
 """
 
 import argparse
+import json
 import sys
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ from validate_coherence_audit import run_validation as run_coherence
 from validate_evolution_audit import run_validation as run_evolution
 from validate_manifest import validate_manifest
 from validate_run_report import run_validation as run_run_report_check
+from validate_semantic_field import validate_semantic_field as _validate_sf
 
 def validate_skill(skill_dir: str, since_last: bool = False, domain: str = None) -> int:
     dir_path = Path(skill_dir)
@@ -53,7 +55,26 @@ def validate_skill(skill_dir: str, since_last: bool = False, domain: str = None)
             return 1
     
     overall_status = 0
-    
+
+    # 0.5. Semantic Field Validation (if present)
+    sf_path = dir_path / "semantic_field.json"
+    if sf_path.exists():
+        print("\n--- 0.5. Semantic Field Validation ---")
+        try:
+            with open(sf_path, "r", encoding="utf-8") as f:
+                sf = json.load(f)
+            sf_errors = _validate_sf(sf)
+            if sf_errors:
+                print(f"❌ Semantic field validation failed ({len(sf_errors)} error(s)):")
+                for e in sf_errors:
+                    print(f"  - {e}")
+                overall_status = 1
+            else:
+                print("✅ Semantic field validation passed.")
+        except Exception as e:
+            print(f"Error validating semantic field: {e}")
+            overall_status = 1
+
     # 1. Determinism Score
     chapters_dir = dir_path / "chapters"
     if chapters_dir.is_dir():

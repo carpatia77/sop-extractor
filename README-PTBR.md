@@ -6,7 +6,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="Apache 2.0">
-  <img src="https://img.shields.io/badge/tests-514%20passing-38a169?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1095%20passing-38a169?style=for-the-badge" alt="Tests">
   <a href="README.md"><img src="https://img.shields.io/badge/EN-English%20Version-blue?style=for-the-badge" alt="English Version"></a>
 </p>
 

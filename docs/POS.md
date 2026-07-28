@@ -1,6 +1,6 @@
 # POS — Point of Situation
 
-> Atualizado: 2026-07-27 (sessão completa) | Versão: 3.0.0
+> Atualizado: 2026-07-28 (pós-checkpoint) | Versão: 3.1.0
 
 ---
 
@@ -46,7 +46,7 @@
 | LLM Router | ⏸️ Deferido | — | subprocess escolhido (trade-off consciente) |
 | Wizard (GUI) | ✅ Pronto | 19 | Workflow interativo guiado |
 
-### Fase 2 — Ensino: 88%
+### Fase 2 — Ensino: 86%
 
 | Componente | Status | Testes | Última mudança |
 |------------|--------|--------|----------------|
@@ -55,7 +55,7 @@
 | Refutation Chain | ✅ Pronto | 43 | strongest_alternative |
 | Emerging Questions | ✅ Pronto | — | Detecta lacunas/tensões |
 | Teach Mode (6 sessões) | ✅ Pronto | 29 | Método Hebraico, CLI funcional |
-| validate_semantic_field | ⚠️ Parcial | — | Validador existe mas incompleto |
+| validate_semantic_field | ✅ Pronto | 7+ | evidence_id gate, edge types expandidos, standalone script, integração validate_all |
 | F1 Scoring | ❌ Não iniciado | — | Pareto score 2.60 |
 
 ### Fase 3 — Escala: 58%
@@ -214,26 +214,25 @@ Tier 3: Compute     → model.encode(), ~2-5s para SFs grandes
 
 | # | Item | Pareto Score | Esforço | Status |
 |---|------|-------------|---------|--------|
-| 1 | validate_semantic_field | — | ~2d | ⚠️ Gap Fase 2 |
-| 2 | Batch ingestion test (canal inteiro) | — | ~1d | ⚠️ Não testado |
-| 3 | README refresh | — | ~0.5d | ⚠️ Desatualizado |
-| 4 | CHANGELOG v3.1 | — | ~0.5d | Novos features |
+| 1 | Batch ingestion test (canal inteiro) | — | ~1d | ⚠️ Não testado |
+| 2 | README refresh | — | ~0.5d | ⚠️ Desatualizado |
+| 3 | CHANGELOG v3.1 | — | ~0.5d | Novos features |
 
 ### Prioridade Média (diferenciação)
 
 | # | Item | Pareto Score | Esforço | Status |
 |---|------|-------------|---------|--------|
-| 5 | F1 Scoring automatizado | 2.60 | ~3d | ❌ Não iniciado |
-| 6 | VLM integration | 3.00 | ~5d | ❌ Não iniciado |
-| 7 | Cross-model audit (embeddings) | — | ~1d | ⏸️ Adiado |
+| 4 | F1 Scoring automatizado | 2.60 | ~3d | ❌ Não iniciado |
+| 5 | VLM integration | 3.00 | ~5d | ❌ Não iniciado |
+| 6 | Cross-model audit (embeddings) | — | ~1d | ⏸️ Adiado |
 
 ### Prioridade Baixa (nice-to-have)
 
 | # | Item | Pareto Score | Esforço | Status |
 |---|------|-------------|---------|--------|
-| 8 | LLM Router | 3.25 | ~4d | ⏸️ Deferido |
-| 9 | Node2vec | — | ~3d | ❌ Não iniciado |
-| 10 | Batch channel (Fase 0 escala) | — | ~5d | ❌ Não iniciado |
+| 7 | LLM Router | 3.25 | ~4d | ⏸️ Deferido |
+| 8 | Node2vec | — | ~3d | ❌ Não iniciado |
+| 9 | Batch channel (Fase 0 escala) | — | ~5d | ❌ Não iniciado |
 
 ---
 
