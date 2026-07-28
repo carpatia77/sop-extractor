@@ -13,6 +13,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def check_deps():
     """Print dependency status."""
@@ -60,6 +62,7 @@ def main(argv=None):
             "  sopx ingest ./meu-video.mp4\n"
             "  sopx ingest ./video.mp4 --rescue-frames\n"
             "  sopx ingest --playlist https://youtube.com/playlist?list=XYZ --max 10\n"
+            "  sopx ingest --playlist URL --compile   # ingest + compile automatico\n"
             "  sopx ingest https://youtube.com/watch?v=ABC --gpu  # gera notebook Colab\n"
             "  sopx ingest --import-zip ~/Downloads/transcriptions.zip\n"
             "  sopx ingest --import-dir ~/Downloads/mYDSSRS-B5U/\n"
@@ -87,6 +90,8 @@ def main(argv=None):
                         help="Importar ZIP do Colab para o pipeline local")
     parser.add_argument("--import-dir", default=None, metavar="DIR",
                         help="Importar pasta do Colab para o pipeline local")
+    parser.add_argument("--compile", action="store_true",
+                        help="Apos ingestao, rodar compile --batch automaticamente")
 
     args = parser.parse_args(argv)
 
@@ -270,6 +275,27 @@ def main(argv=None):
         except RuntimeError as e:
             print(f"Erro na ingestão: {e}", file=sys.stderr)
             return 1
+
+        # Chain compile if requested
+        if args.compile and results:
+            import subprocess
+            from pathlib import Path
+            output_base = Path(args.output_dir) if args.output_dir else Path("output/")
+            print("\n  ═══ Compilacao em lote ═══", file=sys.stderr)
+            print(f"  Diretorio: {output_base}", file=sys.stderr)
+            cmd = [
+                sys.executable, os.path.join(SCRIPTS_DIR, "compile.py"),
+                str(output_base), "--batch",
+            ]
+            if args.model:
+                cmd.extend(["--model", args.model])
+            print(f"  Executando: {' '.join(cmd)}\n", file=sys.stderr)
+            rc = subprocess.call(cmd)
+            if rc != 0:
+                print(f"  ⚠ Compilacao falhou (exit {rc})", file=sys.stderr)
+                return rc
+            print("\n  Pipeline completo: ingest + compile", file=sys.stderr)
+
         return 0
 
     try:

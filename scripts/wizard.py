@@ -173,29 +173,54 @@ def wizard_compile() -> int:
 # ---------------------------------------------------------------------------
 
 def wizard_ingest() -> int:
-    """Guided workflow for ingesting a YouTube video.
+    """Guided workflow for ingesting a YouTube video or playlist.
 
     Returns 0 on success, 1 on error.
     """
     print_header("INGERIR VIDEO -> TRANSCRICAO")
 
-    # Step 1: URL or file
-    print_step(1, 3, "Fonte do video")
-    source = prompt_text("URL do YouTube ou caminho do arquivo de video:")
+    # Step 1: Source type
+    print_step(1, 4, "Tipo de fonte")
+    source_type = prompt_choice("O que deseja ingerir?", [
+        "Video unico (URL ou arquivo)",
+        "Playlist / canal inteiro (URL)",
+    ])
+
+    # Step 2: URL or file
+    print_step(2, 4, "Fonte")
+    if source_type == 1:
+        source = prompt_text("URL do YouTube ou caminho do arquivo de video:")
+    else:
+        source = prompt_text("URL da playlist ou canal do YouTube:")
     if not source:
         print_error("Nenhuma fonte informada.")
         return 1
 
-    # Step 2: Options
-    print_step(2, 3, "Opcoes")
-    rescue = prompt_choice("Extrair frames de referencia visual?", [
-        "Nao (so transcricao)",
-        "Sim (extrair frames)",
-    ])
-    extra_args = ["--rescue-frames"] if rescue == 2 else []
+    # Step 3: Options
+    print_step(3, 4, "Opcoes")
+    extra_args = []
 
-    # Step 3: Run
-    print_step(3, 3, "Ingestao")
+    if source_type == 2:
+        max_vids = prompt_text("Maximo de videos (deixe vazio para todos):", "")
+        if max_vids and max_vids.isdigit():
+            extra_args.extend(["--max", max_vids])
+
+        compile_after = prompt_choice("Compilar automaticamente apos ingestao?", [
+            "Nao (so transcricao)",
+            "Sim (ingest + compile automatico)",
+        ])
+        if compile_after == 2:
+            extra_args.append("--compile")
+    else:
+        rescue = prompt_choice("Extrair frames de referencia visual?", [
+            "Nao (so transcricao)",
+            "Sim (extrair frames)",
+        ])
+        if rescue == 2:
+            extra_args.append("--rescue-frames")
+
+    # Step 4: Run
+    print_step(4, 4, "Ingestao")
 
     args = [source] + extra_args
     rc = run_script("ingest.py", args, "Ingestao")
@@ -204,7 +229,11 @@ def wizard_ingest() -> int:
         return 1
 
     print_success("Ingestao concluida!")
-    print(f"\n  Proximo passo: {colored('sopx compile output/', GREEN)}<video_dir>")
+    if "--compile" in extra_args:
+        print("\n  Pipeline completo: ingest + compile")
+        print(f"  Skill final em: {colored('output/', GREEN)}")
+    else:
+        print(f"\n  Proximo passo: {colored('sopx compile output/', GREEN)}<video_dir>")
     return 0
 
 
