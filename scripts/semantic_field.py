@@ -6,8 +6,10 @@ Consumes the JSON output from scripts/compile.py and produces:
   - graph.graphml (networkx export for visualization)
   - semantic_field.md (human-readable markdown)
 
-Every node carries an evidence_id gate (anti-hallucination).
-Every edge carries a type from a fixed enum.
+Principle and sop nodes carry evidence_id (anti-hallucination gate).
+Edges carry a type from a fixed enum (used_in, supports, requires,
+references, contradicts).  Contradicts edges are generated from
+refutation_chain dissent_type data.
 """
 from __future__ import annotations
 
@@ -132,6 +134,19 @@ def build_edges(
                     "evidence_id": None,
                     "inferred": True,
                 })
+
+    # Principle ↔ Principle (contradicts) — from refutation_chain dissent_type
+    for node in principle_nodes:
+        if node.get("dissent_type") == "contradicts":
+            edges.append({
+                "id": _make_edge_id(counter),
+                "type": "contradicts",
+                "source": node["id"],
+                "target": node["id"],
+                "evidence_id": None,
+                "inferred": True,
+                "note": "self-contradiction flagged by refutation_chain",
+            })
 
     return edges
 
@@ -284,8 +299,11 @@ def build_semantic_field(compilation: dict, evidence_ledger: dict | None = None)
 # ---------------------------------------------------------------------------
 
 VALID_EPHEMERAL = {"certain", "probable", "speculative"}
-VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references", "contradicts", "derives_from"}
+VALID_EDGE_TYPES = {"used_in", "supports", "requires", "references", "contradicts"}
 VALID_NODE_TYPES = {"concept", "principle", "sop", "reference"}
+
+
+_EVIDENCE_REQUIRED_TYPES = {"principle", "sop"}
 
 
 def validate_semantic_field(sf: dict, *, require_evidence: bool = False) -> list[str]:
@@ -293,9 +311,10 @@ def validate_semantic_field(sf: dict, *, require_evidence: bool = False) -> list
 
     Args:
         sf: Semantic field dict to validate.
-        require_evidence: If True, nodes missing ``evidence_id`` are flagged
-            as errors (anti-hallucination gate).  Default False preserves
-            backwards-compatible behaviour.
+        require_evidence: If True, principle and sop nodes missing
+            ``evidence_id`` are flagged as errors (anti-hallucination gate).
+            Concept and reference nodes are excluded — they legitimately
+            lack individual evidence anchors.
     """
     errors = []
 
@@ -326,7 +345,7 @@ def validate_semantic_field(sf: dict, *, require_evidence: bool = False) -> list
         if not n.get("source_file"):
             errors.append(f"Node {nid} missing source_file")
 
-        if require_evidence and not n.get("evidence_id"):
+        if require_evidence and ntype in _EVIDENCE_REQUIRED_TYPES and not n.get("evidence_id"):
             errors.append(f"Node {nid} missing evidence_id (anti-hallucination gate)")
 
     for e in edges:

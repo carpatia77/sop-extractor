@@ -21,7 +21,7 @@ def main():
     parser.add_argument(
         "--require-evidence",
         action="store_true",
-        help="Require evidence_id on every node (anti-hallucination gate)",
+        help="Require evidence_id on principle and sop nodes (anti-hallucination gate)",
     )
     args = parser.parse_args()
 

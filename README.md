@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="Apache 2.0 License">
-  <img src="https://img.shields.io/badge/tests-1095%20passing-38a169?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1108%20passing-38a169?style=for-the-badge" alt="Tests">
   <img src="https://img.shields.io/badge/PDF%20%E2%80%A2%20EPUB%20%E2%80%A2%20DOCX%20%E2%80%A2%20SRT%2FVTT-supported-d69e2e?style=for-the-badge" alt="Formats supported">
   <a href="README-PTBR.md"><img src="https://img.shields.io/badge/PT--BR-Leia%20em%20Portugu%C3%AAs-green?style=for-the-badge" alt="Leia em Português"></a>
 </p>
@@ -262,7 +262,7 @@ sop-extractor/
 │   └── teach/                  # Teach Mode (6 Judaic study sessions)
 ├── sopx/                       # Ingestion pipeline package
 │   └── ingest/                 # adapters, hardware detection, Colab, router
-├── tests/                      # pytest suite (1095 tests)
+├── tests/                      # pytest suite (1108 tests)
 └── docs/
     ├── PIPELINE_ARCHITECTURE.md      # end-to-end diagram + how it prevents hallucination
     ├── ARCHITECTURE_AUDIT.md         # Blackhat Mode artifact grammar + gates
