@@ -63,6 +63,7 @@ def main(argv=None):
             "  sopx ingest ./video.mp4 --rescue-frames\n"
             "  sopx ingest --playlist https://youtube.com/playlist?list=XYZ --max 10\n"
             "  sopx ingest --playlist URL --compile   # ingest + compile automatico\n"
+            "  sopx ingest --playlist URL --workers 4  # 4 workers paralelos\n"
             "  sopx ingest https://youtube.com/watch?v=ABC --gpu  # gera notebook Colab\n"
             "  sopx ingest --import-zip ~/Downloads/transcriptions.zip\n"
             "  sopx ingest --import-dir ~/Downloads/mYDSSRS-B5U/\n"
@@ -80,6 +81,8 @@ def main(argv=None):
     parser.add_argument("--check", action="store_true", help="Verificar dependências instaladas")
     parser.add_argument("--playlist", default=None, help="URL de playlist/canal para processar em lote")
     parser.add_argument("--max", type=int, default=None, help="Máximo de vídeos no batch (default: todos)")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Workers paralelos para ingest (default: 1 sequencial)")
     parser.add_argument("--gpu", action="store_true",
                         help="Forçar geração de notebook Colab (pula roteamento)")
     parser.add_argument("--local", action="store_true",
@@ -267,6 +270,7 @@ def main(argv=None):
                 args.playlist,
                 output_base=args.output_dir,
                 max_videos=args.max,
+                workers=args.workers,
             )
             print(f"\n  Batch concluído: {len(results)} vídeos processados")
         except FileNotFoundError as e:

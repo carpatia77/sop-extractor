@@ -359,6 +359,7 @@ class IngestPipeline:
         playlist_url: str,
         output_base: str | Path | None = None,
         max_videos: int | None = None,
+        workers: int = 1,
     ) -> list[IngestResult]:
         """Ingest all videos from a YouTube playlist or channel.
 
@@ -366,6 +367,7 @@ class IngestPipeline:
             playlist_url: URL of the playlist or channel.
             output_base: Base directory for outputs.
             max_videos: Maximum number of videos to process (None = all).
+            workers: Number of parallel ingest workers (default 1).
 
         Returns:
             List of IngestResult for each successfully ingested video.
@@ -400,33 +402,110 @@ class IngestPipeline:
             video_ids = video_ids[:max_videos]
 
         total = len(video_ids)
-        print(f"  Encontrados {total} vídeos para processar\n", file=sys.stderr)
+        print(f"  Encontrados {total} vídeos para processar", file=sys.stderr)
+        if workers > 1:
+            print(f"  Workers paralelos: {workers}", file=sys.stderr)
+        print("", file=sys.stderr)
 
-        # Process each video
-        results = []
-        for i, video_id in enumerate(video_ids, 1):
-            print("\n  ═══════════════════════════════════════════", file=sys.stderr)
-            print(f"  Vídeo {i}/{total}: {video_id}", file=sys.stderr)
-            print("  ═══════════════════════════════════════════\n", file=sys.stderr)
-
+        # Check cache — skip already-processed videos (resume support)
+        cached = 0
+        to_process = []
+        cache = getattr(self, "cache", None)
+        for video_id in video_ids:
             url = f"https://www.youtube.com/watch?v={video_id}"
-            try:
-                result = self.ingest(url, output_base=output_base)
-                results.append(result)
-            except Exception as e:
-                log.warning("Falha ao processar %s: %s", video_id, e)
-                print(f"  ⚠ Erro: {e}", file=sys.stderr)
-                continue
+            if cache:
+                key = CacheManager.key_for_url(video_id)
+                if cache.is_done(key):
+                    cached += 1
+                    continue
+            to_process.append((video_id, url))
+
+        if cached:
+            print(f"  Cache: {cached}/{total} já processados (serão pulados)", file=sys.stderr)
+        if not to_process:
+            print(f"  Todos os {total} vídeos já processados.", file=sys.stderr)
+            return []
+
+        print(f"  A processar: {len(to_process)} vídeos\n", file=sys.stderr)
+
+        # Process videos
+        t_start = time.time()
+        results = []
+        completed = 0
+        failed = 0
+
+        def _ingest_one(item):
+            idx, (video_id, url) = item
+            return idx, video_id, self.ingest(url, output_base=output_base)
+
+        if workers <= 1:
+            # Sequential (original behavior)
+            for i, (video_id, url) in enumerate(to_process, 1):
+                _print_batch_progress(i, len(to_process), video_id, t_start)
+                try:
+                    result = self.ingest(url, output_base=output_base)
+                    results.append(result)
+                    completed += 1
+                except Exception as e:
+                    log.warning("Falha ao processar %s: %s", video_id, e)
+                    print(f"  ⚠ Erro: {e}", file=sys.stderr)
+                    failed += 1
+        else:
+            # Parallel with ThreadPoolExecutor
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(_ingest_one, (i, item)): item
+                    for i, item in enumerate(to_process, 1)
+                }
+                for future in as_completed(futures):
+                    try:
+                        idx, video_id, result = future.result()
+                        results.append(result)
+                        completed += 1
+                        _print_batch_progress(completed + failed, len(to_process), video_id, t_start)
+                    except Exception as e:
+                        failed += 1
+                        item = futures[future]
+                        log.warning("Falha ao processar %s: %s", item[0], e)
+                        print(f"  ⚠ Erro: {e}", file=sys.stderr)
+                        _print_batch_progress(completed + failed, len(to_process), item[0], t_start)
 
         # Summary
-        print("\n  ═══════════════════════════════════════════", file=sys.stderr)
-        print("  Resumo do batch:", file=sys.stderr)
-        print(f"  ├─ Total:     {total} vídeos", file=sys.stderr)
-        print(f"  ├─ Sucesso:   {len(results)}", file=sys.stderr)
-        print(f"  └─ Falhas:    {total - len(results)}", file=sys.stderr)
-        print("  ═══════════════════════════════════════════\n", file=sys.stderr)
+        elapsed = time.time() - t_start
+        _print_batch_summary(total, cached, completed, failed, elapsed)
 
         return results
+
+
+def _print_batch_progress(current: int, total: int, video_id: str, t_start: float) -> None:
+    """Print batch progress with ETA."""
+    elapsed = time.time() - t_start
+    avg = elapsed / max(current, 1)
+    remaining = avg * (total - current)
+    h, m, s = int(remaining // 3600), int((remaining % 3600) // 60), int(remaining % 60)
+    eta = f"{h}h{m:02d}m" if h else f"{m}m{s:02d}s"
+    print(
+        f"\r  [{current}/{total}] {video_id}  |  ETA: {eta}  ",
+        end="", file=sys.stderr, flush=True,
+    )
+    if current == total:
+        print(file=sys.stderr)  # newline after final
+
+
+def _print_batch_summary(total: int, cached: int, completed: int, failed: int, elapsed: float) -> None:
+    """Print batch completion summary."""
+    h, m, s = int(elapsed // 3600), int((elapsed % 3600) // 60), int(elapsed % 60)
+    duration = f"{h}h{m:02d}m{s:02d}s" if h else f"{m}m{s:02d}s"
+    print("\n  ═══════════════════════════════════════════", file=sys.stderr)
+    print("  Resumo do batch:", file=sys.stderr)
+    print(f"  ├─ Total:     {total} vídeos", file=sys.stderr)
+    if cached:
+        print(f"  ├─ Cache:     {cached} (já processados)", file=sys.stderr)
+    print(f"  ├─ Sucesso:   {completed}", file=sys.stderr)
+    print(f"  ├─ Falhas:    {failed}", file=sys.stderr)
+    print(f"  └─ Tempo:     {duration}", file=sys.stderr)
+    print("  ═══════════════════════════════════════════\n", file=sys.stderr)
 
 
 def check_dependencies() -> dict[str, bool]:
