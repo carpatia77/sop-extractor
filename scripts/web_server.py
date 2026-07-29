@@ -31,6 +31,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # SSE event queues per session
 _sessions: dict[str, queue.Queue] = {}
 
+# Teach mode sessions
+_teach_sessions: dict[str, dict] = {}
+
 
 def _html_page() -> str:
     return r"""<!DOCTYPE html>
@@ -116,6 +119,7 @@ def _html_page() -> str:
       <a class="btn btn-result" id="btnGraph" href="#" target="_blank">🕸 Ver Grafo</a>
       <a class="btn btn-result" id="btnSummary" href="#" target="_blank">📊 Ver Summary</a>
       <a class="btn btn-result" id="btnSF" href="#" target="_blank">🧠 Semantic Field</a>
+      <a class="btn btn-result" href="/teach" target="_blank" style="border-color:#ff0080;color:#ff0080">🎓 Teach Mode</a>
     </div>
   </div>
 </div>
@@ -501,6 +505,208 @@ def _run_pipeline(session: Session):
 # Cyberpunk HTML renderers
 # ---------------------------------------------------------------------------
 
+_TEACH_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>xHAL2049 — Teach Mode</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Share Tech Mono',monospace;background:#06060c;color:#e0e0e0;height:100vh;display:flex;flex-direction:column}
+#grid{position:fixed;inset:0;background-image:
+  linear-gradient(rgba(0,212,255,.03) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(0,212,255,.03) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0}
+.header{position:relative;z-index:2;padding:12px 24px;background:rgba(6,6,12,.95);
+  border-bottom:1px solid rgba(0,212,255,.15);display:flex;align-items:center;gap:16px}
+.header h1{font-family:'Orbitron',sans-serif;font-size:14px;letter-spacing:2px;
+  background:linear-gradient(90deg,#00d4ff,#ff0080);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header select{background:#0d0d14;border:1px solid #1a1a2e;color:#e0e0e0;
+  padding:6px 12px;border-radius:6px;font-family:inherit;font-size:12px}
+.header button{padding:6px 16px;border:1px solid #7b2ff7;background:transparent;
+  color:#7b2ff7;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;
+  letter-spacing:1px;transition:all .15s}
+.header button:hover{background:#7b2ff722}
+.header button.active{background:#7b2ff7;color:#fff}
+.back{color:#555;text-decoration:none;font-size:11px;margin-left:auto;letter-spacing:1px}
+.back:hover{color:#00d4ff}
+.chat{flex:1;overflow-y:auto;padding:24px;position:relative;z-index:1;max-width:800px;
+  width:100%;margin:0 auto}
+.msg{margin-bottom:16px;padding:14px 18px;border-radius:10px;max-width:85%;
+  animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.msg.engine{background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.15);
+  align-self:flex-start;border-bottom-left-radius:2px}
+.msg.user{background:rgba(123,47,247,.1);border:1px solid rgba(123,47,247,.15);
+  margin-left:auto;border-bottom-right-radius:2px}
+.msg .sender{font-size:10px;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}
+.msg.engine .sender{color:#00d4ff}
+.msg.user .sender{color:#7b2ff7}
+.msg .text{font-size:13px;line-height:1.6;color:#ccc}
+.msg .meta{font-size:10px;color:#555;margin-top:8px;display:flex;gap:12px}
+.msg .depth-badge{padding:2px 8px;border-radius:4px;font-size:10px;letter-spacing:1px}
+.depth-0{background:#ff008022;color:#ff0080;border:1px solid #ff008033}
+.depth-1{background:#ffaa0022;color:#ffaa00;border:1px solid #ffaa0033}
+.depth-2{background:#00d4ff22;color:#00d4ff;border:1px solid #00d4ff33}
+.depth-3{background:#00ff8822;color:#00ff88;border:1px solid #00ff8833}
+.depth-4{background:#7b2ff722;color:#7b2ff7;border:1px solid #7b2ff733}
+.depth-5{background:#ff008022;color:#ff0080;border:1px solid #ff008033}
+.depth-6{background:#ffaa0022;color:#ffaa00;border:1px solid #ffaa0033}
+.depth-7{background:#00ff8833;color:#00ff88;border:1px solid #00ff8855}
+.input-area{position:relative;z-index:2;padding:16px 24px;
+  background:rgba(6,6,12,.95);border-top:1px solid rgba(0,212,255,.15)}
+.input-row{display:flex;gap:10px;max-width:800px;margin:0 auto}
+.input-row textarea{flex:1;background:#0d0d14;border:1px solid #1a1a2e;color:#e0e0e0;
+  padding:12px 16px;border-radius:8px;font-family:inherit;font-size:13px;
+  resize:none;outline:none;min-height:44px;max-height:120px}
+.input-row textarea:focus{border-color:#7b2ff7}
+.input-row button{padding:12px 24px;border:none;border-radius:8px;
+  background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;
+  font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;
+  letter-spacing:1px;transition:all .15s;white-space:nowrap}
+.input-row button:hover{opacity:.85}
+.input-row button:disabled{opacity:.3;cursor:not-allowed}
+.stats-bar{font-size:10px;color:#444;text-align:center;padding:6px;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div id="grid"></div>
+<div class="header">
+  <h1>TEACH MODE</h1>
+  <select id="sfSelect"><option value="">Selecione uma skill...</option></select>
+  <button id="startBtn" disabled>INICIAR</button>
+  <a class="back" href="/">← VOLTAR</a>
+</div>
+<div class="chat" id="chat">
+  <div style="text-align:center;padding:60px 20px;color:#444">
+    <div style="font-family:Orbitron;font-size:14px;color:#555;margin-bottom:12px">CHAVRUTA ENGINE</div>
+    <div style="font-size:12px">Selecione uma skill compilada e inicie uma sessão de debate.</div>
+    <div style="font-size:11px;color:#333;margin-top:8px">O motor Socrático desafia seu conhecimento profundamente.</div>
+  </div>
+</div>
+<div class="input-area">
+  <div class="stats-bar" id="statsBar"></div>
+  <div class="input-row">
+    <textarea id="userInput" placeholder="Digite sua resposta..." rows="1" disabled></textarea>
+    <button id="sendBtn" disabled>ENVIAR</button>
+  </div>
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+const userInput = document.getElementById('userInput');
+const sendBtn = document.getElementById('sendBtn');
+const startBtn = document.getElementById('startBtn');
+const sfSelect = document.getElementById('sfSelect');
+const statsBar = document.getElementById('statsBar');
+let sessionId = null;
+let depthHistory = [];
+
+// Load available SFs
+fetch('/api/teach/sessions').then(r=>r.json()).then(list => {
+  list.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.label;
+    opt.dataset.sfPath = s.sf_path;
+    sfSelect.appendChild(opt);
+  });
+  if (list.length > 0) {
+    startBtn.disabled = false;
+  }
+});
+
+startBtn.onclick = async () => {
+  const opt = sfSelect.selectedOptions[0];
+  if (!opt || !opt.dataset.sfPath) return;
+  startBtn.disabled = true;
+  startBtn.textContent = 'INICIANDO...';
+  const res = await fetch('/api/teach/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sf_path: opt.dataset.sfPath})
+  });
+  const data = await res.json();
+  if (data.ok) {
+    sessionId = data.session_id;
+    sendBtn.disabled = false;
+    userInput.disabled = false;
+    userInput.focus();
+    addMsg('engine', 'Sessão iniciada. Faça uma afirmação sobre o conteúdo para começarmos o debate.', null);
+    startBtn.textContent = 'ATIVO';
+    startBtn.classList.add('active');
+  }
+};
+
+sendBtn.onclick = () => sendResponse();
+userInput.onkeydown = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendResponse(); }
+};
+userInput.oninput = () => {
+  userInput.style.height = 'auto';
+  userInput.style.height = Math.min(userInput.scrollHeight, 120) + 'px';
+};
+
+async function sendResponse() {
+  const text = userInput.value.trim();
+  if (!text || !sessionId) return;
+  addMsg('user', text);
+  userInput.value = '';
+  userInput.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  const res = await fetch('/api/teach/respond', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: sessionId, response: text})
+  });
+  const data = await res.json();
+  sendBtn.disabled = false;
+  if (data.ok) {
+    depthHistory.push(data.depth);
+    addMsg('engine', data.challenge, data);
+    updateStats(data);
+  } else {
+    addMsg('engine', 'Erro: ' + data.error, null);
+  }
+}
+
+function addMsg(sender, text, meta) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + sender;
+  let html = `<div class="sender">${sender === 'engine' ? '⚙ CHAVRUTA' : '✦ VOCÊ'}</div>`;
+  html += `<div class="text">${escapeHtml(text)}</div>`;
+  if (meta) {
+    const depthClass = 'depth-' + meta.depth;
+    html += `<div class="meta">
+      <span class="depth-badge ${depthClass}">DEPTH ${meta.depth} — ${meta.depth_label}</span>
+      <span>${meta.depth_bar}</span>
+      ${meta.is_contradiction ? '<span style="color:#ff0080">⚠ CONTRADIÇÃO</span>' : ''}
+      ${meta.matched_node ? '<span>Nó: ' + escapeHtml(meta.matched_node) + '</span>' : ''}
+    </div>`;
+  }
+  div.innerHTML = html;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function updateStats(data) {
+  const avg = depthHistory.length ? (depthHistory.reduce((a,b)=>a+b,0)/depthHistory.length).toFixed(1) : '0';
+  const max = Math.max(...depthHistory);
+  statsBar.textContent = `MOVES: ${depthHistory.length} | MAX DEPTH: ${max} | AVG: ${avg}`;
+}
+
+function escapeHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+</script>
+</body>
+</html>"""
+
+
 _CYBER_CSS = """\
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
@@ -757,6 +963,12 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(resp.encode())
 
+        elif path == "/teach":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(_TEACH_HTML.encode())
+
         elif path.startswith("/progress/"):
             sid = path.split("/")[-1]
             session = _sessions.get(sid)
@@ -948,6 +1160,100 @@ class Handler(BaseHTTPRequestHandler):
                 resp = json.dumps({"ok": True})
             except Exception as e:
                 resp = json.dumps({"ok": False, "error": str(e)})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp.encode())
+            return
+
+        if self.path == "/api/teach/start":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body)
+                sf_path = data.get("sf_path", "")
+                if not sf_path or not os.path.exists(sf_path):
+                    resp = json.dumps({"ok": False, "error": "SF not found"})
+                else:
+                    sf = json.loads(Path(sf_path).read_text(encoding="utf-8"))
+                    sid = uuid.uuid4().hex[:8]
+                    _teach_sessions[sid] = {
+                        "engine": None,
+                        "sf": sf,
+                        "history": [],
+                        "sf_path": sf_path,
+                    }
+                    resp = json.dumps({"ok": True, "session_id": sid})
+            except Exception as e:
+                resp = json.dumps({"ok": False, "error": str(e)})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp.encode())
+            return
+
+        if self.path == "/api/teach/respond":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body)
+                sid = data.get("session_id", "")
+                user_input = data.get("response", "")
+                ts = _teach_sessions.get(sid)
+                if not ts:
+                    resp = json.dumps({"ok": False, "error": "Session not found"})
+                else:
+                    if ts["engine"] is None:
+                        from chavruta.engine import ChavrutaEngine
+                        ts["engine"] = ChavrutaEngine(ts["sf"])
+                    result = ts["engine"].process(user_input)
+                    ts["history"].append({
+                        "user": user_input[:200],
+                        "challenge": result["challenge"],
+                        "depth": result["depth"],
+                        "depth_bar": result["depth_bar"],
+                        "depth_label": result["depth_label"],
+                        "is_contradiction": result["is_contradiction"],
+                        "match_layer": result["match_layer"],
+                    })
+                    resp = json.dumps({
+                        "ok": True,
+                        "challenge": result["challenge"],
+                        "depth": result["depth"],
+                        "depth_bar": result["depth_bar"],
+                        "depth_label": result["depth_label"],
+                        "is_contradiction": result["is_contradiction"],
+                        "match_layer": result["match_layer"],
+                        "max_depth_seen": result["max_depth_seen"],
+                        "matched_node": result.get("matched_node", {}).get("term") if result.get("matched_node") else None,
+                    })
+            except Exception as e:
+                resp = json.dumps({"ok": False, "error": str(e)})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp.encode())
+            return
+
+        if self.path == "/api/teach/sessions":
+            # List available SF files from previous compilations
+            sessions = []
+            upload_dir = Path(UPLOAD_DIR)
+            for d in sorted(upload_dir.iterdir()):
+                if not d.is_dir() or d.name.startswith("_"):
+                    continue
+                compilation = d / "compilation"
+                sf_files = list(compilation.glob("*semantic_field*.json")) if compilation.exists() else []
+                if sf_files:
+                    md_files = [f for f in compilation.glob("*.md")
+                                if "semantic_field" not in f.name and "batch_summary" not in f.name]
+                    label = md_files[0].stem if md_files else d.name
+                    sessions.append({
+                        "id": d.name,
+                        "label": label,
+                        "sf_path": str(sf_files[0]),
+                    })
+            resp = json.dumps(sessions)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
