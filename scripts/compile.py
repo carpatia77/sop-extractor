@@ -212,9 +212,59 @@ def _call_api_direct(
     prompt: str,
     api_key: str,
     model: str = "claude-sonnet-4-20250514",
+    base_url: str = "",
     timeout: int = 300,
 ) -> str:
-    """Call Anthropic API directly via HTTP (no CLI dependency)."""
+    """Call any OpenAI-compatible API directly via HTTP (no CLI dependency).
+
+    Supports: Anthropic, OpenAI, Nvidia NIM, Groq, Ollama, Together, DeepSeek, etc.
+    """
+    import urllib.request
+    import urllib.error
+
+    # Determine API format from base_url
+    is_anthropic = "anthropic" in (base_url or "").lower() or model.startswith("claude")
+
+    if is_anthropic:
+        return _call_anthropic_api(prompt, api_key, model, timeout)
+
+    # OpenAI-compatible format (default for most providers)
+    base = (base_url or "https://api.openai.com").rstrip("/")
+    url = f"{base}/v1/chat/completions"
+
+    payload = json.dumps({
+        "model": model,
+        "max_tokens": 16384,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            return data["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")[:500]
+        raise RuntimeError(f"API error {e.code}: {body}")
+    except Exception as e:
+        raise RuntimeError(f"API call failed: {e}")
+
+
+def _call_anthropic_api(
+    prompt: str,
+    api_key: str,
+    model: str = "claude-sonnet-4-20250514",
+    timeout: int = 300,
+) -> str:
+    """Call Anthropic Messages API directly."""
     import urllib.request
     import urllib.error
 
@@ -238,7 +288,6 @@ def _call_api_direct(
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
-            # Extract text from content blocks
             texts = []
             for block in data.get("content", []):
                 if block.get("type") == "text":
@@ -259,14 +308,21 @@ def call_agent(
 ) -> str:
     """Call agent CLI via subprocess in print mode.
 
-    If ANTHROPIC_API_KEY env var is set, calls API directly (no CLI needed).
+    If LLM_API_KEY env var is set, calls API directly (no CLI needed).
+    LLM_BASE_URL and LLM_MODEL env vars configure the endpoint.
     Raises RuntimeError on non-zero exit (never silently returns partial output).
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("LLM_API_KEY", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    base_url = os.environ.get("LLM_BASE_URL", "")
 
     # Direct API mode — no CLI dependency
     if api_key:
-        return _call_api_direct(prompt, api_key, model=model or "claude-sonnet-4-20250514", timeout=timeout)
+        return _call_api_direct(
+            prompt, api_key,
+            model=model or os.environ.get("LLM_MODEL", "claude-sonnet-4-20250514"),
+            base_url=base_url,
+            timeout=timeout,
+        )
 
     # CLI mode
     if agent not in AGENT_COMMANDS:

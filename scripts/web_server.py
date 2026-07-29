@@ -281,7 +281,7 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:#0a0a0f;color:#e0e0e0;font-family:'Fira Code','Cascadia Code',monospace;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 16px}
-  .card{background:#0d0d14;border:1px solid #1a1a2e;border-radius:12px;padding:32px;max-width:500px;width:100%}
+  .card{background:#0d0d14;border:1px solid #1a1a2e;border-radius:12px;padding:32px;max-width:560px;width:100%}
   h1{font-size:20px;color:#00d4ff;margin-bottom:4px}
   .sub{font-size:11px;color:#555;margin-bottom:24px}
   label{display:block;font-size:12px;color:#888;margin-bottom:6px;letter-spacing:1px}
@@ -296,31 +296,41 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
   .status{margin-top:12px;font-size:12px}
   .status.ok{color:#00ff88}
   .status.err{color:#ff4444}
-  select{width:100%;padding:10px 14px;background:#050508;border:1px solid #2a2a4a;border-radius:8px;color:#e0e0e0;font-family:inherit;font-size:13px;margin-top:4px}
+  .presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .preset{padding:4px 10px;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;font-size:11px;color:#888;cursor:pointer;transition:all .15s}
+  .preset:hover{border-color:#7b2ff7;color:#e0e0e0}
+  .preset.active{border-color:#00d4ff;color:#00d4ff}
 </style>
 </head>
 <body>
 <div class="card">
   <h1>⚙ Configuração</h1>
-  <div class="sub">xHAL2049 — BYOK (Bring Your Own Key)</div>
+  <div class="sub">xHAL2049 — BYOK (Bring Your Own Key) — qualquer provider OpenAI-compatível</div>
 
   <form id="settingsForm">
-    <label>PROVIDER</label>
-    <select id="provider">
-      <option value="anthropic">Anthropic (Claude)</option>
-      <option value="openai">OpenAI (GPT-4)</option>
-    </select>
+    <label>BASE URL DA API</label>
+    <input type="text" id="baseUrl" placeholder="https://api.anthropic.com">
+    <div class="hint">URL base do endpoint. Qualquer API OpenAI-compatível funciona.</div>
+
+    <div class="presets">
+      <span class="preset" onclick="setPreset('https://api.anthropic.com','Anthropic')">Anthropic</span>
+      <span class="preset" onclick="setPreset('https://api.openai.com','OpenAI')">OpenAI</span>
+      <span class="preset" onclick="setPreset('https://integrate.api.nvidia.com','Nvidia')">Nvidia NIM</span>
+      <span class="preset" onclick="setPreset('https://api.groq.com/openai','Groq')">Groq</span>
+      <span class="preset" onclick="setPreset('http://localhost:11434','Ollama')">Ollama</span>
+      <span class="preset" onclick="setPreset('https://api.together.xyz','Together')">Together</span>
+      <span class="preset" onclick="setPreset('https://api.deepseek.com','DeepSeek')">DeepSeek</span>
+    </div>
 
     <label style="margin-top:16px">API KEY</label>
-    <input type="text" id="apiKey" placeholder="sk-ant-... ou sk-..." autocomplete="off">
-    <div class="hint">Sua chave fica salva apenas neste servidor local. Nunca é enviada para fora.</div>
+    <input type="text" id="apiKey" placeholder="sk-..." autocomplete="off">
+    <div class="hint">Sua chave fica salva apenas neste servidor local.</div>
 
-    <label style="margin-top:16px">MODEL</label>
-    <select id="model">
-      <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (recomendado)</option>
-      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-      <option value="claude-3-haiku-20240307">Claude 3 Haiku (rápido, barato)</option>
-    </select>
+    <label style="margin-top:16px">MODEL ID</label>
+    <input type="text" id="model" placeholder="ex: meta/llama-3.1-70b-instruct">
+    <div class="hint">ID do modelo conforme a API do provider.</div>
+
+    <div class="presets" id="modelPresets"></div>
 
     <div style="display:flex;gap:10px;margin-top:20px">
       <button type="button" class="btn btn-back" onclick="location.href='/'">← Voltar</button>
@@ -331,9 +341,31 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
 </div>
 
 <script>
+const MODEL_PRESETS = {
+  'Anthropic': ['claude-sonnet-4-20250514','claude-3-5-sonnet-20241022','claude-3-haiku-20240307'],
+  'OpenAI': ['gpt-4o','gpt-4o-mini','gpt-4-turbo'],
+  'Nvidia': ['nvidia/llama-3.1-nemotron-ultra-253b-v1','meta/llama-3.1-70b-instruct','nvidia/llama-3.3-nemotron-super-49b-v1'],
+  'Groq': ['llama-3.3-70b-versatile','mixtral-8x7b-32768','gemma2-9b-it'],
+  'Ollama': ['llama3.1','mistral','codellama','gemma2'],
+  'Together': ['meta-llama/Llama-3.3-70B-Instruct-Turbo','mistralai/Mixtral-8x22B-Instruct-v0.1'],
+  'DeepSeek': ['deepseek-chat','deepseek-reasoner'],
+};
+
+function setPreset(url, name) {
+  document.getElementById('baseUrl').value = url;
+  document.querySelectorAll('.preset').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  // Show model presets
+  const models = MODEL_PRESETS[name] || [];
+  const el = document.getElementById('modelPresets');
+  el.innerHTML = models.map(m =>
+    `<span class="preset" onclick="document.getElementById('model').value='${m}'">${m}</span>`
+  ).join('');
+}
+
 // Load current settings
 fetch('/api/settings').then(r=>r.json()).then(d=>{
-  if(d.provider) document.getElementById('provider').value = d.provider;
+  if(d.base_url) document.getElementById('baseUrl').value = d.base_url;
   if(d.model) document.getElementById('model').value = d.model;
   if(d.has_key) document.getElementById('apiKey').placeholder = '•••••••••••••••• (já configurada)';
 });
@@ -341,9 +373,9 @@ fetch('/api/settings').then(r=>r.json()).then(d=>{
 document.getElementById('settingsForm').addEventListener('submit', async(e)=>{
   e.preventDefault();
   const key = document.getElementById('apiKey').value.trim();
-  const provider = document.getElementById('provider').value;
-  const model = document.getElementById('model').value;
-  const body = {provider, model};
+  const base_url = document.getElementById('baseUrl').value.trim();
+  const model = document.getElementById('model').value.trim();
+  const body = {base_url, model};
   if(key) body.api_key = key;
 
   const res = await fetch('/api/settings', {
@@ -413,11 +445,15 @@ class Session:
 def _run_pipeline(session: Session):
     """Run sopx run on each uploaded file in a thread."""
     try:
-        # Load API key from settings
+        # Load API settings
         settings = _load_settings()
         env = os.environ.copy()
         if settings.get("api_key"):
-            env["ANTHROPIC_API_KEY"] = settings["api_key"]
+            env["LLM_API_KEY"] = settings["api_key"]
+        if settings.get("base_url"):
+            env["LLM_BASE_URL"] = settings["base_url"]
+        if settings.get("model"):
+            env["LLM_MODEL"] = settings["model"]
 
         for f in session.files:
             session.emit("info", f"▸ Processando: {f.name}")
@@ -480,8 +516,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/settings":
             settings = _load_settings()
             resp = json.dumps({
-                "provider": settings.get("provider", "anthropic"),
-                "model": settings.get("model", "claude-sonnet-4-20250514"),
+                "base_url": settings.get("base_url", ""),
+                "model": settings.get("model", ""),
                 "has_key": bool(settings.get("api_key")),
             })
             self.send_response(200)
@@ -641,8 +677,8 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #1a1a2e;padd
                 update = {}
                 if "api_key" in data and data["api_key"]:
                     update["api_key"] = data["api_key"]
-                if "provider" in data:
-                    update["provider"] = data["provider"]
+                if "base_url" in data:
+                    update["base_url"] = data["base_url"]
                 if "model" in data:
                     update["model"] = data["model"]
                 _save_settings(update)
