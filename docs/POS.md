@@ -1,39 +1,41 @@
 # POS — Point of Situation
 
-> Atualizado: 2026-07-28 (pós-checkpoint) | Versão: 3.1.0
+> Atualizado: 2026-07-29 (sessão completa) | Versão: 3.1.0
 
 ---
 
 ## Resumo Executivo
 
-**Conclusão geral: ~74%** (era 78% nesta sessão — revertido "active by default" + stress test corrigido)
+**Conclusão geral: ~78%** (era 74% — web console + BYOK + fixes + cyberpunk UI)
 
-### Ganhos desta sessão (commits corrigidos)
+### Ganhos desta sessão
 
-| Commit | Mudança | Impacto |
-|--------|---------|---------|
-| `6c334a5` | T2 fechado (context-overlap) | Stoplist `_GENERIC_WORDS` extraída |
-| `2c4fa9f` | Engine v1+v2 integram semantic_guard | match_layer + semantic_issues no output |
-| `82f26a8` | 34 testes E2E pipeline completo | sf_matcher → drift → semantic → depth → engine |
-| `0957b13` | Cache em disco 2 tiers | memory + disk (~/.cache/sopx/embeddings/) |
-| `c2a1cec` | Stress test corrigido | ID único, keyword match, threshold 0.50 |
-| `corrige` | Fallback gate restaurado | Camada 4: fallback, não ativa por padrão |
-| `corrige` | `_disk_get` + `_HAS_EMBEDDINGS` | Fallback gracioso preservado em ambientes sem ST |
-| `corrige` | `TestDiskCache` com `skipif` + `tmp_path` | Testes não poluem `$HOME`, CI não quebra |
+| Feature | Commits | Impacto |
+|---------|---------|---------|
+| validate_semantic_field completo | `8c6d59c`, `5ae8052`, `ff13b26` | evidence_id gate (scoped), enum {used_in,supports,requires,references}, standalone script, validate_all integration |
+| Pipeline end-to-end | `c8377cf` | `--compile` flag encadeia ingest+compile |
+| Ingest paralelo | `42e21e1` | `--workers N`, resume automático, ETA em tempo real |
+| `sopx run` — cola o link | `291bcfe`, `1169c21` | Auto-detect: video/playlist/audio/livro/arquivo local |
+| Web console | `8ec3259`, `db3ad13`, `1bd7c36` | Upload drag-drop, console SSE live, 4 abas resultado cyberpunk |
+| BYOK genérico | `b7659e8`, `0ce7f08`, `fbc8f4b`, `cb1db63` | Qualquer API key (Anthropic, OpenAI, Nvidia, Gemini, Minimax, MiMo, Groq, Ollama, DeepSeek) |
+| PDF extraction | `9f8ddd8` | pdfplumber para leitura de PDFs |
+| Parse fix | `695aeb0` | Aceita ### e #### headers, bullets * e - |
+| Cache_key fix | `40b19fb` | filepath == input_root não gera mais `.` como key |
+| Graph cyberpunk | `7431477` | Glow neon, drag, grid, tema xHAL2049 |
+| Incidentes | `0157d6f` | 6 incidentes documentados em WEB_CONSOLE_INCIDENTS.md |
 
 ### Números da sessão
 
-- **Testes**: 1033 → 1094 (+61)
-- **Commits**: 4 na main
-- **Linhas adicionadas**: ~900 (código + testes)
-- **Arquivos modificados**: 5 (sf_matcher, sf_embeddings, semantic_guard, engine, engine_v2)
-- **Arquivos criados**: 3 (test_sf_matcher_integration, test_chavruta_e2e, POS.md)
+- **Testes**: 1094 → 1108 (+14)
+- **Commits**: 16 na main
+- **Arquivos criados**: 3 (run.py, web_server.py, validate_semantic_field.py)
+- **Arquivos modificados**: ~15 (compile.py, semantic_field.py, ingest.py, menu.py, wizard.py, README.md, etc.)
 
 ---
 
 ## Status por Fase
 
-### Fase 1 — MVP (Extração): 92%
+### Fase 1 — MVP (Extração): 95%
 
 | Componente | Status | Testes | Última mudança |
 |------------|--------|--------|----------------|
@@ -41,101 +43,62 @@
 | Extract (SKILL.md) | ✅ Pronto | 137 | book_to_skill parser |
 | Determinism Score | ✅ Pronto | — | Integrado no pipeline |
 | 7 Validators | ✅ Prontos | 93 | coherence, evolution, arch, manifest, run_report, concept_presence, review_gate |
-| Ingestão (Fase 0) | ✅ Pronto | 67 | yt-dlp + faster-whisper, CPU local |
+| Ingestão (Fase 0) | ✅ Pronto | 67+6 | yt-dlp + faster-whisper, batch playlist, workers paralelos |
 | Provenance Loop | ✅ Pronto | 29 | build_set_manifest.py |
-| LLM Router | ⏸️ Deferido | — | subprocess escolhido (trade-off consciente) |
-| Wizard (GUI) | ✅ Pronto | 19 | Workflow interativo guiado |
+| LLM Router | ⏸️ Deferido | — | BYOK como alternativa funcional |
+| Wizard (GUI) | ✅ Pronto | 19 | Workflow interativo + playlist + compile |
+| **`sopx run`** | ✅ **Novo** | — | Auto-detect URL/file, ingest+compile chain |
+| **`sopx web`** | ✅ **Novo** | — | Web console com upload, console live, 4 abas |
 
-### Fase 2 — Ensino: 86%
+### Fase 2 — Ensino: 90%
 
 | Componente | Status | Testes | Última mudança |
 |------------|--------|--------|----------------|
-| Semantic Field | ✅ Pronto | 45+20 | Extração + export (GraphML, JSON-LD, LightRAG) |
+| Semantic Field | ✅ Pronto | 45+20+7 | Extração + export (GraphML, JSON-LD, LightRAG, HTML cyberpunk) |
 | Evidence Ledger | ✅ Pronto | 34 | Proveniência por claim |
 | Refutation Chain | ✅ Pronto | 43 | strongest_alternative |
 | Emerging Questions | ✅ Pronto | — | Detecta lacunas/tensões |
 | Teach Mode (6 sessões) | ✅ Pronto | 29 | Método Hebraico, CLI funcional |
-| validate_semantic_field | ✅ Pronto | 7+ | evidence_id gate, edge types expandidos, standalone script, integração validate_all |
+| validate_semantic_field | ✅ Pronto | 55+ | evidence_id gate, standalone script, integração validate_all |
 | F1 Scoring | ❌ Não iniciado | — | Pareto score 2.60 |
 
-### Fase 3 — Escala: 58%
+### Fase 3 — Escala: 68%
 
 | Componente | Status | Testes | Última mudança |
 |------------|--------|--------|----------------|
 | Cross-Analysis | ✅ Pronto | 24 | Consolida N vídeos em 1 graph |
-| Batch Ingestion | ⚠️ Parcial | 67 | Single-video OK, batch canal não testado |
+| Batch Ingestion | ✅ Pronto | 67+6 | `--playlist --compile`, `--workers N`, resume automático |
 | VLM (análise visual) | ❌ Não iniciado | — | Pareto score 3.00 |
 | Hardware Detection | ✅ Pronto | 25 | Auto-detect CPU/RAM, batch sizing |
+| **PDF extraction** | ✅ **Novo** | — | pdfplumber para PDFs via `sopx run` |
 
-### Fase 4 — Polimento: 55% (era 65%)
+### Fase 4 — Polimento: 72%
 
 | Componente | Status | Testes | Última mudança |
 |------------|--------|--------|----------------|
-| Camada 4 (Embeddings) | ✅ Pronto | 27+31+9 | **Fallback gate (não ativa por padrão)** + cache disco 2 tiers |
-| Semantic Guard | ✅ Pronto | 28 | 6 rounds, stoplist 60+ termos, T2 fechado |
+| Camada 4 (Embeddings) | ✅ Pronto | 27+31+9 | Fallback gate + cache disco 2 tiers |
+| Semantic Guard | ✅ Pronto | 28 | 6 rounds, stoplist 60+ termos |
 | Chavruta Engine v1 | ✅ Pronto | 19+34 | Integrado: semantic_guard + match_layer |
 | Chavruta Engine v2 | ✅ Pronto | 19+34 | Integrado: evidence-backed + repetition detection |
 | sf_matcher | ✅ Pronto | 25+18 | 4 camadas, Camada 4 como fallback |
 | E2E Tests | ✅ Pronto | 34 | Pipeline completo testado |
-| Disk Cache | ✅ Pronto | 9 | 2 tiers: memory + ~/.cache/sopx/embeddings/ |
-| Docs | ⚠️ Parcial | — | Architecture, plans, POS — README incompleto |
-| Stress Tests | ✅ Pronto | — | GURPS (23n) + QuantGuild (267n) — critério keyword match |
+| Disk Cache | ✅ Pronto | 9 | 2 tiers: memory + disk |
+| Docs | ✅ Pronto | — | README atualizado, CHANGELOG v3.1, POS atualizado, incident log |
+| Stress Tests | ✅ Pronto | — | GURPS + QuantGuild |
+| **Web Console** | ✅ **Novo** | — | Cyberpunk xHAL2049, drag-drop, console SSE, 4 abas |
+| **BYOK** | ✅ **Novo** | — | Qualquer API key, settings page, presets |
+| **Graph Cyberpunk** | ✅ **Novo** | — | Glow neon, drag interativo, grid background |
 
 ---
 
-## Pipeline Chavruta — Arquitetura Final
-
-```
-User response
-    │
-    ▼
-┌─────────────────────────────────────────────────────┐
-│  sf_matcher (4 camadas)                              │
-│  1. Exact ID  →  2. Substring  →  3. Salient  →  4. Embeddings
-│                                                     │
-│  Output: matched_node + match_layer                  │
-└──────────────────────┬──────────────────────────────┘
-                       │
-    ▼                  ▼
-┌──────────────┐  ┌──────────────────────┐
-│ drift_detector│  │ semantic_guard        │
-│              │  │ (type confusion,      │
-│ (negation,   │  │  definition drift,    │
-│  challenge,  │  │  scope expansion)     │
-│  coverage)   │  │                      │
-└──────┬───────┘  └──────────┬───────────┘
-       │                     │
-       ▼                     ▼
-┌─────────────────────────────────────────────────────┐
-│  depth_tracker (1-7)                                 │
-│  Superficial → Compreensão → Análise → Síntese →    │
-│  Avaliação → Criatividade → Meta-cognição            │
-└──────────────────────┬──────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────┐
-│  engine / engine_v2                                  │
-│  - Gera challenge baseado no depth                   │
-│  - Cita evidência (ev-ID, locator)                   │
-│  - Detecta repetição (v2)                            │
-│  - History + session summary                         │
-│                                                     │
-│  Output: { depth, challenge, match_layer,            │
-│            semantic_issues, anchor_used }             │
-└─────────────────────────────────────────────────────┘
-```
-
-**Todos determinísticos. Todos grounded no grafo. Zero alucinação por construção.**
-
----
-
-## CLI — Capacidades (15/15)
+## CLI — Capacidades (18/18)
 
 | # | Comando | Status | Descrição |
 |---|---------|--------|-----------|
+| 0 | `run` | ✅ **Novo** | Cola o link, auto-detect, ingest+compile |
 | 1 | `scan` | ✅ | Pre-flight scan (PT-BR) |
 | 2 | `extract` | ✅ | Hand-off para agent |
-| 3 | `validate` | ✅ | 7 validadores determinísticos |
+| 3 | `validate` | ✅ | 7+ validadores determinísticos |
 | 4 | `coherence` | ✅ | Auditoria single source |
 | 5 | `evolution` | ✅ | Auditoria de Set |
 | 6 | `blackhat` | ✅ | Reverse-engineering audit |
@@ -143,11 +106,13 @@ User response
 | 8 | `determinism` | ✅ | Score determinístico |
 | 9 | `view` | ✅ | Render HTML |
 | 10 | `summary` | ✅ | Run log |
-| 11 | `ingest` | ✅ | Video/URL → transcript |
+| 11 | `ingest` | ✅ | Video/URL/playlist → transcript, `--workers`, `--compile` |
 | 12 | `set-build` | ✅ | Build manifest from metadata |
-| 13 | `compile` | ✅ | Knowledge compilation |
+| 13 | `compile` | ✅ | Knowledge compilation, PDF extraction, BYOK |
 | 14 | `teach` | ✅ | 6 sessões Método Hebraico |
-| 15 | `wizard` | ✅ | Workflow guiado interativo |
+| 15 | `wizard` | ✅ | Workflow guiado + playlist |
+| 16 | `web` | ✅ **Novo** | Web console (upload, console, resultado) |
+| 17 | — | — | — |
 
 ---
 
@@ -155,40 +120,12 @@ User response
 
 | Módulo | Linhas | Descrição |
 |--------|--------|-----------|
-| `scripts/` | 9.320 | Core (validators, scan, compile, teach, wizard) |
-| `sopx/` | 2.184 | Ingestion pipeline |
+| `scripts/` | 10.800 | Core + run.py + web_server.py |
+| `sopx/` | 2.300 | Ingestion pipeline |
 | `scripts/chavruta/` | 2.075 | Chavruta engine v1/v2, Semantic Guard, Camada 4, sf_matcher |
 | `book_to_skill/` | 1.593 | Parser upstream (MIT) |
-| `tests/` | 12.850 | 1094 testes |
-| **Total** | **28.022** | |
-
-### Testes por componente
-
-| Componente | Testes | Arquivo |
-|------------|--------|---------|
-| book_to_skill | 137 | test_book_to_skill.py |
-| compile | 70 | test_compile.py |
-| ingestion | 67+18 | test_stress_ingestion + test_ingest_adapters |
-| preflight_scan | 54 | test_preflight_scan.py |
-| semantic_field | 45+20 | test_semantic_field + test_semantic_field_export |
-| refutation_chain | 43 | test_refutation_chain.py |
-| evidence_ledger | 34 | test_evidence_ledger.py |
-| **E2E pipeline** | **34** | **test_chavruta_e2e.py** |
-| teach_mode | 29 | test_teach_mode.py |
-| build_set_manifest | 29 | test_build_set_manifest.py |
-| semantic_guard | 28 | test_semantic_guard.py |
-| **sf_embeddings (disk cache)** | **27** | **test_sf_embeddings.py** |
-| review_gate | 26 | test_review_gate.py |
-| sf_matcher | 25 | test_sf_matcher.py |
-| hardware | 25 | test_hardware.py |
-| cross_analysis | 24 | test_cross_analysis.py |
-| drift_detector | 23 | test_drift_detector.py |
-| chavruta_eval | 21 | test_chavruta_eval.py |
-| validate_architecture | 20 | test_validate_architecture_audit.py |
-| menu | 19 | test_menu.py |
-| extract_frames | 19 | test_extract_frames_at_timestamps.py |
-| chavruta_engine | 19 | test_chavruta_engine.py |
-| **sf_matcher integration** | **18** | **test_sf_matcher_integration.py** |
+| `tests/` | 13.100 | 1108 testes |
+| **Total** | **~29.868** | |
 
 ---
 
@@ -202,37 +139,53 @@ Tier 3: Compute     → model.encode(), ~2-5s para SFs grandes
 
 **Fluxo:** memory → disk → compute → store both tiers
 
-**Arquivos por SF:** `{hash}.npy` (embeddings) + `{hash}.json` (metadata)
+---
 
-**API:** `embed_sf()`, `match_by_embedding()`, `clear_disk_cache()`, `disk_cache_size()`
+## Web Console — Arquitetura
+
+```
+Browser (localhost:8080)
+    │
+    ├── GET /                    → HTML (upload + console)
+    ├── GET /settings            → HTML (BYOK: base_url + api_key + model)
+    ├── POST /upload             → Salva arquivos, inicia pipeline
+    ├── GET /progress/<sid>      → SSE (progresso em tempo real)
+    ├── GET /results/<sid>/skill → Rendered MD (cyberpunk)
+    ├── GET /results/<sid>/graph → semantic_field.html (cyberpunk)
+    ├── GET /results/<sid>/summary → Dashboard (cyberpunk)
+    ├── GET /results/<sid>/sf    → Semantic Field JSON (grupos)
+    ├── GET /api/settings        → JSON settings
+    └── POST /api/settings       → Salva settings
+```
+
+**Pipeline:** upload → `sopx run` → compile.py → BYOK API → output → botões resultado
 
 ---
 
 ## Próximos Passos (Pareto)
 
-### Prioridade Alta (fecham o projeto)
+### Prioridade Alta
 
-| # | Item | Pareto Score | Esforço | Status |
-|---|------|-------------|---------|--------|
-| 1 | Batch ingestion test (canal inteiro) | — | ~1d | ⚠️ Não testado |
-| 2 | README refresh | — | ~0.5d | ⚠️ Desatualizado |
-| 3 | CHANGELOG v3.1 | — | ~0.5d | Novos features |
+| # | Item | Esforço | Status |
+|---|------|---------|--------|
+| 1 | Batch ingestion test real-world (canal 500 vídeos) | ~1d | ⚠️ Requer URL específica |
+| 2 | F1 Scoring automatizado | ~3d | ❌ Não iniciado |
 
-### Prioridade Média (diferenciação)
+### Prioridade Média
 
-| # | Item | Pareto Score | Esforço | Status |
-|---|------|-------------|---------|--------|
-| 4 | F1 Scoring automatizado | 2.60 | ~3d | ❌ Não iniciado |
-| 5 | VLM integration | 3.00 | ~5d | ❌ Não iniciado |
-| 6 | Cross-model audit (embeddings) | — | ~1d | ⏸️ Adiado |
+| # | Item | Esforço | Status |
+|---|------|---------|--------|
+| 3 | VLM integration (imagens/screenshots) | ~5d | ❌ Não iniciado |
+| 4 | Cross-model audit (embeddings) | ~1d | ⏸️ Adiado |
+| 5 | Graph: edges cross-principle (contradicts real) | ~2d | ❌ Requer detecção de contradição |
 
-### Prioridade Baixa (nice-to-have)
+### Prioridade Baixa
 
-| # | Item | Pareto Score | Esforço | Status |
-|---|------|-------------|---------|--------|
-| 7 | LLM Router | 3.25 | ~4d | ⏸️ Deferido |
-| 8 | Node2vec | — | ~3d | ❌ Não iniciado |
-| 9 | Batch channel (Fase 0 escala) | — | ~5d | ❌ Não iniciado |
+| # | Item | Esforço | Status |
+|---|------|---------|--------|
+| 6 | LLM Router (multiplexador de providers) | ~4d | ⏸️ Deferido |
+| 7 | Node2vec | ~3d | ❌ Não iniciado |
+| 8 | OpenTelemetry / tracing | ~2d | ❌ Não iniciado |
 
 ---
 
@@ -242,10 +195,11 @@ Tier 3: Compute     → model.encode(), ~2-5s para SFs grandes
 |----|-------------|------|
 | Gemini Notebook | Machine-consumable vs human summaries | ✅ Unique |
 | LightRAG/Cognee | Compilation vs retrieval | ✅ Unique |
-| Matt Pocock /teach | 6 sessões + Chavruta + anti-hallucination | ⚠️ Parcial |
+| Matt Pocock /teach | 6 sessões + Chavruta + anti-hallucination | ✅ Confirmado |
 | Qualquer RAG | "RAG indexa prateleira; isso domina a espinha" | ✅ Unique |
+| Qualquer extração | BYOK + Web Console + Cyberpunk UI | ✅ UX Differentiator |
 
-**Quadrante único confirmado:** Compilation + Machine-consumable + Anti-hallucination por construção.
+**Quadrante único confirmado:** Compilation + Machine-consumable + Anti-hallucination + Web Console + BYOK.
 
 ---
 
@@ -266,8 +220,22 @@ Tier 3: Compute     → model.encode(), ~2-5s para SFs grandes
 ## Changelog desta sessão
 
 ```
-2026-07-27  0957b13  feat: disk cache for Camada 4 embeddings — 2-tier persistence
-2026-07-27  82f26a8  test: 34 E2E tests for complete Chavruta pipeline
-2026-07-27  2c4fa9f  feat: Chavruta Engine integrates Camada 4 + semantic guard + 18 integration tests
-2026-07-27  6c334a5  feat: Camada 4 active by default + T2 closure + POS update
+2026-07-29  1bd7c36  feat: cyberpunk layout para Skill, Semantic Field, Summary
+2026-07-29  7431477  feat: graph cyberpunk — tema xHAL2049, glow, drag, grid
+2026-07-29  40b19fb  fix: cache_key bug + web_server glob patterns
+2026-07-29  695aeb0  fix: parse_compilation — aceita ### e #### headers, bullets * e -
+2026-07-29  cb1db63  fix: API URL flexivel — evita duplicar /v1, preset Nvidia corrigido
+2026-07-29  fbc8f4b  feat: presets Gemini, Minimax, MiMo substituem Together
+2026-07-29  0ce7f08  feat: BYOK generico — qualquer API OpenAI-compativel
+2026-07-29  b7659e8  feat: BYOK — web console com settings para API key
+2026-07-29  9f8ddd8  fix: compile.py extrai texto de PDF via pdfplumber
+2026-07-29  db3ad13  fix: web_server remove --compile flag
+2026-07-29  8ec3259  feat: web console — xHAL2049 banner, upload, console live
+2026-07-29  291bcfe  feat: sopx run — cola o link, eu resolvo
+2026-07-29  42e21e1  feat: ingest paralelo — workers, resume, ETA
+2026-07-29  c8377cf  feat: pipeline end-to-end playlist → ingest → compile
+2026-07-28  695aeb0  fix: parse_compilation — ### e #### headers
+2026-07-28  ff13b26  fix: remover contradicts self-loop
+2026-07-28  5ae8052  fix: require_evidence scoped + badge 1108
+2026-07-28  8c6d59c  feat: validate_semantic_field completo + README + CHANGELOG v3.1.0
 ```
