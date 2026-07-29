@@ -12,6 +12,7 @@ Opens a browser with:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import queue
@@ -426,6 +427,10 @@ def _save_settings(data: dict):
     current.update(data)
     with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
         json.dump(current, f, indent=2)
+    try:
+        os.chmod(SETTINGS_PATH, 0o600)
+    except Exception:
+        pass
 
 
 class Session:
@@ -848,32 +853,34 @@ def _md_to_html(md: str) -> str:
             continue
         # Headers
         if stripped.startswith("#### "):
-            out.append(f"<h4>{stripped[5:]}</h4>")
+            out.append(f"<h4>{html.escape(stripped[5:])}</h4>")
         elif stripped.startswith("### "):
-            out.append(f"<h3>{stripped[4:]}</h3>")
+            out.append(f"<h3>{html.escape(stripped[4:])}</h3>")
         elif stripped.startswith("## "):
-            out.append(f"<h2>{stripped[3:]}</h2>")
+            out.append(f"<h2>{html.escape(stripped[3:])}</h2>")
         elif stripped.startswith("# "):
-            out.append(f"<h1 style='font-size:20px;color:#00d4ff'>{stripped[2:]}</h1>")
+            out.append(f"<h1 style='font-size:20px;color:#00d4ff'>{html.escape(stripped[2:])}</h1>")
         elif stripped.startswith("---"):
             out.append("<hr>")
         elif stripped.startswith("- ") or stripped.startswith("* "):
             if not in_list:
                 out.append("<ul>")
                 in_list = True
-            item = stripped[2:]
+            item = html.escape(stripped[2:])
             item = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", item)
             item = re.sub(r"\*(.+?)\*", r"<em>\1</em>", item)
             out.append(f"<li>{item}</li>")
         elif re.match(r"^\d+\.\s", stripped):
             item = re.sub(r"^\d+\.\s+", "", stripped)
+            item = html.escape(item)
             item = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", item)
             out.append(f"<li>{item}</li>")
         elif stripped.startswith("|"):
             # Table row — handled separately
-            out.append(f"<tr>{''.join(f'<td>{c.strip()}</td>' for c in stripped.split('|')[1:-1])}</tr>")
+            out.append(f"<tr>{''.join(f'<td>{html.escape(c.strip())}</td>' for c in stripped.split('|')[1:-1])}</tr>")
         else:
-            text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", stripped)
+            text = html.escape(stripped)
+            text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
             text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
             text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
             out.append(f"<p>{text}</p>")
@@ -886,12 +893,13 @@ def _md_to_html(md: str) -> str:
 
 
 def _render_cyberpunk_skill(md: str, filename: str) -> str:
+    safe_filename = html.escape(filename)
     body = f"""<div class="header">
   <h1>SKILL</h1>
-  <div class="meta">{filename}</div>
+  <div class="meta">{safe_filename}</div>
 </div>
 {_md_to_html(md)}"""
-    return _wrap_cyber(body, f"Skill — {filename}")
+    return _wrap_cyber(body, f"Skill — {safe_filename}")
 
 
 def _render_cyberpunk_summary(md: str, run_data: dict | None, sf_data: dict | None = None) -> str:
@@ -931,8 +939,9 @@ def _render_cyberpunk_summary(md: str, run_data: dict | None, sf_data: dict | No
         rows = ""
         for r in run_data["results"]:
             status_color = "#00ff88" if r.get("success") else "#ff0080"
+            safe_fn = html.escape(r.get('filename',''))
             rows += f"""<tr>
-  <td style="color:#e0e0e0">{r.get('filename','')}</td>
+  <td style="color:#e0e0e0">{safe_fn}</td>
   <td style="color:{status_color}">{'OK' if r.get('success') else 'FAILED'}</td>
   <td>{r.get('sops_count',0)}</td>
   <td>{r.get('principles_count',0)}</td>
@@ -950,7 +959,7 @@ def _render_cyberpunk_summary(md: str, run_data: dict | None, sf_data: dict | No
 {stats_html}
 {files_html}
 <h2>RAW LOG</h2>
-<pre>{md}</pre>"""
+<pre>{html.escape(md)}</pre>"""
     return _wrap_cyber(body, "Execution Report")
 
 
@@ -979,13 +988,15 @@ def _render_cyberpunk_sf(sf: dict) -> str:
         icon = type_icons.get(ntype, "•")
         items = ""
         for n in nodes_in_group:
-            label = n.get("term") or n.get("statement", "")[:80] or n.get("name", n.get("id", ""))
-            definition = n.get("definition") or n.get("statement", "") or n.get("when_to_use", "")
-            epistemic = n.get("epistemic_status", "")
+            raw_label = n.get("term") or n.get("statement", "")[:80] or n.get("name", n.get("id", ""))
+            label = html.escape(raw_label)
+            raw_def = n.get("definition") or n.get("statement", "") or n.get("when_to_use", "")
+            definition = html.escape(raw_def[:120])
+            epistemic = html.escape(n.get("epistemic_status", ""))
             badge = f'<span style="color:{color};font-size:10px;border:1px solid {color}33;padding:1px 6px;border-radius:4px;margin-left:8px">{epistemic}</span>' if epistemic else ""
             items += f"""<div style="padding:10px 14px;border-bottom:1px solid #111;cursor:pointer" onmouseover="this.style.background='#0a0a14'" onmouseout="this.style.background='transparent'">
   <div style="color:{color};font-size:13px">{icon} {label}{badge}</div>
-  <div style="font-size:11px;color:#666;margin-top:4px">{definition[:120]}{'...' if len(definition)>120 else ''}</div>
+  <div style="font-size:11px;color:#666;margin-top:4px">{definition}{'...' if len(raw_def)>120 else ''}</div>
 </div>"""
         groups_html += f"""<div style="margin:20px 0">
   <h2 style="color:{color}">{ntype.upper()}S <span style="font-size:11px;color:#555">({len(nodes_in_group)})</span></h2>
@@ -1250,6 +1261,16 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write("<h3>Semantic Field não disponível</h3><p>Sem dados de semantic field nesta sessão.</p>".encode())
 
     def do_POST(self):
+        # Anti-CSRF / Origin Validation
+        origin = self.headers.get("Origin") or self.headers.get("Referer")
+        if origin:
+            parsed = urlparse(origin)
+            if parsed.hostname not in ("127.0.0.1", "localhost"):
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Forbidden Origin (CSRF Protection)")
+                return
+
         if self.path == "/api/settings":
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
@@ -1372,6 +1393,12 @@ class Handler(BaseHTTPRequestHandler):
             if "multipart/form-data" not in content_type:
                 self.send_response(400)
                 self.end_headers()
+                return
+
+            if "boundary=" not in content_type:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"Missing boundary parameter")
                 return
 
             boundary = content_type.split("boundary=")[1].encode()
