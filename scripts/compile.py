@@ -370,8 +370,8 @@ def parse_compilation(text: str) -> dict:
     """Parse agent output into structured sections."""
     sections = {"sops": [], "principles": [], "concepts": [], "references": []}
 
-    # Split by ## headers
-    parts = re.split(r"^## ", text, flags=re.MULTILINE)
+    # Split by ## or ### headers (LLMs may use either level)
+    parts = re.split(r"^#{2,3} ", text, flags=re.MULTILINE)
 
     for part in parts:
         header = part.split("\n", 1)[0].strip().lower()
@@ -391,11 +391,18 @@ def parse_compilation(text: str) -> dict:
 
 def _parse_sops(text: str) -> list[dict]:
     sops = []
-    # Split on ### Name: or **Name**: patterns
-    blocks = re.split(r"\n#{2,3}\s+\*{0,2}Name\*{0,2}\s*:\s*|\n\*{0,2}Name\*{0,2}\s*:\s*", text)
+    # Split on ### **Name**: or #### **Title** patterns (h3/h4 + bold)
+    # Also handles: * **Name**: value
+    blocks = re.split(
+        r"\n#{2,4}\s+\*{0,2}(?:[Nn]ame|[A-Z][^\n]{2,60})\*{0,2}\s*:?\s*"
+        r"|\n\*{0,2}[Nn]ame\*{0,2}\s*:\s*",
+        text,
+    )
     for block in blocks[1:]:  # skip preamble
-        name_match = re.match(r"\s*(.+?)(?:\n|$)", block)
+        name_match = re.match(r"\s*\*{0,2}(.+?)\*{0,2}(?:\n|$)", block)
         name = name_match.group(1).strip().rstrip("*") if name_match else ""
+        # Strip **Name**: prefix if present
+        name = re.sub(r"^\*{0,2}[Nn]ame\*{0,2}\s*:\s*", "", name).strip()
 
         steps = []
         for m in re.finditer(r"\d+\.\s+(.+?)(?=\n\d+\.|\n\*{0,2}When|\Z)", block, re.DOTALL):
@@ -413,7 +420,8 @@ def _parse_sops(text: str) -> list[dict]:
 
 def _parse_principles(text: str) -> list[dict]:
     principles = []
-    blocks = re.split(r"\n-\s+\*{0,2}Statement\*{0,2}:", text)
+    # Match both "- **Statement**:" and "* **Statement**:" formats
+    blocks = re.split(r"\n[-*]\s+\*{0,2}Statement\*{0,2}:", text)
     for block in blocks[1:]:
         statement = re.match(r"\s*(.+?)(?:\n|$)", block)
         statement = statement.group(1).strip() if statement else ""
@@ -439,7 +447,8 @@ def _parse_principles(text: str) -> list[dict]:
 
 def _parse_concepts(text: str) -> list[dict]:
     concepts = []
-    blocks = re.split(r"\n-\s+\*{0,2}Term\*{0,2}:", text)
+    # Match both "- **Term**:" and "* **Term**:" formats
+    blocks = re.split(r"\n[-*]\s+\*{0,2}Term\*{0,2}:", text)
     for block in blocks[1:]:
         term = re.match(r"\s*(.+?)(?:\n|$)", block)
         term = term.group(1).strip() if term else ""
