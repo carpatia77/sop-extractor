@@ -394,8 +394,8 @@ def parse_compilation(text: str) -> dict:
     """Parse agent output into structured sections."""
     sections = {"sops": [], "principles": [], "concepts": [], "references": []}
 
-    # Split by ## or ### headers (LLMs may use either level)
-    parts = re.split(r"^#{2,3} ", text, flags=re.MULTILINE)
+    # Split only on level-2 headers to avoid chopping up "### Name:" inside SOP blocks.
+    parts = re.split(r"^##\s+(?=[A-Za-z])", text, flags=re.MULTILINE)
 
     for part in parts:
         header = part.split("\n", 1)[0].strip().lower()
@@ -410,30 +410,33 @@ def parse_compilation(text: str) -> dict:
         elif "reference" in header or "named" in header:
             sections["references"] = _parse_references(body)
 
+    if len(text.strip()) > 100 and not any(sections.values()):
+        raise ValueError("Falha no parse: a saída do agente não conteve nenhuma estrutura reconhecida.")
+
     return sections
 
 
 def _parse_sops(text: str) -> list[dict]:
     sops = []
     # Split on ### **Name**: or #### **Title** patterns (h3/h4 + bold)
-    # Also handles: * **Name**: value
+    # Also handles: * **Name**: value and - **Name**: value
     blocks = re.split(
         r"\n#{2,4}\s+\*{0,2}(?:[Nn]ame|[A-Z][^\n]{2,60})\*{0,2}\s*:?\s*"
-        r"|\n\*{0,2}[Nn]ame\*{0,2}\s*:\s*",
+        r"|\n[-*]?\s*\*{0,2}[Nn]ame\*{0,2}\s*:\s*",
         text,
     )
     for block in blocks[1:]:  # skip preamble
         name_match = re.match(r"\s*\*{0,2}(.+?)\*{0,2}(?:\n|$)", block)
         name = name_match.group(1).strip().rstrip("*") if name_match else ""
         # Strip **Name**: prefix if present
-        name = re.sub(r"^\*{0,2}[Nn]ame\*{0,2}\s*:\s*", "", name).strip()
+        name = re.sub(r"^[-*]?\s*\*{0,2}[Nn]ame\*{0,2}\s*:\s*", "", name).strip()
 
         steps = []
         for m in re.finditer(r"\d+\.\s+(.+?)(?=\n\d+\.|\n\*{0,2}When|\Z)", block, re.DOTALL):
             steps.append(m.group(1).strip())
 
         when = ""
-        when_match = re.search(r"\*{0,2}When to use\*{0,2}:\s*(.+?)(?=\n#{2,3}\s|\n\*{0,2}Name|\Z)", block, re.DOTALL)
+        when_match = re.search(r"\*{0,2}When to use\*{0,2}:\s*(.+?)(?=\n#{2,3}\s|\n[-*]?\s*\*{0,2}Name|\Z)", block, re.DOTALL)
         if when_match:
             when = when_match.group(1).strip()
 

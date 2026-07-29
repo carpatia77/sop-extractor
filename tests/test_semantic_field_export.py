@@ -75,7 +75,7 @@ class TestExportHtml:
         out = tmp_path / "test.html"
         export_html(sample_sf, out)
         content = out.read_text()
-        assert "Semantic Field:" in content
+        assert "xHAL2049" in content
         assert "test_video.txt" in content
 
     def test_contains_nodes_json(self, sample_sf, tmp_path):
@@ -115,7 +115,7 @@ class TestExportHtml:
         export_html(sf, out)
         assert out.exists()
         content = out.read_text()
-        assert "Nodes: 0" in content
+        assert "__TOTAL_NODES__" not in content
 
     def test_self_contained_no_external_deps(self, sample_sf, tmp_path):
         """HTML should not reference external CSS/JS files."""

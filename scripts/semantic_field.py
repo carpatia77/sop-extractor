@@ -14,6 +14,7 @@ disconfirming_evidence) lives on principle nodes, not as edges.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
 import unicodedata
@@ -511,15 +512,23 @@ def export_html(sf: dict, path: Path) -> None:
 
     meta = sf.get("metadata", {})
 
-    html = _HTML_TEMPLATE.replace("__NODES__", json.dumps(js_nodes, ensure_ascii=False))
-    html = html.replace("__EDGES__", json.dumps(js_edges, ensure_ascii=False))
-    html = html.replace("__SOURCE__", sf.get("source_file", "unknown"))
-    html = html.replace("__TOTAL_NODES__", str(meta.get("total_nodes", 0)))
-    html = html.replace("__TOTAL_EDGES__", str(meta.get("total_edges", 0)))
-    html = html.replace("__BUILT_AT__", sf.get("built_at", "?"))
+    # Use html.escape to safely inject text into HTML context
+    source_safe = html.escape(str(sf.get("source_file", "unknown")))
+    built_at_safe = html.escape(str(sf.get("built_at", "?")))
+
+    # Safely escape HTML closing tags in JSON strings to prevent </script> breakout
+    nodes_json = json.dumps(js_nodes, ensure_ascii=False).replace("</", "<\\/")
+    edges_json = json.dumps(js_edges, ensure_ascii=False).replace("</", "<\\/")
+
+    html_out = _HTML_TEMPLATE.replace("__NODES__", nodes_json)
+    html_out = html_out.replace("__EDGES__", edges_json)
+    html_out = html_out.replace("__SOURCE__", source_safe)
+    html_out = html_out.replace("__TOTAL_NODES__", str(meta.get("total_nodes", 0)))
+    html_out = html_out.replace("__TOTAL_EDGES__", str(meta.get("total_edges", 0)))
+    html_out = html_out.replace("__BUILT_AT__", built_at_safe)
 
     with open(path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_out)
 
 
 _HTML_TEMPLATE = """\

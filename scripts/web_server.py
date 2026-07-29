@@ -1395,15 +1395,41 @@ class Handler(BaseHTTPRequestHandler):
                 # Extract filename
                 if 'filename="' not in header:
                     continue
-                filename = header.split('filename="')[1].split('"')[0]
+                filename_raw = header.split('filename="')[1].split('"')[0]
+                if not filename_raw:
+                    continue
+
+                # Sanitize filename (prevent path traversal)
+                filename = os.path.basename(filename_raw)
                 if not filename:
                     continue
+                
+                # Check extension whitelist
+                allowed_extensions = {".pdf", ".epub", ".docx", ".txt", ".md", ".rst", ".html", ".rtf", ".mobi", ".azw", ".srt", ".vtt"}
+                ext = os.path.splitext(filename)[1].lower()
+                if ext not in allowed_extensions:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b"Extension not allowed")
+                    return
 
                 # Save to upload dir
                 sid = uuid.uuid4().hex[:8]
                 save_dir = os.path.join(UPLOAD_DIR, sid)
                 os.makedirs(save_dir, exist_ok=True)
                 save_path = os.path.join(save_dir, filename)
+                
+                # Double check containment (Absolute path verification)
+                try:
+                    resolved_path = Path(save_path).resolve()
+                    if not resolved_path.is_relative_to(Path(UPLOAD_DIR).resolve()):
+                        self.send_response(400)
+                        self.end_headers()
+                        self.wfile.write(b"Path traversal attempt blocked")
+                        return
+                except (ValueError, RuntimeError):
+                    continue
+
                 with open(save_path, "wb") as f:
                     f.write(file_data)
                 files.append(Path(save_path))

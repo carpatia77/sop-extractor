@@ -6,12 +6,13 @@ agent subprocess (mocked), SRT stripping, chunking, cache.
 """
 import json
 import os
+import re
+import sys
 import textwrap
 from unittest import mock
 
 import pytest
 
-import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from compile import (
@@ -750,31 +751,29 @@ class TestGroundingCheck:
 
 class TestCLI:
     def test_help(self):
-        result = os.popen("python3 scripts/compile.py --help").read()
+        result = os.popen(f'"{sys.executable}" scripts/compile.py --help').read()
         assert "Knowledge compilation" in result
         assert "--batch" in result
         assert "--agent" in result
 
     def test_dry_run(self, sample_source):
-        result = os.popen(
-            f"python3 scripts/compile.py {sample_source} --dry-run 2>&1"
-        ).read()
+        result = os.popen(f'"{sys.executable}" scripts/compile.py {sample_source} --dry-run').read()
         assert "DRY RUN" in result
 
     def test_missing_path(self):
         result = os.popen(
-            "python3 scripts/compile.py /nonexistent/path.txt 2>&1"
+            f'"{sys.executable}" scripts/compile.py /nonexistent/path.txt 2>&1'
         ).read()
         assert "not found" in result.lower() or "error" in result.lower()
 
     def test_grounding_check_in_help(self):
-        result = os.popen("python3 scripts/compile.py --help").read()
+        result = os.popen(f'"{sys.executable}" scripts/compile.py --help').read()
         assert "--grounding-check" in result
         assert "--grounding-floor" in result
         assert "--domain" in result
 
     def test_no_grounding_check_flag(self, sample_source):
         result = os.popen(
-            f"python3 scripts/compile.py {sample_source} --dry-run --no-grounding-check 2>&1"
+            f'"{sys.executable}" scripts/compile.py {sample_source} --dry-run --no-grounding-check 2>&1'
         ).read()
         assert "DRY RUN" in result
