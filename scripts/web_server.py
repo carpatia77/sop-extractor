@@ -894,30 +894,34 @@ def _render_cyberpunk_skill(md: str, filename: str) -> str:
     return _wrap_cyber(body, f"Skill — {filename}")
 
 
-def _render_cyberpunk_summary(md: str, run_data: dict | None) -> str:
-    # Parse stats from run_data
+def _render_cyberpunk_summary(md: str, run_data: dict | None, sf_data: dict | None = None) -> str:
+    # Parse stats — prefer SF counts over run_data (run.json may be stale)
     stats_html = ""
-    if run_data:
-        total = run_data.get("total_files", 0)
-        ok = run_data.get("successful", 0)
-        sops = run_data.get("total_sops", 0)
-        prins = run_data.get("total_principles", 0)
+    if run_data or sf_data:
+        rd = run_data or {}
+        sf = sf_data or {}
+        total = rd.get("total_files", 0)
+        # SF counts are authoritative (run.json may have 0 from old parser)
+        nodes = sf.get("nodes", [])
+        sops = len([n for n in nodes if n.get("type") == "sop"])
+        prins = len([n for n in nodes if n.get("type") == "principle"])
+        concepts = len([n for n in nodes if n.get("type") == "concept"])
         stats_html = f"""<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0">
   <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
     <div style="font-size:28px;color:#00d4ff;font-family:Orbitron">{total}</div>
     <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">FILES</div>
   </div>
   <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
-    <div style="font-size:28px;color:#00ff88;font-family:Orbitron">{ok}</div>
-    <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">SUCCESS</div>
-  </div>
-  <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
-    <div style="font-size:28px;color:#ff0080;font-family:Orbitron">{sops}</div>
+    <div style="font-size:28px;color:#00ff88;font-family:Orbitron">{sops}</div>
     <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">SOPS</div>
   </div>
   <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
-    <div style="font-size:28px;color:#7b2ff7;font-family:Orbitron">{prins}</div>
+    <div style="font-size:28px;color:#ff0080;font-family:Orbitron">{prins}</div>
     <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">PRINCIPLES</div>
+  </div>
+  <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-size:28px;color:#7b2ff7;font-family:Orbitron">{concepts}</div>
+    <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">CONCEPTS</div>
   </div>
 </div>"""
 
@@ -1171,6 +1175,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         summary_files = list(compilation.glob("*batch_summary*.md"))
         run_files = list(compilation.glob("*run*.json"))
+        sf_files = list(compilation.glob("*semantic_field*.json"))
         if summary_files:
             md = summary_files[0].read_text(encoding="utf-8")
             run_data = None
@@ -1179,7 +1184,14 @@ class Handler(BaseHTTPRequestHandler):
                     run_data = json.loads(run_files[0].read_text(encoding="utf-8"))
                 except Exception:
                     pass
-            html = _render_cyberpunk_summary(md, run_data)
+            # Override run_data counts with SF counts (run.json may be stale)
+            sf_data = None
+            if sf_files:
+                try:
+                    sf_data = json.loads(sf_files[0].read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            html = _render_cyberpunk_summary(md, run_data, sf_data)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
@@ -1192,12 +1204,16 @@ class Handler(BaseHTTPRequestHandler):
         session = _sessions.get(sid)
         if not session or not session.output_dir:
             self.send_response(404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
+            self.wfile.write(f"<h3>Sessão não encontrada: {sid}</h3><p>Sessões ativas: {list(_sessions.keys())}</p>".encode())
             return
         compilation = session.output_dir / "compilation"
         if not compilation.exists():
             self.send_response(404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
+            self.wfile.write(f"<h3>Compilação não encontrada</h3><p>Dir: {session.output_dir}</p>".encode())
             return
         sf_files = list(compilation.glob("*semantic_field*.json"))
         if sf_files:
@@ -1209,15 +1225,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(html.encode())
             except Exception as e:
+                import traceback
+                err_html = f"<h3>Erro no render: {e}</h3><pre>{traceback.format_exc()}</pre>"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(f"<h3>Erro ao renderizar: {e}</h3><pre>{sf_files[0].read_text(encoding='utf-8')[:2000]}</pre>".encode())
+                self.wfile.write(err_html.encode())
         else:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write("<h3>Semantic Field não disponível</h3>".encode())
+            self.wfile.write("<h3>Semantic Field não encontrado nesta compilação</h3>".encode())
         # Find semantic_field.json by pattern
         sf_files = list(compilation.glob("*semantic_field*.json"))
         if sf_files:
