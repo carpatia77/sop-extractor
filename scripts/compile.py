@@ -107,6 +107,30 @@ def _extract_pdf(path: Path) -> str:
         )
 
 
+def _extract_docx(path: Path) -> str:
+    """Extract text from .docx via zipfile + XML (no external deps)."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    with zipfile.ZipFile(str(path)) as z:
+        with z.open("word/document.xml") as f:
+            tree = ET.parse(f)
+
+    root = tree.getroot()
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    paragraphs = []
+    for p in root.iter(f"{{{ns['w']}}}p"):
+        texts = []
+        for t in p.iter(f"{{{ns['w']}}}t"):
+            if t.text:
+                texts.append(t.text)
+        line = "".join(texts)
+        if line.strip():
+            paragraphs.append(line)
+
+    return "\n\n".join(paragraphs)
+
+
 # ---------------------------------------------------------------------------
 # Compilation prompt template
 # ---------------------------------------------------------------------------
@@ -908,10 +932,12 @@ def main():
 
         print(f"\n[{i}/{len(sources)}] {filepath.name}  [{key}]")
 
-        # Read source (PDF extraction via pdfplumber, everything else as text)
+        # Read source (PDF/DOCX extraction, everything else as text)
         try:
             if filepath.suffix.lower() == ".pdf":
                 content = _extract_pdf(filepath)
+            elif filepath.suffix.lower() == ".docx":
+                content = _extract_docx(filepath)
             else:
                 content = filepath.read_text(encoding="utf-8")
         except Exception as e:
