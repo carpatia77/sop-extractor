@@ -203,9 +203,9 @@ def main(argv=None):
                     try:
                         info = ytdlp.get_info(url)
                         total_duration += info.get("duration", 0)
-                    except Exception:
+                    except (RuntimeError, ValueError, KeyError, OSError):
                         pass
-            except Exception:
+            except (RuntimeError, ValueError, ImportError):
                 pass
 
         # Get recommendation

@@ -26,7 +26,7 @@ def _course_stats(source_dir: str) -> dict:
                         h, mi, s = map(int, m.groups())
                         course_sec += h * 3600 + mi * 60 + s
                         break
-        except Exception:
+        except (OSError, UnicodeDecodeError, ValueError):
             pass
 
     output_words = 0
@@ -42,7 +42,7 @@ def _course_stats(source_dir: str) -> dict:
             if os.path.exists(f):
                 with open(f, encoding='utf-8-sig') as file:
                     output_words += sum(len(line.split()) for line in file.readlines())
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             pass
 
     hours = course_sec / 3600

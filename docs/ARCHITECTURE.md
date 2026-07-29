@@ -1,7 +1,6 @@
 # Architecture
 
-*Last diagram refresh: 2026-07-17 (Items 11–13 — Blackhat Mode, `sopx`, format
-contract, run_report gate, HTML viewer). See [CHANGELOG.md](../CHANGELOG.md)
+*Last diagram refresh: 2026-07-29 (Security Audit Blocks 1-3 — Fail-loud LLM parsing, xHAL2049 Anti-XSS/Anti-CSRF, Upload containment, Chavruta Engine consolidation). See [CHANGELOG.md](../CHANGELOG.md)
 for the full list of what shipped.*
 
 book-to-skill has two halves: a **deterministic extractor** (Python) and a

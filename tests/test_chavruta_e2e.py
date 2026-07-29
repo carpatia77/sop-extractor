@@ -16,7 +16,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from chavruta.engine import ChavrutaEngine
-from chavruta.engine_v2 import ChavrutaEngineV2
+from chavruta.engine import ChavrutaEngineV2
 from chavruta.semantic_guard import check_semantic_errors
 from chavruta.sf_embeddings import is_installed
 

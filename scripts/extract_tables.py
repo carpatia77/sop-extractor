@@ -45,7 +45,7 @@ def extract_with_pdfplumber(pdf_path: str, pages: list[int] | None = None) -> li
 
             try:
                 tables = page.extract_tables()
-            except Exception:
+            except (TypeError, ValueError, AttributeError, RuntimeError):
                 tables = []
 
             for table in tables:
@@ -96,7 +96,7 @@ def extract_with_pypdf(pdf_path: str, pages: list[int] | None = None) -> list[di
                 continue
             try:
                 text = reader.pages[page_num].extract_text() or ""
-            except Exception:
+            except (TypeError, ValueError, AttributeError, RuntimeError):
                 continue
 
             lines = [l for l in text.splitlines() if l.strip()]

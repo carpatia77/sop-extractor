@@ -1,139 +1,108 @@
 #!/usr/bin/env python3
-"""Chavruta Engine — debate motor for /teach mode.
+"""Chavruta Engine — robust debate motor with evidence-backed challenges.
 
-Orchestrates the Socratic debate loop:
-  1. User makes a claim
-  2. Engine validates against SF (drift + contradiction + semantic guard)
-  3. Engine evaluates depth (1-7)
-  4. Engine generates challenge based on depth level
-  5. Engine updates SF if new insight emerged
-
-The Semantic Field is the ground truth (Talmud). The refutation chain
-provides stress-test data. The depth tracker measures progress.
+Canonical implementation of the Socratic debate engine (consolidating engine v1/v2).
 
 Architecture:
-  - sf_matcher: finds nodes in SF (4 layers incl. Camada 4 embeddings)
-  - drift_detector: blocks drift + detects contradictions
-  - semantic_guard: catches type confusion, definition drift, scope expansion
-  - depth_tracker: measures debate depth
-  - evidence_ledger: provides evidence_text for anchor #3
+  sf_matcher (4 layers) → drift_detector → semantic_guard → depth_tracker → ChavrutaEngine
+  All stateful, all deterministic, all grounded in graph events.
 """
 from __future__ import annotations
 
+import json
+import os
+
 try:
-    from scripts.verify_concept_presence import salient_terms  # noqa: F401
     from scripts.chavruta.sf_matcher import find_nodes, find_best_match
     from scripts.chavruta.drift_detector import detect_drift
     from scripts.chavruta.depth_tracker import evaluate_depth, depth_bar
 except ImportError:
-    from verify_concept_presence import salient_terms  # noqa: F401
     from chavruta.sf_matcher import find_nodes, find_best_match
     from chavruta.drift_detector import detect_drift
     from chavruta.depth_tracker import evaluate_depth, depth_bar
 
 
 # ---------------------------------------------------------------------------
-# Challenge generation (depth-specific)
+# Evidence-backed challenge templates
 # ---------------------------------------------------------------------------
 
-def _challenge_depth_1(node: dict) -> str:
-    """Depth 1: ask what the author actually says."""
-    if node.get("type") == "concept":
-        term = node.get("term", "")
-        definition = node.get("definition", "")[:80]
-        return f"O que '{term}' significa neste contexto? ({definition}...) Como o autor define isso?"
+def _cite_evidence(node: dict) -> str:
+    """Generate evidence citation for a node."""
+    parts = []
+    eid = node.get("evidence_id") or node.get("entry_id", "")
+    if eid:
+        parts.append(f"[{eid}]")
+    epistemic = node.get("epistemic_status", "")
+    if epistemic:
+        parts.append(f"epistemic: {epistemic}")
+    locator = node.get("locator", "")
+    if locator:
+        parts.append(f"fonte: {locator}")
+    return " ".join(parts) if parts else ""
+
+
+def _challenge_with_evidence(node: dict, depth: int, connected: list[dict] | None = None) -> str:
+    """Generate a challenge that cites specific evidence."""
+    citation = _cite_evidence(node)
     statement = node.get("statement", "")
-    return f"O que exatamente o autor diz sobre isso? Mostre o trecho. ({statement[:80]}...)"
+    term = node.get("term", "")
 
+    if depth == 1:
+        return f"O que o autor diz sobre '{term or statement[:40]}'? Mostre o trecho. {citation}"
 
-def _challenge_depth_2(node: dict) -> str:
-    """Depth 2: ask why — what's the reasoning."""
-    if node.get("type") == "concept":
-        term = node.get("term", "")
-        return f"Por que '{term}' é importante neste framework? Qual é o raciocínio por trás?"
-    return "Por que o autor afirma isso? Qual é o raciocínio por trás?"
+    if depth == 2:
+        return f"Por que o autor afirma isso? Qual é o raciocínio? {citation}"
 
+    if depth == 3:
+        disconfirming = node.get("disconfirming_evidence", "")
+        if disconfirming:
+            return f"Mas e se {disconfirming}? Como você responde a isso? {citation}"
+        return f"O que aconteceria se essa premissa estiver errada? {citation}"
 
-def _challenge_depth_3(node: dict) -> str:
-    """Depth 3: present the disconfirming evidence."""
-    disconfirming = node.get("disconfirming_evidence", "")
-    if disconfirming:
-        return f"Mas e se {disconfirming}? Como você responde a isso?"
-    if node.get("type") == "concept":
-        term = node.get("term", "")
-        return (f"O que aconteceria se '{term}' não se aplicasse aqui? "
-                "Existem situações onde essa definição falha?")
-    return "O que aconteceria se essa premissa estiver errada?"
+    if depth == 4 and connected and len(connected) >= 2:
+        n1 = connected[0].get("term") or connected[0].get("name", "")
+        n2 = connected[1].get("term") or connected[1].get("name", "")
+        return f"Como '{n1}' se conecta com '{n2}'? Qual é a relação? {citation}"
 
+    if depth == 5:
+        alt = node.get("strongest_alternative", "")
+        if alt:
+            return f"O SF registra: {alt}. Você concorda? Por quê? {citation}"
+        return f"Há uma perspectiva alternativa que você considerou? {citation}"
 
-def _challenge_depth_4(node: dict, connected: list[dict]) -> str:
-    """Depth 4: ask how concepts connect."""
-    if len(connected) < 2:
-        if node.get("type") == "concept":
-            used_in = node.get("used_in", "")
-            if used_in:
-                return f"Você mencionou '{node.get('term', '')}'. Onde exatamente isso é usado? ({used_in})"
-            return f"Como '{node.get('term', '')}' se relaciona com os outros conceitos do framework?"
-        return "Você mencionou conceitos conectados. Como eles se relacionam?"
-    names = [n.get("term") or n.get("name") or n.get("statement", "")[:40] for n in connected[:2]]
-    return f"Como '{names[0]}' se conecta com '{names[1]}'? Qual é a relação?"
+    if depth == 6:
+        return ("Interessante — isso não está no SF. "
+                "Onde exatamente o autor afirma isso? "
+                "Precisamos de evidência antes de adicionar ao grafo. "
+                f"{citation}")
 
+    if depth == 7:
+        return ("Bom — reconhecer o que não se sabe é o nível mais alto. "
+                "O que você gostaria de entender melhor? "
+                "Podemos buscar na fonte original. "
+                f"{citation}")
 
-def _challenge_depth_5(node: dict) -> str:
-    """Depth 5: present the strongest alternative."""
-    alt = node.get("strongest_alternative", "")
-    if alt:
-        return f"O SF registra uma alternativa: {alt}. Você concorda? Por quê?"
-    if node.get("type") == "concept":
-        term = node.get("term", "")
-        definition = node.get("definition", "")
-        return (f"A definição de '{term}' é: {definition[:80]}. "
-                "Há uma perspectiva diferente ou mais completa que você considerou?")
-    return "Há uma perspectiva alternativa que você considerou?"
-
-
-def _challenge_depth_6(node: dict) -> str:
-    """Depth 6: validate the new term's grounding."""
-    if node.get("type") == "concept":
-        return ("Interessante — você está introduzindo algo novo. "
-                "Onde exatamente no material original isso aparece? "
-                "Precisamos de evidência antes de expandir o grafo.")
-    return ("Interessante — isso não está no SF. "
-            "Onde exatamente o autor afirma isso? "
-            "Precisamos de evidência antes de adicionar ao grafo.")
-
-
-def _challenge_depth_7(node: dict) -> str:
-    """Depth 7: acknowledge and deepen meta-cognition."""
-    return ("Bom — reconhecer o que não se sabe é o nível mais alto. "
-            "O que você gostaria de entender melhor? "
-            "Podemos buscar na fonte original.")
-
-
-CHALLENGE_FNS = {
-    1: _challenge_depth_1,
-    2: _challenge_depth_2,
-    3: _challenge_depth_3,
-    4: _challenge_depth_4,
-    5: _challenge_depth_5,
-    6: _challenge_depth_6,
-    7: _challenge_depth_7,
-}
+    return f"Elabore mais sobre: '{term or statement[:50]}'. {citation}"
 
 
 # ---------------------------------------------------------------------------
-# Chavruta Engine
+# Repetition detection
+# ---------------------------------------------------------------------------
+
+def _was_already_challenged(history: list[dict], node_id: str, depth: int) -> bool:
+    """Check if this node+depth combination was already challenged."""
+    for h in history:
+        if h.get("matched_node_id") == node_id and h.get("depth") == depth:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Chavruta Engine (Canonical)
 # ---------------------------------------------------------------------------
 
 class ChavrutaEngine:
-    """Stateful debate engine for /teach mode.
-
-    Usage:
-        engine = ChavrutaEngine(sf, task_contract, evidence_ledger)
-        result = engine.process("Volatility drag compounds against you")
-        print(result["challenge"])
-        print(result["depth_bar"])
-    """
+    """Robust debate engine with evidence-backed challenges."""
 
     def __init__(
         self,
@@ -146,115 +115,49 @@ class ChavrutaEngine:
         self.evidence_ledger = evidence_ledger
         self.history: list[dict] = []
         self.max_depth_seen: int = 0
+        self.nodes_challenged: set[str] = set()
 
     def process(self, user_response: str) -> dict:
-        """Process a user response through the debate loop.
-
-        Returns dict with:
-            - is_drift: bool
-            - is_contradiction: bool
-            - depth: int (1-7)
-            - depth_label: str (chess analogy)
-            - depth_bar: str (visual bar)
-            - challenge: str (next challenge question)
-            - matched_node: dict | None (primary node matched)
-            - match_layer: str (id/substring/salient/embedding/none)
-            - anchor_used: str
-            - semantic_issues: list (type confusion, drift, scope expansion)
-            - max_depth_seen: int (all-time high)
-        """
-        # Step 1: Drift + contradiction check
+        """Process a user response through the debate loop."""
         drift_result = detect_drift(
             user_response, self.sf, self.task_contract,
+            evidence_ledger=self.evidence_ledger,
         )
 
         if drift_result["is_drift"] and not drift_result["is_contradiction"]:
-            # Pure drift — outside scope
-            return {
-                "is_drift": True,
-                "is_contradiction": False,
-                "depth": 0,
-                "depth_label": "Fora de escopo",
-                "depth_bar": "░░░░░░░░░░░░░░░░░░░░ 0/7",
-                "challenge": ("Isso parece estar fora do tema. "
-                              "Vamos voltar ao que o autor ensina?"),
-                "matched_node": None,
-                "match_layer": "none",
-                "anchor_used": drift_result["anchor_used"],
-                "semantic_issues": [],
-                "max_depth_seen": self.max_depth_seen,
-            }
+            return self._build_drift_response(drift_result)
 
-        # Step 2: Evaluate depth
         depth_result = evaluate_depth(
             user_response, self.sf, self.task_contract, self.evidence_ledger,
         )
 
-        # Step 3: Find primary matched node (with layer tracking)
         best_node, match_layer = find_best_match(user_response, self.sf)
+        if drift_result["is_contradiction"] and best_node and not best_node.get("evidence_id"):
+            all_matches = find_nodes(user_response, self.sf)
+            for node in all_matches:
+                if node.get("evidence_id"):
+                    best_node = node
+                    match_layer = "substring"
+                    break
 
-        # Step 4: Semantic issues — reuse from drift_detector (already ran check_semantic_errors)
         semantic_issues = drift_result.get("semantic_issues", [])
 
-        # Step 5: Generate challenge
         depth = depth_result["depth"]
-        if drift_result["is_contradiction"]:
-            # Contradiction — challenge with the node (principle or concept)
-            if best_node:
-                node_label = (best_node.get("statement", "")
-                              or best_node.get("definition", "")
-                              or best_node.get("term", ""))[:80]
-                challenge = (f"Você está contradizendo: '{node_label}'. "
-                             f"Qual é a sua evidência?")
-            else:
-                challenge = "Qual é a evidência para essa afirmação?"
-        elif semantic_issues:
-            # Semantic error — challenge the specific issue
-            issue = semantic_issues[0]
-            challenge = f"Atenção: {issue['message'][:100]}. Verifique suas fontes."
-        elif best_node and depth in CHALLENGE_FNS:
-            # Normal depth-specific challenge
-            connected = []
-            if depth == 4:
-                # Find connected nodes for depth 4
-                matched = find_nodes(user_response, self.sf)
-                matched_ids = {n["id"] for n in matched}
-                # Case 1: both matched nodes are connected to each other
-                for edge in self.sf.get("edges", []):
-                    if edge["source"] in matched_ids and edge["target"] in matched_ids:
-                        for n in matched:
-                            if n["id"] in (edge["source"], edge["target"]):
-                                connected.append(n)
-                        break
-                # Case 2: matched nodes have neighbors not in matched set
-                if len(connected) < 2:
-                    for edge in self.sf.get("edges", []):
-                        if edge["source"] in matched_ids:
-                            for n in self.sf.get("nodes", []):
-                                if n["id"] == edge["target"] and n["id"] not in matched_ids:
-                                    connected.append(n)
-                        elif edge["target"] in matched_ids:
-                            for n in self.sf.get("nodes", []):
-                                if n["id"] == edge["source"] and n["id"] not in matched_ids:
-                                    connected.append(n)
-                # Case 3: concept-only SF (no edges) — find other concepts
-                if len(connected) < 2 and not self.sf.get("edges"):
-                    other_concepts = [n for n in self.sf.get("nodes", [])
-                                      if n["id"] != best_node["id"] and n.get("type") == "concept"]
-                    connected = other_concepts[:2]
-            challenge = CHALLENGE_FNS[depth](best_node) if depth != 4 else CHALLENGE_FNS[depth](best_node, connected)
-        else:
-            challenge = "Pode elaborar mais sobre o que o autor ensina?"
+        challenge = self._generate_challenge(
+            user_response, best_node, depth, drift_result, semantic_issues,
+        )
 
-        # Step 6: Update max depth
         self.max_depth_seen = max(self.max_depth_seen, depth)
+        node_id = best_node["id"] if best_node else None
+        if node_id:
+            self.nodes_challenged.add(node_id)
 
-        # Record in history
         self.history.append({
             "response": user_response[:200],
             "depth": depth,
             "is_contradiction": drift_result["is_contradiction"],
             "anchor_used": drift_result["anchor_used"],
+            "matched_node_id": node_id,
             "match_layer": match_layer,
             "semantic_issues": [
                 {"type": i["type"], "severity": i["severity"]} for i in semantic_issues
@@ -271,8 +174,85 @@ class ChavrutaEngine:
             "matched_node": best_node,
             "match_layer": match_layer,
             "anchor_used": drift_result["anchor_used"],
-            "semantic_issues": semantic_issues,
             "max_depth_seen": self.max_depth_seen,
+            "semantic_issues": semantic_issues,
+        }
+
+    def _generate_challenge(
+        self,
+        user_response: str,
+        best_node: dict | None,
+        depth: int,
+        drift_result: dict,
+        semantic_issues: list[dict] | None = None,
+    ) -> str:
+        """Generate an evidence-backed challenge."""
+        if drift_result["is_contradiction"]:
+            if best_node:
+                citation = _cite_evidence(best_node)
+                return (f"Você está contradizendo: '{best_node.get('statement', '')[:80]}'. "
+                        f"Qual é a sua evidência? {citation}")
+            return "Qual é a evidência para essa afirmação?"
+
+        if semantic_issues:
+            issue = semantic_issues[0]
+            return f"Atenção: {issue['message'][:100]}. Verifique suas fontes."
+
+        if best_node:
+            node_id = best_node["id"]
+            if _was_already_challenged(self.history, node_id, depth):
+                return f"Já discutimos isso. Vamos aprofundar em outro aspecto de '{best_node.get('term', '')}'?"
+
+            connected = []
+            if depth == 4:
+                matched = find_nodes(user_response, self.sf)
+                matched_ids = {n["id"] for n in matched}
+                for edge in self.sf.get("edges", []):
+                    if edge["source"] in matched_ids and edge["target"] in matched_ids:
+                        for n in matched:
+                            if n["id"] in (edge["source"], edge["target"]):
+                                connected.append(n)
+                        break
+                if len(connected) < 2:
+                    for edge in self.sf.get("edges", []):
+                        if edge["source"] in matched_ids:
+                            for n in self.sf.get("nodes", []):
+                                if n["id"] == edge["target"] and n["id"] not in matched_ids:
+                                    connected.append(n)
+                        elif edge["target"] in matched_ids:
+                            for n in self.sf.get("nodes", []):
+                                if n["id"] == edge["source"] and n["id"] not in matched_ids:
+                                    connected.append(n)
+
+            return _challenge_with_evidence(best_node, depth, connected)
+
+        return "Pode elaborar mais? Cite a fonte ou o trecho que sustenta sua afirmação."
+
+    def _build_drift_response(self, drift_result: dict) -> dict:
+        """Build response for drift (outside scope)."""
+        self.history.append({
+            "response": "(drift)",
+            "depth": 0,
+            "is_contradiction": False,
+            "anchor_used": "none",
+            "matched_node_id": None,
+            "match_layer": "none",
+            "semantic_issues": drift_result.get("semantic_issues", []),
+        })
+
+        return {
+            "is_drift": True,
+            "is_contradiction": False,
+            "depth": 0,
+            "depth_label": "Fora de escopo",
+            "depth_bar": "░░░░░░░░░░░░░░░░░░░░ 0/7",
+            "challenge": ("Isso parece estar fora do tema. "
+                          "Vamos voltar ao que o autor ensina?"),
+            "matched_node": None,
+            "match_layer": "none",
+            "anchor_used": "none",
+            "max_depth_seen": self.max_depth_seen,
+            "semantic_issues": drift_result.get("semantic_issues", []),
         }
 
     def get_session_summary(self) -> dict:
@@ -280,13 +260,38 @@ class ChavrutaEngine:
         if not self.history:
             return {"total_moves": 0, "max_depth": 0, "contradictions": 0}
 
-        depths = [h["depth"] for h in self.history]
+        depths = [h["depth"] for h in self.history if h["depth"] > 0]
         contradictions = sum(1 for h in self.history if h["is_contradiction"])
 
         return {
             "total_moves": len(self.history),
-            "max_depth": max(depths),
-            "avg_depth": sum(depths) / len(depths),
+            "max_depth": max(depths) if depths else 0,
+            "avg_depth": sum(depths) / len(depths) if depths else 0,
             "contradictions": contradictions,
+            "nodes_challenged": len(self.nodes_challenged),
             "depth_distribution": {d: depths.count(d) for d in range(1, 8)},
         }
+
+    def save_state(self, path: str) -> None:
+        """Save engine state to disk."""
+        state = {
+            "history": self.history,
+            "max_depth_seen": self.max_depth_seen,
+            "nodes_challenged": list(self.nodes_challenged),
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+
+    def load_state(self, path: str) -> None:
+        """Load engine state from disk."""
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as f:
+            state = json.load(f)
+        self.history = state.get("history", [])
+        self.max_depth_seen = state.get("max_depth_seen", 0)
+        self.nodes_challenged = set(state.get("nodes_challenged", []))
+
+
+# Backward compatibility alias
+ChavrutaEngineV2 = ChavrutaEngine

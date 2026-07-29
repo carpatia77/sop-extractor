@@ -258,7 +258,7 @@ def embed_sf(
         if model is not None:
             try:
                 expected_dim = model.get_embedding_dimension()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 expected_dim = meta.get("dim")
             if meta.get("dim") != expected_dim:
                 log.warning(
@@ -281,7 +281,7 @@ def embed_sf(
             if model is not None:
                 try:
                     expected_dim = model.get_embedding_dimension()
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     expected_dim = meta.get("dim")
                 if meta.get("dim") != expected_dim:
                     log.warning(

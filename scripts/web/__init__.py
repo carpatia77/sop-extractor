@@ -1,0 +1,1 @@
+"""Web console templates package."""

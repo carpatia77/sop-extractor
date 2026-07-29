@@ -249,7 +249,7 @@ class TestEngineIntegration:
 
     def test_engine_v2_returns_match_layer(self, sf_lexical):
         """Engine v2 process() returns match_layer in output."""
-        from chavruta.engine_v2 import ChavrutaEngineV2
+        from chavruta.engine import ChavrutaEngineV2
         engine = ChavrutaEngineV2(sf_lexical)
         result = engine.process("Volatility drag compounds against you")
         assert "match_layer" in result
@@ -265,7 +265,7 @@ class TestEngineIntegration:
 
     def test_engine_v2_returns_semantic_issues(self, sf_lexical):
         """Engine v2 process() returns semantic_issues in output."""
-        from chavruta.engine_v2 import ChavrutaEngineV2
+        from chavruta.engine import ChavrutaEngineV2
         engine = ChavrutaEngineV2(sf_lexical)
         result = engine.process("Volatility drag compounds against you")
         assert "semantic_issues" in result

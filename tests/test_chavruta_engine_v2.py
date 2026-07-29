@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from chavruta.engine_v2 import ChavrutaEngineV2, _cite_evidence
+from chavruta.engine import ChavrutaEngineV2, _cite_evidence
 
 
 # ---------------------------------------------------------------------------
