@@ -527,125 +527,248 @@ _HTML_TEMPLATE = """\
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Semantic Field: __SOURCE__</title>
+<title>xHAL2049 — __SOURCE__</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; }
-#header { padding: 16px 24px; background: #161b22; border-bottom: 1px solid #30363d; }
-#header h1 { font-size: 18px; color: #58a6ff; }
-#header .meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
-#graph { width: 100%; height: calc(100vh - 120px); }
-#legend { position: absolute; bottom: 16px; left: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; }
-#legend .item { display: flex; align-items: center; margin-bottom: 6px; }
-#legend .dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
-#detail { position: absolute; top: 80px; right: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 320px; max-height: 400px; overflow-y: auto; display: none; font-size: 13px; }
-#detail h3 { color: #58a6ff; margin-bottom: 8px; font-size: 14px; }
-#detail .field { margin-bottom: 6px; }
-#detail .label { color: #8b949e; }
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Share Tech Mono',monospace;background:#06060c;color:#e0e0e0;overflow:hidden}
+#grid{position:fixed;inset:0;background-image:
+  linear-gradient(rgba(0,212,255,.03) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(0,212,255,.03) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0}
+#header{position:fixed;top:0;left:0;right:0;padding:12px 24px;
+  background:linear-gradient(180deg,rgba(6,6,12,.95),rgba(6,6,12,.7));
+  border-bottom:1px solid rgba(0,212,255,.15);z-index:10;
+  display:flex;align-items:center;justify-content:space-between}
+#header h1{font-family:'Orbitron',sans-serif;font-size:16px;letter-spacing:3px;
+  background:linear-gradient(90deg,#00d4ff,#7b2ff7,#ff0080);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#header .meta{font-size:11px;color:#555;letter-spacing:1px}
+#graph{position:fixed;inset:0;z-index:1}
+#legend{position:fixed;bottom:16px;left:16px;
+  background:rgba(10,10,18,.9);border:1px solid rgba(0,212,255,.2);
+  border-radius:8px;padding:14px 16px;font-size:11px;z-index:10;
+  backdrop-filter:blur(8px)}
+#legend .item{display:flex;align-items:center;margin-bottom:8px;color:#888}
+#legend .dot{width:10px;height:10px;border-radius:50%;margin-right:10px;
+  box-shadow:0 0 8px currentColor}
+#legend .edge-sample{display:flex;align-items:center;margin-top:10px;padding-top:8px;
+  border-top:1px solid #1a1a2e}
+#legend .line{width:30px;height:2px;margin-right:10px}
+#detail{position:fixed;top:70px;right:16px;
+  background:rgba(10,10,18,.92);border:1px solid rgba(123,47,247,.3);
+  border-radius:10px;padding:20px;width:340px;max-height:70vh;
+  overflow-y:auto;display:none;font-size:12px;z-index:10;
+  backdrop-filter:blur(12px);box-shadow:0 0 30px rgba(123,47,247,.1)}
+#detail h3{font-family:'Orbitron',sans-serif;font-size:13px;
+  color:#00d4ff;margin-bottom:12px;letter-spacing:1px}
+#detail .field{margin-bottom:8px;line-height:1.5}
+#detail .label{color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase}
+#detail .value{color:#e0e0e0}
+#stats{position:fixed;bottom:16px;right:16px;
+  background:rgba(10,10,18,.9);border:1px solid rgba(0,212,255,.15);
+  border-radius:8px;padding:10px 14px;font-size:10px;color:#555;z-index:10;
+  letter-spacing:1px}
 </style>
 </head>
 <body>
+<div id="grid"></div>
 <div id="header">
-  <h1>Semantic Field: __SOURCE__</h1>
-  <div class="meta">Nodes: __TOTAL_NODES__ | Edges: __TOTAL_EDGES__ | Built: __BUILT_AT__</div>
+  <h1>xHAL2049</h1>
+  <div class="meta">__SOURCE__ &nbsp;|&nbsp; __TOTAL_NODES__ nodes &nbsp;|&nbsp; __TOTAL_EDGES__ edges &nbsp;|&nbsp; __BUILT_AT__</div>
 </div>
 <svg id="graph"></svg>
 <div id="legend">
-  <div class="item"><div class="dot" style="background:#3fb950"></div> Concept</div>
-  <div class="item"><div class="dot" style="background:#f0883e"></div> Principle</div>
-  <div class="item"><div class="dot" style="background:#bc8cff"></div> SOP</div>
-  <div class="item"><div class="dot" style="background:#8b949e"></div> Reference</div>
-  <div class="item"><div class="dot" style="background:#30363d; border:1px solid #58a6ff"></div> Edge (solid=explicit, dashed=inferred)</div>
+  <div class="item"><div class="dot" style="color:#00ff88;background:#00ff88"></div>Concept</div>
+  <div class="item"><div class="dot" style="color:#ff0080;background:#ff0080"></div>Principle</div>
+  <div class="item"><div class="dot" style="color:#7b2ff7;background:#7b2ff7"></div>SOP</div>
+  <div class="item"><div class="dot" style="color:#ffaa00;background:#ffaa00"></div>Reference</div>
+  <div class="edge-sample">
+    <div class="line" style="background:linear-gradient(90deg,#00d4ff,#7b2ff7)"></div>
+    <span style="color:#666">explicit edge</span>
+  </div>
+  <div class="edge-sample">
+    <div class="line" style="background:repeating-linear-gradient(90deg,#555 0,#555 4px,transparent 4px,transparent 8px)"></div>
+    <span style="color:#666">inferred edge</span>
+  </div>
 </div>
 <div id="detail" onclick="this.style.display='none'">
   <h3 id="detail-title"></h3>
   <div id="detail-body"></div>
 </div>
+<div id="stats">drag nodes &nbsp;|&nbsp; click for detail</div>
 <script>
 const nodes = __NODES__;
 const edges = __EDGES__;
-const W = window.innerWidth, H = window.innerHeight - 40;
+const W = window.innerWidth, H = window.innerHeight;
 const svg = document.getElementById('graph');
 svg.setAttribute('width', W);
 svg.setAttribute('height', H);
-const colors = { concept: '#3fb950', principle: '#f0883e', sop: '#bc8cff', reference: '#8b949e' };
-// Simple force-directed layout (no d3)
+
+const palette = {
+  concept:    { fill: '#00ff88', glow: '#00ff88', r: 10 },
+  principle:  { fill: '#ff0080', glow: '#ff0080', r: 8 },
+  sop:        { fill: '#7b2ff7', glow: '#7b2ff7', r: 8 },
+  reference:  { fill: '#ffaa00', glow: '#ffaa00', r: 6 },
+};
+
+// SVG defs for glow filters and gradients
+const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+defs.innerHTML = `
+  <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="glow-strong"><feGaussianBlur stdDeviation="6" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <linearGradient id="edge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.6"/>
+    <stop offset="100%" stop-color="#7b2ff7" stop-opacity="0.6"/>
+  </linearGradient>
+`;
+svg.appendChild(defs);
+
+// Force simulation
 const sim = nodes.map((n, i) => ({
-  ...n, x: W/2 + (Math.random()-0.5)*400, y: H/2 + (Math.random()-0.5)*400, vx: 0, vy: 0
+  ...n, x: W/2 + (Math.random()-0.5)*500, y: H/2 + (Math.random()-0.5)*400, vx: 0, vy: 0
 }));
 const nodeMap = {}; sim.forEach(n => nodeMap[n.id] = n);
+
+// Drag state
+let dragNode = null, dragOff = {x:0, y:0};
+
 function tick() {
+  if (dragNode) return; // pause physics while dragging
   // Repulsion
   for (let i = 0; i < sim.length; i++) {
     for (let j = i+1; j < sim.length; j++) {
       let dx = sim[j].x - sim[i].x, dy = sim[j].y - sim[i].y;
       let d = Math.sqrt(dx*dx + dy*dy) || 1;
-      let f = 200 / (d * d);
+      let f = 300 / (d * d);
       sim[i].vx -= dx/d * f; sim[i].vy -= dy/d * f;
       sim[j].vx += dx/d * f; sim[j].vy += dy/d * f;
     }
   }
-  // Attraction (edges)
+  // Edge attraction
   edges.forEach(e => {
     const s = nodeMap[e.source], t = nodeMap[e.target];
     if (!s || !t) return;
     let dx = t.x - s.x, dy = t.y - s.y;
     let d = Math.sqrt(dx*dx + dy*dy) || 1;
-    let f = (d - 100) * 0.01;
+    let f = (d - 150) * 0.008;
     s.vx += dx/d * f; s.vy += dy/d * f;
     t.vx -= dx/d * f; t.vy -= dy/d * f;
   });
   // Center gravity
-  sim.forEach(n => { n.vx += (W/2 - n.x) * 0.001; n.vy += (H/2 - n.y) * 0.001; });
-  // Apply velocity
-  sim.forEach(n => { n.x += n.vx * 0.5; n.y += n.vy * 0.5; n.vx *= 0.8; n.vy *= 0.8; });
+  sim.forEach(n => { n.vx += (W/2 - n.x) * 0.0005; n.vy += (H/2 - n.y) * 0.0005; });
+  // Damping
+  sim.forEach(n => { n.x += n.vx * 0.6; n.y += n.vy * 0.6; n.vx *= 0.85; n.vy *= 0.85; });
 }
+
 function render() {
-  svg.innerHTML = '';
-  // Edges
+  // Clear everything except defs
+  while (svg.childNodes.length > 1) svg.removeChild(svg.lastChild);
+
+  // Edge glow layer
+  const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   edges.forEach(e => {
     const s = nodeMap[e.source], t = nodeMap[e.target];
     if (!s || !t) return;
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', s.x); line.setAttribute('y1', s.y);
     line.setAttribute('x2', t.x); line.setAttribute('y2', t.y);
-    line.setAttribute('stroke', e.inferred ? '#30363d' : '#58a6ff');
-    line.setAttribute('stroke-width', '1');
-    if (e.inferred) line.setAttribute('stroke-dasharray', '4,4');
-    svg.appendChild(line);
+    if (e.inferred) {
+      line.setAttribute('stroke', '#555');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-dasharray', '6,4');
+      line.setAttribute('opacity', '0.5');
+    } else {
+      line.setAttribute('stroke', 'url(#edge-grad)');
+      line.setAttribute('stroke-width', '1.5');
+      line.setAttribute('filter', 'url(#glow)');
+    }
+    edgeGroup.appendChild(line);
   });
-  // Nodes
+  svg.appendChild(edgeGroup);
+
+  // Node layer
+  const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   sim.forEach(n => {
+    const p = palette[n.type] || palette.reference;
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('transform', `translate(${n.x},${n.y})`);
-    g.style.cursor = 'pointer';
-    g.onclick = () => showDetail(n);
+    g.style.cursor = 'grab';
+
+    // Outer glow ring
+    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    ring.setAttribute('r', p.r + 6);
+    ring.setAttribute('fill', 'none');
+    ring.setAttribute('stroke', p.glow);
+    ring.setAttribute('stroke-width', '1');
+    ring.setAttribute('opacity', '0.2');
+    ring.setAttribute('filter', 'url(#glow-strong)');
+    g.appendChild(ring);
+
+    // Main circle
     const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    c.setAttribute('r', n.type === 'concept' ? 8 : 6);
-    c.setAttribute('fill', colors[n.type] || '#8b949e');
+    c.setAttribute('r', p.r);
+    c.setAttribute('fill', p.fill);
+    c.setAttribute('filter', 'url(#glow)');
+    c.setAttribute('opacity', '0.9');
     g.appendChild(c);
+
+    // Label
     const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    t.setAttribute('x', 10); t.setAttribute('y', 4);
-    t.setAttribute('fill', '#c9d1d9'); t.setAttribute('font-size', '11');
-    t.textContent = n.label.length > 40 ? n.label.slice(0, 40) + '...' : n.label;
+    t.setAttribute('x', p.r + 8);
+    t.setAttribute('y', 4);
+    t.setAttribute('fill', '#aaa');
+    t.setAttribute('font-size', '11');
+    t.setAttribute('font-family', 'Share Tech Mono, monospace');
+    const label = n.label.length > 45 ? n.label.slice(0, 45) + '...' : n.label;
+    t.textContent = label;
     g.appendChild(t);
-    svg.appendChild(g);
+
+    // Drag handlers
+    g.onmousedown = (ev) => {
+      ev.stopPropagation();
+      dragNode = n;
+      dragOff = { x: ev.clientX - n.x, y: ev.clientY - n.y };
+      g.style.cursor = 'grabbing';
+    };
+    g.onclick = (ev) => { ev.stopPropagation(); showDetail(n); };
+
+    nodeGroup.appendChild(g);
   });
+  svg.appendChild(nodeGroup);
 }
+
 function showDetail(n) {
   const d = document.getElementById('detail');
   d.style.display = 'block';
+  const p = palette[n.type] || palette.reference;
   document.getElementById('detail-title').textContent = n.label;
+  document.getElementById('detail-title').style.color = p.fill;
   const fields = [
-    ['Type', n.type],
+    ['Type', n.type.toUpperCase()],
     ['Epistemic', n.epistemic],
     ['Entry ID', n.entry_id],
     ['Locator', n.locator],
     ['Source', n.source ? n.source.split('/').pop() : ''],
   ];
   document.getElementById('detail-body').innerHTML = fields
-    .filter(([,v]) => v).map(([k,v]) => `<div class="field"><span class="label">${k}:</span> ${v}</div>`).join('');
+    .filter(([,v]) => v)
+    .map(([k,v]) => `<div class="field"><div class="label">${k}</div><div class="value">${v}</div></div>`)
+    .join('');
 }
+
+// Drag events
+svg.onmousemove = (ev) => {
+  if (!dragNode) return;
+  dragNode.x = ev.clientX - dragOff.x;
+  dragNode.y = ev.clientY - dragOff.y;
+  dragNode.vx = 0; dragNode.vy = 0;
+};
+svg.onmouseup = () => { dragNode = null; };
+svg.onmouseleave = () => { dragNode = null; };
+
 function loop() { tick(); render(); requestAnimationFrame(loop); }
 loop();
 </script>
