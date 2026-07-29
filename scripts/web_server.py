@@ -497,6 +497,234 @@ def _run_pipeline(session: Session):
         session.fail(str(e))
 
 
+# ---------------------------------------------------------------------------
+# Cyberpunk HTML renderers
+# ---------------------------------------------------------------------------
+
+_CYBER_CSS = """\
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Share Tech Mono',monospace;background:#06060c;color:#e0e0e0;min-height:100vh}
+#grid{position:fixed;inset:0;background-image:
+  linear-gradient(rgba(0,212,255,.03) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(0,212,255,.03) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0}
+.wrap{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:24px 20px 60px}
+.header{padding:16px 0 20px;border-bottom:1px solid rgba(0,212,255,.15);margin-bottom:24px}
+.header h1{font-family:'Orbitron',sans-serif;font-size:18px;letter-spacing:3px;
+  background:linear-gradient(90deg,#00d4ff,#7b2ff7,#ff0080);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header .meta{font-size:11px;color:#555;margin-top:6px;letter-spacing:1px}
+.back{position:fixed;top:16px;right:24px;color:#555;text-decoration:none;font-size:12px;
+  z-index:10;letter-spacing:1px}
+.back:hover{color:#00d4ff}
+h2{font-family:'Orbitron',sans-serif;font-size:14px;color:#00d4ff;margin:28px 0 14px;
+  letter-spacing:2px;border-bottom:1px solid rgba(0,212,255,.1);padding-bottom:8px}
+h3{font-size:13px;color:#7b2ff7;margin:18px 0 8px;letter-spacing:1px}
+h4{font-size:12px;color:#ff0080;margin:14px 0 6px}
+p,li{font-size:13px;line-height:1.7;color:#bbb}
+ul,ol{padding-left:20px;margin:6px 0}
+li{margin-bottom:4px}
+code{background:#0d0d14;padding:2px 6px;border-radius:4px;font-size:12px;color:#00d4ff}
+pre{background:#050508;border:1px solid #1a1a2e;border-radius:8px;padding:16px;
+  overflow-x:auto;font-size:12px;line-height:1.6;margin:12px 0}
+hr{border:none;border-top:1px solid #1a1a2e;margin:20px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12px}
+th{text-align:left;padding:10px 12px;background:#0d0d14;color:#00d4ff;
+  border:1px solid #1a1a2e;font-size:11px;letter-spacing:1px;text-transform:uppercase}
+td{padding:8px 12px;border:1px solid #1a1a2e;color:#bbb}
+tr:hover td{background:#0a0a14}
+strong{color:#e0e0e0}
+em{color:#888}
+"""
+
+
+def _wrap_cyber(body: str, title: str) -> str:
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>xHAL2049 — {title}</title><style>{_CYBER_CSS}</style></head><body>
+<div id="grid"></div><a class="back" href="/">← VOLTAR</a>
+<div class="wrap">{body}</div></body></html>"""
+
+
+def _md_to_html(md: str) -> str:
+    """Minimal markdown → HTML (no external deps)."""
+    import re
+    lines = md.split("\n")
+    out = []
+    in_list = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            out.append("")
+            continue
+        # Headers
+        if stripped.startswith("#### "):
+            out.append(f"<h4>{stripped[5:]}</h4>")
+        elif stripped.startswith("### "):
+            out.append(f"<h3>{stripped[4:]}</h3>")
+        elif stripped.startswith("## "):
+            out.append(f"<h2>{stripped[3:]}</h2>")
+        elif stripped.startswith("# "):
+            out.append(f"<h1 style='font-size:20px;color:#00d4ff'>{stripped[2:]}</h1>")
+        elif stripped.startswith("---"):
+            out.append("<hr>")
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            item = stripped[2:]
+            item = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", item)
+            item = re.sub(r"\*(.+?)\*", r"<em>\1</em>", item)
+            out.append(f"<li>{item}</li>")
+        elif re.match(r"^\d+\.\s", stripped):
+            item = re.sub(r"^\d+\.\s+", "", stripped)
+            item = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", item)
+            out.append(f"<li>{item}</li>")
+        elif stripped.startswith("|"):
+            # Table row — handled separately
+            out.append(f"<tr>{''.join(f'<td>{c.strip()}</td>' for c in stripped.split('|')[1:-1])}</tr>")
+        else:
+            text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", stripped)
+            text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
+            text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+            out.append(f"<p>{text}</p>")
+    if in_list:
+        out.append("</ul>")
+    # Wrap table rows
+    result = "\n".join(out)
+    result = re.sub(r"(<tr>.*?</tr>(\n?)*)+", lambda m: f"<table>{m.group(0)}</table>", result)
+    return result
+
+
+def _render_cyberpunk_skill(md: str, filename: str) -> str:
+    body = f"""<div class="header">
+  <h1>SKILL</h1>
+  <div class="meta">{filename}</div>
+</div>
+{_md_to_html(md)}"""
+    return _wrap_cyber(body, f"Skill — {filename}")
+
+
+def _render_cyberpunk_summary(md: str, run_data: dict | None) -> str:
+    # Parse stats from run_data
+    stats_html = ""
+    if run_data:
+        total = run_data.get("total_files", 0)
+        ok = run_data.get("successful", 0)
+        sops = run_data.get("total_sops", 0)
+        prins = run_data.get("total_principles", 0)
+        stats_html = f"""<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0">
+  <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-size:28px;color:#00d4ff;font-family:Orbitron">{total}</div>
+    <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">FILES</div>
+  </div>
+  <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-size:28px;color:#00ff88;font-family:Orbitron">{ok}</div>
+    <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">SUCCESS</div>
+  </div>
+  <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-size:28px;color:#ff0080;font-family:Orbitron">{sops}</div>
+    <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">SOPS</div>
+  </div>
+  <div style="background:#0d0d14;border:1px solid #1a1a2e;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-size:28px;color:#7b2ff7;font-family:Orbitron">{prins}</div>
+    <div style="font-size:10px;color:#555;letter-spacing:1px;margin-top:4px">PRINCIPLES</div>
+  </div>
+</div>"""
+
+    # Parse per-file results from run_data
+    files_html = ""
+    if run_data and run_data.get("results"):
+        rows = ""
+        for r in run_data["results"]:
+            status_color = "#00ff88" if r.get("success") else "#ff0080"
+            rows += f"""<tr>
+  <td style="color:#e0e0e0">{r.get('filename','')}</td>
+  <td style="color:{status_color}">{'OK' if r.get('success') else 'FAILED'}</td>
+  <td>{r.get('sops_count',0)}</td>
+  <td>{r.get('principles_count',0)}</td>
+  <td>{r.get('response_chars',0):,}</td>
+  <td>{r.get('elapsed',0):.1f}s</td>
+</tr>"""
+        files_html = f"""<h2>PER-FILE RESULTS</h2>
+<table><thead><tr><th>FILE</th><th>STATUS</th><th>SOPS</th><th>PRINCIPLES</th><th>CHARS</th><th>TIME</th></tr></thead>
+<tbody>{rows}</tbody></table>"""
+
+    body = f"""<div class="header">
+  <h1>EXECUTION REPORT</h1>
+  <div class="meta">batch compilation summary</div>
+</div>
+{stats_html}
+{files_html}
+<h2>RAW LOG</h2>
+<pre>{md}</pre>"""
+    return _wrap_cyber(body, "Execution Report")
+
+
+def _render_cyberpunk_sf(sf: dict) -> str:
+    nodes = sf.get("nodes", [])
+    edges = sf.get("edges", [])
+
+    # Group nodes by type
+    groups = {}
+    for n in nodes:
+        t = n.get("type", "unknown")
+        groups.setdefault(t, []).append(n)
+
+    type_colors = {
+        "concept": "#00ff88", "principle": "#ff0080",
+        "sop": "#7b2ff7", "reference": "#ffaa00",
+    }
+    type_icons = {
+        "concept": "◆", "principle": "●",
+        "sop": "■", "reference": "▲",
+    }
+
+    groups_html = ""
+    for ntype, nodes_in_group in sorted(groups.items()):
+        color = type_colors.get(ntype, "#888")
+        icon = type_icons.get(ntype, "•")
+        items = ""
+        for n in nodes_in_group:
+            label = n.get("term") or n.get("statement", "")[:80] or n.get("name", n.get("id", ""))
+            definition = n.get("definition") or n.get("statement", "") or n.get("when_to_use", "")
+            epistemic = n.get("epistemic_status", "")
+            badge = f'<span style="color:{color};font-size:10px;border:1px solid {color}33;padding:1px 6px;border-radius:4px;margin-left:8px">{epistemic}</span>' if epistemic else ""
+            items += f"""<div style="padding:10px 14px;border-bottom:1px solid #111;cursor:pointer" onmouseover="this.style.background='#0a0a14'" onmouseout="this.style.background='transparent'">
+  <div style="color:{color};font-size:13px">{icon} {label}{badge}</div>
+  <div style="font-size:11px;color:#666;margin-top:4px">{definition[:120]}{'...' if len(definition)>120 else ''}</div>
+</div>"""
+        groups_html += f"""<div style="margin:20px 0">
+  <h2 style="color:{color}">{ntype.upper()}S <span style="font-size:11px;color:#555">({len(nodes_in_group)})</span></h2>
+  <div style="background:#0a0a10;border:1px solid #1a1a2e;border-radius:8px;overflow:hidden">{items}</div>
+</div>"""
+
+    # Edges summary
+    edges_html = ""
+    if edges:
+        edge_rows = ""
+        for e in edges:
+            src = e.get("source", "")
+            tgt = e.get("target", "")
+            etype = e.get("type", "")
+            inferred = "dashed" if e.get("inferred") else "solid"
+            edge_rows += f"<tr><td>{src}</td><td style='color:#00d4ff'>{etype}</td><td>{tgt}</td><td>{inferred}</td></tr>"
+        edges_html = f"""<h2>EDGES <span style="font-size:11px;color:#555">({len(edges)})</span></h2>
+<table><thead><tr><th>SOURCE</th><th>TYPE</th><th>TARGET</th><th>STYLE</th></tr></thead>
+<tbody>{edge_rows}</tbody></table>"""
+
+    body = f"""<div class="header">
+  <h1>SEMANTIC FIELD</h1>
+  <div class="meta">{sf.get('source_file','')} &nbsp;|&nbsp; {len(nodes)} nodes &nbsp;|&nbsp; {len(edges)} edges &nbsp;|&nbsp; {sf.get('built_at','')}</div>
+</div>
+{groups_html}
+{edges_html}"""
+    return _wrap_cyber(body, f"Semantic Field — {sf.get('source_file','')}")
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass  # silence request logs
@@ -604,15 +832,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        # Find .md files that are NOT semantic_field, NOT batch_summary, NOT run
         md_files = [f for f in compilation.glob("*.md")
                     if "semantic_field" not in f.name
                     and "batch_summary" not in f.name]
-        if md_files:
-            self._serve_file(md_files[0], "text/markdown; charset=utf-8")
-        else:
+        if not md_files:
             self.send_response(404)
             self.end_headers()
+            return
+        md = md_files[0].read_text(encoding="utf-8")
+        html = _render_cyberpunk_skill(md, md_files[0].name)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(html.encode())
 
     def _serve_graph(self, sid: str):
         session = _sessions.get(sid)
@@ -625,7 +857,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        # Find semantic field HTML by pattern
         sf_files = list(compilation.glob("*semantic_field*.html"))
         if sf_files:
             self._serve_file(sf_files[0], "text/html; charset=utf-8")
@@ -633,7 +864,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write("<h3>Grafo não disponível</h3><p>Execute a compilação com semantic field habilitado.</p>".encode())
+            self.wfile.write("<h3>Grafo não disponível</h3>".encode())
 
     def _serve_summary(self, sid: str):
         session = _sessions.get(sid)
@@ -646,15 +877,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        # Find batch_summary.md by pattern
         summary_files = list(compilation.glob("*batch_summary*.md"))
+        run_files = list(compilation.glob("*run*.json"))
         if summary_files:
             md = summary_files[0].read_text(encoding="utf-8")
-            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Summary</title>
-<style>body{{font-family:monospace;background:#0a0a0f;color:#e0e0e0;padding:24px;max-width:800px;margin:auto}}
-h1,h2,h3{{color:#00d4ff}}pre{{background:#050508;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px}}
-table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #1a1a2e;padding:8px;text-align:left}}</style>
-</head><body><pre>{md}</pre></body></html>"""
+            run_data = None
+            if run_files:
+                try:
+                    run_data = json.loads(run_files[0].read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            html = _render_cyberpunk_summary(md, run_data)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
@@ -673,6 +906,20 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #1a1a2e;padd
         if not compilation.exists():
             self.send_response(404)
             self.end_headers()
+            return
+        sf_files = list(compilation.glob("*semantic_field*.json"))
+        if sf_files:
+            sf_data = json.loads(sf_files[0].read_text(encoding="utf-8"))
+            html = _render_cyberpunk_sf(sf_data)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(html.encode())
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write("<h3>Semantic Field não disponível</h3>".encode())
             return
         # Find semantic_field.json by pattern
         sf_files = list(compilation.glob("*semantic_field*.json"))
