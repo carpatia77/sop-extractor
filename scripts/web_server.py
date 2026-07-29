@@ -502,6 +502,61 @@ def _run_pipeline(session: Session):
 
 
 # ---------------------------------------------------------------------------
+# Teach Mode briefing generator
+# ---------------------------------------------------------------------------
+
+def _generate_briefing(sf: dict) -> str:
+    """Generate a briefing from semantic field data for Teach Mode."""
+    nodes = sf.get("nodes", [])
+    edges = sf.get("edges", [])
+    source = sf.get("source_file", "desconhecido")
+
+    groups = {}
+    for n in nodes:
+        t = n.get("type", "unknown")
+        groups.setdefault(t, []).append(n)
+
+    lines = [f"**Briefing: {source}**\n"]
+    lines.append(f"Total: {len(nodes)} nós, {len(edges)} arestas\n")
+
+    if groups.get("sop"):
+        lines.append("**SOPs (Procedimentos):**")
+        for s in groups["sop"][:5]:
+            when = s.get("when_to_use", "")
+            lines.append(f"- {s.get('name', 'unnamed')}{' — ' + when[:60] if when else ''}")
+        if len(groups["sop"]) > 5:
+            lines.append(f"  ... +{len(groups['sop'])-5} mais")
+
+    if groups.get("principle"):
+        lines.append("\n**Princípios Fundamentais:**")
+        for p in groups["principle"][:5]:
+            stmt = p.get("statement", "")[:80]
+            ep = p.get("epistemic_status", "")
+            badge = f" [{ep}]" if ep else ""
+            lines.append(f"- {stmt}{'...' if len(p.get('statement',''))>80 else ''}{badge}")
+
+    if groups.get("concept"):
+        lines.append("\n**Conceitos-Chave:**")
+        for c in groups["concept"][:8]:
+            term = c.get("term", "")
+            defn = c.get("definition", "")[:60]
+            lines.append(f"- **{term}**: {defn}{'...' if len(c.get('definition',''))>60 else ''}")
+        if len(groups["concept"]) > 8:
+            lines.append(f"  ... +{len(groups['concept'])-8} mais")
+
+    if groups.get("reference"):
+        lines.append("\n**Referências:**")
+        for r in groups["reference"][:3]:
+            lines.append(f"- {r.get('name', 'unnamed')[:80]}")
+
+    lines.append("\n---")
+    lines.append("Faça uma afirmação sobre qualquer um destes tópicos para iniciar o debate.")
+    lines.append("O motor Chavruta vai desafiar sua compreensão profundamente.")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Cyberpunk HTML renderers
 # ---------------------------------------------------------------------------
 
@@ -635,7 +690,17 @@ startBtn.onclick = async () => {
     sendBtn.disabled = false;
     userInput.disabled = false;
     userInput.focus();
-    addMsg('engine', 'Sessão iniciada. Faça uma afirmação sobre o conteúdo para começarmos o debate.', null);
+    // Show briefing
+    if (data.briefing) {
+      const lines = data.briefing.split('\n');
+      let briefingHtml = lines.map(l => {
+        l = l.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        if (l.startsWith('- ')) return '<div style="padding:2px 0;color:#aaa">' + l + '</div>';
+        return '<div style="margin-top:8px">' + l + '</div>';
+      }).join('');
+      addHtmlMsg('engine', briefingHtml);
+    }
+    addMsg('engine', 'Faça uma afirmação sobre qualquer tópico acima para iniciar o debate.', null);
     startBtn.textContent = 'ATIVO';
     startBtn.classList.add('active');
   }
@@ -689,6 +754,15 @@ function addMsg(sender, text, meta) {
     </div>`;
   }
   div.innerHTML = html;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addHtmlMsg(sender, htmlContent) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + sender;
+  div.innerHTML = `<div class="sender">${sender === 'engine' ? '⚙ BRIEFING' : '✦ VOCÊ'}</div>
+    <div class="text">${htmlContent}</div>`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
@@ -1188,7 +1262,8 @@ class Handler(BaseHTTPRequestHandler):
                         "history": [],
                         "sf_path": sf_path,
                     }
-                    resp = json.dumps({"ok": True, "session_id": sid})
+                    briefing = _generate_briefing(sf)
+                    resp = json.dumps({"ok": True, "session_id": sid, "briefing": briefing})
             except Exception as e:
                 resp = json.dumps({"ok": False, "error": str(e)})
             self.send_response(200)
