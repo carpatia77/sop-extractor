@@ -316,9 +316,11 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
       <span class="preset" onclick="setPreset('https://api.anthropic.com','Anthropic')">Anthropic</span>
       <span class="preset" onclick="setPreset('https://api.openai.com','OpenAI')">OpenAI</span>
       <span class="preset" onclick="setPreset('https://integrate.api.nvidia.com','Nvidia')">Nvidia NIM</span>
+      <span class="preset" onclick="setPreset('https://generativelanguage.googleapis.com','Gemini')">Gemini</span>
+      <span class="preset" onclick="setPreset('https://api.minimax.chat','Minimax')">Minimax</span>
+      <span class="preset" onclick="setPreset('https://api.xiaomi.com','MiMo')">MiMo</span>
       <span class="preset" onclick="setPreset('https://api.groq.com/openai','Groq')">Groq</span>
       <span class="preset" onclick="setPreset('http://localhost:11434','Ollama')">Ollama</span>
-      <span class="preset" onclick="setPreset('https://api.together.xyz','Together')">Together</span>
       <span class="preset" onclick="setPreset('https://api.deepseek.com','DeepSeek')">DeepSeek</span>
     </div>
 
@@ -345,9 +347,11 @@ const MODEL_PRESETS = {
   'Anthropic': ['claude-sonnet-4-20250514','claude-3-5-sonnet-20241022','claude-3-haiku-20240307'],
   'OpenAI': ['gpt-4o','gpt-4o-mini','gpt-4-turbo'],
   'Nvidia': ['nvidia/llama-3.1-nemotron-ultra-253b-v1','meta/llama-3.1-70b-instruct','nvidia/llama-3.3-nemotron-super-49b-v1'],
+  'Gemini': ['gemini-2.5-pro','gemini-2.5-flash','gemini-2.0-flash'],
+  'Minimax': ['MiniMax-Text-01','abab6.5s-chat'],
+  'MiMo': ['mimo-v2.5','mimo-v2.5-pro'],
   'Groq': ['llama-3.3-70b-versatile','mixtral-8x7b-32768','gemma2-9b-it'],
   'Ollama': ['llama3.1','mistral','codellama','gemma2'],
-  'Together': ['meta-llama/Llama-3.3-70B-Instruct-Turbo','mistralai/Mixtral-8x22B-Instruct-v0.1'],
   'DeepSeek': ['deepseek-chat','deepseek-reasoner'],
 };
 
