@@ -230,7 +230,11 @@ def _call_api_direct(
 
     # OpenAI-compatible format (default for most providers)
     base = (base_url or "https://api.openai.com").rstrip("/")
-    url = f"{base}/v1/chat/completions"
+    # If base URL already ends with a path (e.g. /v1), don't append /v1 again
+    if base.endswith("/v1"):
+        url = f"{base}/chat/completions"
+    else:
+        url = f"{base}/v1/chat/completions"
 
     payload = json.dumps({
         "model": model,

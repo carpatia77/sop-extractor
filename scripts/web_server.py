@@ -315,7 +315,7 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
     <div class="presets">
       <span class="preset" onclick="setPreset('https://api.anthropic.com','Anthropic')">Anthropic</span>
       <span class="preset" onclick="setPreset('https://api.openai.com','OpenAI')">OpenAI</span>
-      <span class="preset" onclick="setPreset('https://integrate.api.nvidia.com','Nvidia')">Nvidia NIM</span>
+      <span class="preset" onclick="setPreset('https://integrate.api.nvidia.com/v1','Nvidia')">Nvidia NIM</span>
       <span class="preset" onclick="setPreset('https://generativelanguage.googleapis.com','Gemini')">Gemini</span>
       <span class="preset" onclick="setPreset('https://api.minimax.chat','Minimax')">Minimax</span>
       <span class="preset" onclick="setPreset('https://api.xiaomi.com','MiMo')">MiMo</span>
