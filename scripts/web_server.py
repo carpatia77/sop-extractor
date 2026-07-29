@@ -1121,18 +1121,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         sf_files = list(compilation.glob("*semantic_field*.json"))
         if sf_files:
-            sf_data = json.loads(sf_files[0].read_text(encoding="utf-8"))
-            html = _render_cyberpunk_sf(sf_data)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(html.encode())
+            try:
+                sf_data = json.loads(sf_files[0].read_text(encoding="utf-8"))
+                html = _render_cyberpunk_sf(sf_data)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(html.encode())
+            except Exception as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(f"<h3>Erro ao renderizar: {e}</h3><pre>{sf_files[0].read_text(encoding='utf-8')[:2000]}</pre>".encode())
         else:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write("<h3>Semantic Field não disponível</h3>".encode())
-            return
         # Find semantic_field.json by pattern
         sf_files = list(compilation.glob("*semantic_field*.json"))
         if sf_files:
