@@ -89,6 +89,24 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _extract_pdf(path: Path) -> str:
+    """Extract text from PDF via pdfplumber (if available) or fallback."""
+    try:
+        import pdfplumber
+        texts = []
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    texts.append(text)
+        return "\n\n".join(texts)
+    except ImportError:
+        raise RuntimeError(
+            "pdfplumber is required for PDF extraction. "
+            "Install with: pip install pdfplumber"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Compilation prompt template
 # ---------------------------------------------------------------------------
@@ -759,9 +777,12 @@ def main():
 
         print(f"\n[{i}/{len(sources)}] {filepath.name}  [{key}]")
 
-        # Read source
+        # Read source (PDF extraction via pdfplumber, everything else as text)
         try:
-            content = filepath.read_text(encoding="utf-8")
+            if filepath.suffix.lower() == ".pdf":
+                content = _extract_pdf(filepath)
+            else:
+                content = filepath.read_text(encoding="utf-8")
         except Exception as e:
             print(f"  Read error: {e}", file=sys.stderr)
             results.append({
