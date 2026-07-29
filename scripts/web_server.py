@@ -1022,6 +1022,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        if "/results/" in path or "/api/" in path:
+            print(f"[REQ] GET {path}", flush=True)
 
         if path == "/" or path == "/index.html":
             self.send_response(200)
@@ -1099,6 +1101,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path.startswith("/results/") and path.endswith("/sf"):
             sid = path.split("/")[2]
+            print(f"[DEBUG] /results/{sid}/sf called", flush=True)
             self._serve_sf(sid)
 
         else:
