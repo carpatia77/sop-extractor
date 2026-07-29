@@ -262,7 +262,7 @@ def _run_pipeline(session: Session):
             session.emit("info", f"▸ Processando: {f.name}")
             cmd = [
                 sys.executable, os.path.join(SCRIPTS_DIR, "run.py"),
-                str(f), "--compile",
+                str(f),
             ]
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
