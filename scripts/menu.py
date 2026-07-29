@@ -32,6 +32,8 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 CAPABILITIES = [
     Capability("0", "run", "Run — paste a link, system handles everything", "run.py",
                "<URL_or_path> [--workers N] [--gpu]", False, False, None),
+    Capability("16", "web", "Web Console — upload + process via browser", "web_server.py",
+               "[--port 8080]", False, False, None),
     Capability("1", "scan", "Scan a source (pre-flight)", "preflight_scan.py",
                "<path> [--emit-prompt]", False, False, None),
     Capability("2", "extract", "Extract a skill (hand-off to your agent)", None,
