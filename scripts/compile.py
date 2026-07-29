@@ -200,6 +200,56 @@ AGENT_COMMANDS = {
     "amp": ["amp", "-p"],
 }
 
+# Direct API models (no CLI needed — just API key)
+DIRECT_API_MODELS = {
+    "claude-sonnet-4-20250514": "claude-sonnet-4-20250514",
+    "claude-3-5-sonnet-20241022": "claude-3-5-sonnet-20241022",
+    "claude-3-haiku-20240307": "claude-3-haiku-20240307",
+}
+
+
+def _call_api_direct(
+    prompt: str,
+    api_key: str,
+    model: str = "claude-sonnet-4-20250514",
+    timeout: int = 300,
+) -> str:
+    """Call Anthropic API directly via HTTP (no CLI dependency)."""
+    import urllib.request
+    import urllib.error
+
+    model_id = DIRECT_API_MODELS.get(model, model)
+    payload = json.dumps({
+        "model": model_id,
+        "max_tokens": 16384,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            # Extract text from content blocks
+            texts = []
+            for block in data.get("content", []):
+                if block.get("type") == "text":
+                    texts.append(block["text"])
+            return "\n".join(texts)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")[:500]
+        raise RuntimeError(f"API error {e.code}: {body}")
+    except Exception as e:
+        raise RuntimeError(f"API call failed: {e}")
+
 
 def call_agent(
     prompt: str,
@@ -209,8 +259,16 @@ def call_agent(
 ) -> str:
     """Call agent CLI via subprocess in print mode.
 
+    If ANTHROPIC_API_KEY env var is set, calls API directly (no CLI needed).
     Raises RuntimeError on non-zero exit (never silently returns partial output).
     """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+    # Direct API mode — no CLI dependency
+    if api_key:
+        return _call_api_direct(prompt, api_key, model=model or "claude-sonnet-4-20250514", timeout=timeout)
+
+    # CLI mode
     if agent not in AGENT_COMMANDS:
         raise ValueError(f"Unknown agent: {agent}. Supported: {list(AGENT_COMMANDS)}")
 
@@ -240,7 +298,7 @@ def call_agent(
     except FileNotFoundError:
         raise RuntimeError(
             f"Agent '{agent}' CLI not found. "
-            f"Install: npm install -g @anthropic-ai/claude-code"
+            f"Set ANTHROPIC_API_KEY or install: npm install -g @anthropic-ai/claude-code"
         )
 
 

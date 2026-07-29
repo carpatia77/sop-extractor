@@ -87,6 +87,7 @@ def _html_page() -> str:
 <div class="banner">
   <h1>xHAL2049</h1>
   <div class="sub">SOP EXTRACTOR — KNOWLEDGE COMPILATION CONSOLE</div>
+  <a href="/settings" style="position:absolute;top:16px;right:24px;color:#555;text-decoration:none;font-size:13px" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#555'">⚙ Config</a>
 </div>
 
 <div class="main">
@@ -103,6 +104,7 @@ def _html_page() -> str:
     <button class="btn btn-primary" id="processBtn" disabled>▶ PROCESSAR</button>
     <button class="btn btn-danger" id="clearBtn" style="display:none">✕ LIMPAR</button>
     <div class="status" id="status"><span class="dot dot-idle"></span>Pronto</div>
+    <div id="apiKeyStatus" style="margin-left:auto;font-size:11px"></div>
   </div>
 
   <div class="console" id="console"></div>
@@ -254,8 +256,136 @@ function setStatus(state, text) {
   statusEl.innerHTML = `<span class="dot dot-${state}"></span>${text}`;
 }
 </script>
+
+<script>
+// Check API key status on load
+fetch('/api/settings').then(r=>r.json()).then(d=>{
+  const el = document.getElementById('apiKeyStatus');
+  if(d.has_key) {
+    el.innerHTML = '<span style="color:#00ff88">✓ API key configurada</span>';
+  } else {
+    el.innerHTML = '<span style="color:#ffaa00">⚠ Sem API key — <a href="/settings" style="color:#00d4ff">configurar</a></span>';
+  }
+});
+</script>
 </body>
 </html>"""
+
+
+SETTINGS_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>xHAL2049 — Configuração</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a0f;color:#e0e0e0;font-family:'Fira Code','Cascadia Code',monospace;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 16px}
+  .card{background:#0d0d14;border:1px solid #1a1a2e;border-radius:12px;padding:32px;max-width:500px;width:100%}
+  h1{font-size:20px;color:#00d4ff;margin-bottom:4px}
+  .sub{font-size:11px;color:#555;margin-bottom:24px}
+  label{display:block;font-size:12px;color:#888;margin-bottom:6px;letter-spacing:1px}
+  input[type=text]{width:100%;padding:10px 14px;background:#050508;border:1px solid #2a2a4a;border-radius:8px;color:#e0e0e0;font-family:inherit;font-size:13px;outline:none}
+  input[type=text]:focus{border-color:#7b2ff7}
+  .hint{font-size:11px;color:#444;margin-top:6px}
+  .btn{padding:10px 24px;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;margin-top:16px}
+  .btn-primary{background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff}
+  .btn-primary:hover{opacity:.85}
+  .btn-back{background:transparent;color:#888;border:1px solid #2a2a4a;margin-right:8px}
+  .btn-back:hover{color:#e0e0e0;border-color:#555}
+  .status{margin-top:12px;font-size:12px}
+  .status.ok{color:#00ff88}
+  .status.err{color:#ff4444}
+  select{width:100%;padding:10px 14px;background:#050508;border:1px solid #2a2a4a;border-radius:8px;color:#e0e0e0;font-family:inherit;font-size:13px;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>⚙ Configuração</h1>
+  <div class="sub">xHAL2049 — BYOK (Bring Your Own Key)</div>
+
+  <form id="settingsForm">
+    <label>PROVIDER</label>
+    <select id="provider">
+      <option value="anthropic">Anthropic (Claude)</option>
+      <option value="openai">OpenAI (GPT-4)</option>
+    </select>
+
+    <label style="margin-top:16px">API KEY</label>
+    <input type="text" id="apiKey" placeholder="sk-ant-... ou sk-..." autocomplete="off">
+    <div class="hint">Sua chave fica salva apenas neste servidor local. Nunca é enviada para fora.</div>
+
+    <label style="margin-top:16px">MODEL</label>
+    <select id="model">
+      <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (recomendado)</option>
+      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+      <option value="claude-3-haiku-20240307">Claude 3 Haiku (rápido, barato)</option>
+    </select>
+
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button type="button" class="btn btn-back" onclick="location.href='/'">← Voltar</button>
+      <button type="submit" class="btn btn-primary">Salvar</button>
+    </div>
+  </form>
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+// Load current settings
+fetch('/api/settings').then(r=>r.json()).then(d=>{
+  if(d.provider) document.getElementById('provider').value = d.provider;
+  if(d.model) document.getElementById('model').value = d.model;
+  if(d.has_key) document.getElementById('apiKey').placeholder = '•••••••••••••••• (já configurada)';
+});
+
+document.getElementById('settingsForm').addEventListener('submit', async(e)=>{
+  e.preventDefault();
+  const key = document.getElementById('apiKey').value.trim();
+  const provider = document.getElementById('provider').value;
+  const model = document.getElementById('model').value;
+  const body = {provider, model};
+  if(key) body.api_key = key;
+
+  const res = await fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  const statusEl = document.getElementById('status');
+  if(data.ok) {
+    statusEl.className = 'status ok';
+    statusEl.textContent = '✓ Salvo com sucesso';
+    if(key) document.getElementById('apiKey').value = '';
+  } else {
+    statusEl.className = 'status err';
+    statusEl.textContent = '✗ ' + (data.error || 'Erro ao salvar');
+  }
+});
+</script>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
+# Settings persistence
+# ---------------------------------------------------------------------------
+
+SETTINGS_PATH = os.path.join(UPLOAD_DIR, "_settings.json")
+
+
+def _load_settings() -> dict:
+    if os.path.exists(SETTINGS_PATH):
+        with open(SETTINGS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_settings(data: dict):
+    current = _load_settings()
+    current.update(data)
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(current, f, indent=2)
 
 
 class Session:
@@ -283,6 +413,12 @@ class Session:
 def _run_pipeline(session: Session):
     """Run sopx run on each uploaded file in a thread."""
     try:
+        # Load API key from settings
+        settings = _load_settings()
+        env = os.environ.copy()
+        if settings.get("api_key"):
+            env["ANTHROPIC_API_KEY"] = settings["api_key"]
+
         for f in session.files:
             session.emit("info", f"▸ Processando: {f.name}")
             cmd = [
@@ -291,7 +427,7 @@ def _run_pipeline(session: Session):
             ]
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, cwd=PROJECT_ROOT,
+                text=True, cwd=PROJECT_ROOT, env=env,
             )
             for line in proc.stdout:
                 text = line.rstrip()
@@ -334,6 +470,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(_html_page().encode())
+
+        elif path == "/settings":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(SETTINGS_HTML.encode())
+
+        elif path == "/api/settings":
+            settings = _load_settings()
+            resp = json.dumps({
+                "provider": settings.get("provider", "anthropic"),
+                "model": settings.get("model", "claude-sonnet-4-20250514"),
+                "has_key": bool(settings.get("api_key")),
+            })
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp.encode())
 
         elif path.startswith("/progress/"):
             sid = path.split("/")[-1]
@@ -479,6 +633,28 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #1a1a2e;padd
             self.wfile.write("<h3>Semantic Field não disponível</h3><p>Sem dados de semantic field nesta sessao.</p>".encode())
 
     def do_POST(self):
+        if self.path == "/api/settings":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body)
+                update = {}
+                if "api_key" in data and data["api_key"]:
+                    update["api_key"] = data["api_key"]
+                if "provider" in data:
+                    update["provider"] = data["provider"]
+                if "model" in data:
+                    update["model"] = data["model"]
+                _save_settings(update)
+                resp = json.dumps({"ok": True})
+            except Exception as e:
+                resp = json.dumps({"ok": False, "error": str(e)})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp.encode())
+            return
+
         if self.path == "/upload":
             content_type = self.headers.get("Content-Type", "")
             if "multipart/form-data" not in content_type:
