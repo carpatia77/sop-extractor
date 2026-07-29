@@ -662,6 +662,7 @@ let depthHistory = [];
 
 // Load available SFs
 fetch('/api/teach/sessions').then(r=>r.json()).then(list => {
+  console.log('Teach sessions:', list.length);
   list.forEach(s => {
     const opt = document.createElement('option');
     opt.value = s.id;
@@ -671,7 +672,12 @@ fetch('/api/teach/sessions').then(r=>r.json()).then(list => {
   });
   if (list.length > 0) {
     startBtn.disabled = false;
+  } else {
+    sfSelect.innerHTML = '<option value="">Nenhuma skill compilada encontrada</option>';
   }
+}).catch(err => {
+  console.error('Failed to load sessions:', err);
+  sfSelect.innerHTML = '<option value="">Erro ao carregar skills</option>';
 });
 
 startBtn.onclick = async () => {
