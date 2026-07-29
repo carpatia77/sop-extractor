@@ -38,12 +38,19 @@ except ImportError:
 
 def _challenge_depth_1(node: dict) -> str:
     """Depth 1: ask what the author actually says."""
+    if node.get("type") == "concept":
+        term = node.get("term", "")
+        definition = node.get("definition", "")[:80]
+        return f"O que '{term}' significa neste contexto? ({definition}...) Como o autor define isso?"
     statement = node.get("statement", "")
     return f"O que exatamente o autor diz sobre isso? Mostre o trecho. ({statement[:80]}...)"
 
 
 def _challenge_depth_2(node: dict) -> str:
     """Depth 2: ask why — what's the reasoning."""
+    if node.get("type") == "concept":
+        term = node.get("term", "")
+        return f"Por que '{term}' é importante neste framework? Qual é o raciocínio por trás?"
     return "Por que o autor afirma isso? Qual é o raciocínio por trás?"
 
 
@@ -52,12 +59,21 @@ def _challenge_depth_3(node: dict) -> str:
     disconfirming = node.get("disconfirming_evidence", "")
     if disconfirming:
         return f"Mas e se {disconfirming}? Como você responde a isso?"
+    if node.get("type") == "concept":
+        term = node.get("term", "")
+        return (f"O que aconteceria se '{term}' não se aplicasse aqui? "
+                "Existem situações onde essa definição falha?")
     return "O que aconteceria se essa premissa estiver errada?"
 
 
 def _challenge_depth_4(node: dict, connected: list[dict]) -> str:
     """Depth 4: ask how concepts connect."""
     if len(connected) < 2:
+        if node.get("type") == "concept":
+            used_in = node.get("used_in", "")
+            if used_in:
+                return f"Você mencionou '{node.get('term', '')}'. Onde exatamente isso é usado? ({used_in})"
+            return f"Como '{node.get('term', '')}' se relaciona com os outros conceitos do framework?"
         return "Você mencionou conceitos conectados. Como eles se relacionam?"
     names = [n.get("term") or n.get("name") or n.get("statement", "")[:40] for n in connected[:2]]
     return f"Como '{names[0]}' se conecta com '{names[1]}'? Qual é a relação?"
@@ -68,11 +84,20 @@ def _challenge_depth_5(node: dict) -> str:
     alt = node.get("strongest_alternative", "")
     if alt:
         return f"O SF registra uma alternativa: {alt}. Você concorda? Por quê?"
+    if node.get("type") == "concept":
+        term = node.get("term", "")
+        definition = node.get("definition", "")
+        return (f"A definição de '{term}' é: {definition[:80]}. "
+                "Há uma perspectiva diferente ou mais completa que você considerou?")
     return "Há uma perspectiva alternativa que você considerou?"
 
 
 def _challenge_depth_6(node: dict) -> str:
     """Depth 6: validate the new term's grounding."""
+    if node.get("type") == "concept":
+        return ("Interessante — você está introduzindo algo novo. "
+                "Onde exatamente no material original isso aparece? "
+                "Precisamos de evidência antes de expandir o grafo.")
     return ("Interessante — isso não está no SF. "
             "Onde exatamente o autor afirma isso? "
             "Precisamos de evidência antes de adicionar ao grafo.")
@@ -174,11 +199,13 @@ class ChavrutaEngine:
         # Step 5: Generate challenge
         depth = depth_result["depth"]
         if drift_result["is_contradiction"]:
-            # Contradiction — challenge with the principle
+            # Contradiction — challenge with the node (principle or concept)
             if best_node:
-                challenge = (f"Você está contradizendo: '{best_node.get('statement', '')[:80]}'. "
-                             f"Qual é a sua evidência? O SF registra epistemic_status: "
-                             f"{best_node.get('epistemic_status', '?')}")
+                node_label = (best_node.get("statement", "")
+                              or best_node.get("definition", "")
+                              or best_node.get("term", ""))[:80]
+                challenge = (f"Você está contradizendo: '{node_label}'. "
+                             f"Qual é a sua evidência?")
             else:
                 challenge = "Qual é a evidência para essa afirmação?"
         elif semantic_issues:
@@ -195,7 +222,6 @@ class ChavrutaEngine:
                 # Case 1: both matched nodes are connected to each other
                 for edge in self.sf.get("edges", []):
                     if edge["source"] in matched_ids and edge["target"] in matched_ids:
-                        # Both endpoints matched — they ARE the connected pair
                         for n in matched:
                             if n["id"] in (edge["source"], edge["target"]):
                                 connected.append(n)
@@ -211,6 +237,11 @@ class ChavrutaEngine:
                             for n in self.sf.get("nodes", []):
                                 if n["id"] == edge["source"] and n["id"] not in matched_ids:
                                     connected.append(n)
+                # Case 3: concept-only SF (no edges) — find other concepts
+                if len(connected) < 2 and not self.sf.get("edges"):
+                    other_concepts = [n for n in self.sf.get("nodes", [])
+                                      if n["id"] != best_node["id"] and n.get("type") == "concept"]
+                    connected = other_concepts[:2]
             challenge = CHALLENGE_FNS[depth](best_node) if depth != 4 else CHALLENGE_FNS[depth](best_node, connected)
         else:
             challenge = "Pode elaborar mais sobre o que o autor ensina?"
