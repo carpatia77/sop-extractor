@@ -598,7 +598,11 @@ def cache_key(filepath: Path, input_root: Path) -> str:
         rel = filepath.relative_to(input_root)
     except ValueError:
         rel = filepath.name
-    return str(rel).replace("/", "__").replace(os.sep, "__")
+    key = str(rel)
+    # When filepath IS input_root, relative_to returns "." — use filename instead
+    if key == ".":
+        key = filepath.name
+    return key.replace("/", "__").replace(os.sep, "__")
 
 
 # ---------------------------------------------------------------------------

@@ -599,13 +599,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        # Look for rendered HTML or SKILL.md
         compilation = session.output_dir / "compilation"
-        html_files = list(compilation.glob("*.html")) if compilation.exists() else []
-        if html_files:
-            self._serve_file(html_files[0], "text/html; charset=utf-8")
-        elif (compilation / "SKILL.md").exists():
-            self._serve_file(compilation / "SKILL.md", "text/markdown; charset=utf-8")
+        if not compilation.exists():
+            self.send_response(404)
+            self.end_headers()
+            return
+        # Find .md files that are NOT semantic_field, NOT batch_summary, NOT run
+        md_files = [f for f in compilation.glob("*.md")
+                    if "semantic_field" not in f.name
+                    and "batch_summary" not in f.name]
+        if md_files:
+            self._serve_file(md_files[0], "text/markdown; charset=utf-8")
         else:
             self.send_response(404)
             self.end_headers()
@@ -617,17 +621,19 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         compilation = session.output_dir / "compilation"
-        graph_files = list(compilation.glob("*.html")) if compilation.exists() else []
-        sf_html = compilation / "semantic_field.html" if compilation.exists() else None
-        if sf_html and sf_html.exists():
-            self._serve_file(sf_html, "text/html; charset=utf-8")
-        elif graph_files:
-            self._serve_file(graph_files[-1], "text/html; charset=utf-8")
+        if not compilation.exists():
+            self.send_response(404)
+            self.end_headers()
+            return
+        # Find semantic field HTML by pattern
+        sf_files = list(compilation.glob("*semantic_field*.html"))
+        if sf_files:
+            self._serve_file(sf_files[0], "text/html; charset=utf-8")
         else:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write("<h3>Grafo não disponível</h3><p>Execute a compilacao com semantic field habilitado.</p>".encode())
+            self.wfile.write("<h3>Grafo não disponível</h3><p>Execute a compilação com semantic field habilitado.</p>".encode())
 
     def _serve_summary(self, sid: str):
         session = _sessions.get(sid)
@@ -636,11 +642,14 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         compilation = session.output_dir / "compilation"
-        summary = compilation / "batch_summary.md" if compilation.exists() else None
-        run_json = compilation / "run.json" if compilation.exists() else None
-        if summary and summary.exists():
-            md = summary.read_text(encoding="utf-8")
-            # Convert simple markdown to HTML
+        if not compilation.exists():
+            self.send_response(404)
+            self.end_headers()
+            return
+        # Find batch_summary.md by pattern
+        summary_files = list(compilation.glob("*batch_summary*.md"))
+        if summary_files:
+            md = summary_files[0].read_text(encoding="utf-8")
             html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Summary</title>
 <style>body{{font-family:monospace;background:#0a0a0f;color:#e0e0e0;padding:24px;max-width:800px;margin:auto}}
 h1,h2,h3{{color:#00d4ff}}pre{{background:#050508;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px}}
@@ -650,8 +659,6 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #1a1a2e;padd
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(html.encode())
-        elif run_json and run_json.exists():
-            self._serve_file(run_json, "application/json")
         else:
             self.send_response(404)
             self.end_headers()
@@ -663,14 +670,19 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #1a1a2e;padd
             self.end_headers()
             return
         compilation = session.output_dir / "compilation"
-        sf_json = compilation / "semantic_field.json" if compilation.exists() else None
-        if sf_json and sf_json.exists():
-            self._serve_file(sf_json, "application/json")
+        if not compilation.exists():
+            self.send_response(404)
+            self.end_headers()
+            return
+        # Find semantic_field.json by pattern
+        sf_files = list(compilation.glob("*semantic_field*.json"))
+        if sf_files:
+            self._serve_file(sf_files[0], "application/json")
         else:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write("<h3>Semantic Field não disponível</h3><p>Sem dados de semantic field nesta sessao.</p>".encode())
+            self.wfile.write("<h3>Semantic Field não disponível</h3><p>Sem dados de semantic field nesta sessão.</p>".encode())
 
     def do_POST(self):
         if self.path == "/api/settings":
