@@ -77,6 +77,10 @@ def _html_page() -> str:
   .console .line.dim{color:#444}
   .console .ts{color:#333;margin-right:6px}
   .footer{text-align:center;padding:12px;font-size:10px;color:#333;border-top:1px solid #1a1a2e}
+  .results{margin-top:16px;padding:16px;background:#0a0a12;border:1px solid #1a1a2e;border-radius:10px}
+  .results-btns{display:flex;gap:10px;flex-wrap:wrap}
+  .btn-result{background:#1a1a2e;color:#e0e0e0;padding:10px 20px;border:1px solid #2a2a4a;border-radius:8px;text-decoration:none;font-family:inherit;font-size:12px;cursor:pointer;transition:all .15s;display:inline-block}
+  .btn-result:hover{background:#2a2a4a;border-color:#7b2ff7;transform:translateY(-1px)}
 </style>
 </head>
 <body>
@@ -102,6 +106,16 @@ def _html_page() -> str:
   </div>
 
   <div class="console" id="console"></div>
+
+  <div class="results" id="results" style="display:none">
+    <div style="font-size:12px;color:#555;margin-bottom:8px;letter-spacing:1px">RESULTADOS</div>
+    <div class="results-btns">
+      <a class="btn btn-result" id="btnSkill" href="#" target="_blank">📄 Ver Skill</a>
+      <a class="btn btn-result" id="btnGraph" href="#" target="_blank">🕸 Ver Grafo</a>
+      <a class="btn btn-result" id="btnSummary" href="#" target="_blank">📊 Ver Summary</a>
+      <a class="btn btn-result" id="btnSF" href="#" target="_blank">🧠 Semantic Field</a>
+    </div>
+  </div>
 </div>
 
 <div class="footer">sop-extractor v3.1.0 — knowledge compilation engine</div>
@@ -200,6 +214,7 @@ function listenProgress(sid) {
       log('ok', `✓ Pipeline concluído — ${data.message || 'sucesso'}`);
       setStatus('done', 'Concluído');
       processBtn.disabled = false;
+      showResults(sid);
       if (eventSource) eventSource.close();
     } else if (data.type === 'error') {
       log('err', `✗ ${data.message}`);
@@ -211,6 +226,15 @@ function listenProgress(sid) {
   eventSource.onerror = () => {
     // SSE connection closed — normal after completion
   };
+}
+
+function showResults(sid) {
+  const resultsEl = document.getElementById('results');
+  resultsEl.style.display = '';
+  document.getElementById('btnSkill').href = `/results/${sid}/skill`;
+  document.getElementById('btnGraph').href = `/results/${sid}/graph`;
+  document.getElementById('btnSummary').href = `/results/${sid}/summary`;
+  document.getElementById('btnSF').href = `/results/${sid}/sf`;
 }
 
 function log(level, text) {
@@ -241,6 +265,7 @@ class Session:
         self.q: queue.Queue = queue.Queue()
         self.done = False
         self.error = None
+        self.output_dir: Path | None = None
 
     def emit(self, level: str, text: str):
         self.q.put({"type": "line", "level": level, "text": text})
@@ -269,12 +294,27 @@ def _run_pipeline(session: Session):
                 text=True, cwd=PROJECT_ROOT,
             )
             for line in proc.stdout:
-                session.emit("info", line.rstrip())
+                text = line.rstrip()
+                session.emit("info", text)
+                # Track output dir from batch summary path
+                if "Batch summary:" in text or "batch_summary" in text:
+                    try:
+                        summary_path = text.split(":")[-1].strip()
+                        session.output_dir = Path(summary_path).parent.parent
+                    except Exception:
+                        pass
             proc.wait()
             if proc.returncode != 0:
                 session.emit("warn", f"⚠ {f.name} retornou exit code {proc.returncode}")
             else:
                 session.emit("ok", f"✓ {f.name} concluído")
+
+        # Find output dir from upload directory
+        if not session.output_dir:
+            upload_dir = Path(session.files[0]).parent
+            compilation = upload_dir / "compilation"
+            if compilation.exists():
+                session.output_dir = upload_dir
 
         session.finish(f"{len(session.files)} arquivo(s) processado(s)")
     except Exception as e:
@@ -327,9 +367,116 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(f"data: {data}\n\n".encode())
             self.wfile.flush()
 
+        elif path.startswith("/results/") and path.endswith("/skill"):
+            sid = path.split("/")[2]
+            self._serve_skill(sid)
+
+        elif path.startswith("/results/") and path.endswith("/graph"):
+            sid = path.split("/")[2]
+            self._serve_graph(sid)
+
+        elif path.startswith("/results/") and path.endswith("/summary"):
+            sid = path.split("/")[2]
+            self._serve_summary(sid)
+
+        elif path.startswith("/results/") and path.endswith("/sf"):
+            sid = path.split("/")[2]
+            self._serve_sf(sid)
+
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _serve_file(self, file_path: Path, content_type: str):
+        if not file_path.exists():
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(f"Arquivo não encontrado: {file_path.name}".encode())
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.end_headers()
+        self.wfile.write(file_path.read_bytes())
+
+    def _serve_skill(self, sid: str):
+        session = _sessions.get(sid)
+        if not session or not session.output_dir:
+            self.send_response(404)
+            self.end_headers()
+            return
+        # Look for rendered HTML or SKILL.md
+        compilation = session.output_dir / "compilation"
+        html_files = list(compilation.glob("*.html")) if compilation.exists() else []
+        if html_files:
+            self._serve_file(html_files[0], "text/html; charset=utf-8")
+        elif (compilation / "SKILL.md").exists():
+            self._serve_file(compilation / "SKILL.md", "text/markdown; charset=utf-8")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def _serve_graph(self, sid: str):
+        session = _sessions.get(sid)
+        if not session or not session.output_dir:
+            self.send_response(404)
+            self.end_headers()
+            return
+        compilation = session.output_dir / "compilation"
+        graph_files = list(compilation.glob("*.html")) if compilation.exists() else []
+        sf_html = compilation / "semantic_field.html" if compilation.exists() else None
+        if sf_html and sf_html.exists():
+            self._serve_file(sf_html, "text/html; charset=utf-8")
+        elif graph_files:
+            self._serve_file(graph_files[-1], "text/html; charset=utf-8")
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write("<h3>Grafo não disponível</h3><p>Execute a compilacao com semantic field habilitado.</p>".encode())
+
+    def _serve_summary(self, sid: str):
+        session = _sessions.get(sid)
+        if not session or not session.output_dir:
+            self.send_response(404)
+            self.end_headers()
+            return
+        compilation = session.output_dir / "compilation"
+        summary = compilation / "batch_summary.md" if compilation.exists() else None
+        run_json = compilation / "run.json" if compilation.exists() else None
+        if summary and summary.exists():
+            md = summary.read_text(encoding="utf-8")
+            # Convert simple markdown to HTML
+            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Summary</title>
+<style>body{{font-family:monospace;background:#0a0a0f;color:#e0e0e0;padding:24px;max-width:800px;margin:auto}}
+h1,h2,h3{{color:#00d4ff}}pre{{background:#050508;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px}}
+table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #1a1a2e;padding:8px;text-align:left}}</style>
+</head><body><pre>{md}</pre></body></html>"""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(html.encode())
+        elif run_json and run_json.exists():
+            self._serve_file(run_json, "application/json")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def _serve_sf(self, sid: str):
+        session = _sessions.get(sid)
+        if not session or not session.output_dir:
+            self.send_response(404)
+            self.end_headers()
+            return
+        compilation = session.output_dir / "compilation"
+        sf_json = compilation / "semantic_field.json" if compilation.exists() else None
+        if sf_json and sf_json.exists():
+            self._serve_file(sf_json, "application/json")
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write("<h3>Semantic Field não disponível</h3><p>Sem dados de semantic field nesta sessao.</p>".encode())
 
     def do_POST(self):
         if self.path == "/upload":
