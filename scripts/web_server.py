@@ -749,7 +749,6 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path.startswith("/results/") and path.endswith("/sf"):
             sid = path.split("/")[2]
-            print(f"[DEBUG] /results/{sid}/sf called", flush=True)
             self._serve_sf(sid)
 
         else:
@@ -899,6 +898,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         # Anti-CSRF / Origin Validation
+        sec_site = self.headers.get("Sec-Fetch-Site")
+        if sec_site == "cross-site":
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(b"Forbidden Cross-Site Request (CSRF Protection)")
+            return
+
         origin = self.headers.get("Origin") or self.headers.get("Referer")
         if origin:
             parsed = urlparse(origin)

@@ -418,25 +418,42 @@ def parse_compilation(text: str) -> dict:
 
 def _parse_sops(text: str) -> list[dict]:
     sops = []
-    # Split on ### **Name**: or #### **Title** patterns (h3/h4 + bold)
-    # Also handles: * **Name**: value and - **Name**: value
+    # Split on boundaries (start of string or newline followed by header or bullet item start)
     blocks = re.split(
-        r"\n#{2,4}\s+\*{0,2}(?:[Nn]ame|[A-Z][^\n]{2,60})\*{0,2}\s*:?\s*"
-        r"|\n[-*]?\s*\*{0,2}[Nn]ame\*{0,2}\s*:\s*",
+        r"(?:\r?\n|^)(?=\s*#{2,4}\s+|\s*[-*]?\s*\*{0,2}[Nn]ame\*{0,2}\s*:)",
         text,
     )
-    for block in blocks[1:]:  # skip preamble
-        name_match = re.match(r"\s*\*{0,2}(.+?)\*{0,2}(?:\n|$)", block)
-        name = name_match.group(1).strip().rstrip("*") if name_match else ""
-        # Strip **Name**: prefix if present
-        name = re.sub(r"^[-*]?\s*\*{0,2}[Nn]ame\*{0,2}\s*:\s*", "", name).strip()
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        first_line = block.splitlines()[0].strip()
+        name_match = re.search(
+            r"^(?:\s*#{2,4}\s+(?:\*{0,2}[Nn]ame\*{0,2}\s*:\s*)?|\s*[-*]?\s*\*{0,2}[Nn]ame\*{0,2}\s*:\s*)\*{0,2}(.+?)\*{0,2}\s*$",
+            first_line,
+            re.IGNORECASE,
+        )
+        if not name_match:
+            name_match = re.search(r"^\s*#{2,4}\s+\*{0,2}(.+?)\*{0,2}\s*$", first_line)
+
+        if not name_match:
+            continue
+
+        name = name_match.group(1).strip()
+        name = re.sub(r"^[-*]?\s*\*{0,2}[Nn]ame\*{0,2}\s*:\s*", "", name, flags=re.IGNORECASE).strip()
+        name = name.rstrip("*").strip()
 
         steps = []
-        for m in re.finditer(r"\d+\.\s+(.+?)(?=\n\d+\.|\n\*{0,2}When|\Z)", block, re.DOTALL):
+        for m in re.finditer(r"\d+\.\s+(.+?)(?=\n\d+\.|\n\s*\*{0,2}When|\Z)", block, re.DOTALL):
             steps.append(m.group(1).strip())
 
         when = ""
-        when_match = re.search(r"\*{0,2}When to use\*{0,2}:\s*(.+?)(?=\n#{2,3}\s|\n[-*]?\s*\*{0,2}Name|\Z)", block, re.DOTALL)
+        when_match = re.search(
+            r"\*{0,2}When to use\*{0,2}:\s*(.+?)(?=\n\s*#{2,4}\s|\n\s*[-*]?\s*\*{0,2}[Nn]ame|\Z)",
+            block,
+            re.DOTALL | re.IGNORECASE,
+        )
         if when_match:
             when = when_match.group(1).strip()
 
@@ -447,19 +464,37 @@ def _parse_sops(text: str) -> list[dict]:
 
 def _parse_principles(text: str) -> list[dict]:
     principles = []
-    # Match both "- **Statement**:" and "* **Statement**:" formats
-    blocks = re.split(r"\n[-*]\s+\*{0,2}Statement\*{0,2}:", text)
-    for block in blocks[1:]:
-        statement = re.match(r"\s*(.+?)(?:\n|$)", block)
-        statement = statement.group(1).strip() if statement else ""
+    # Match boundaries (start of string or newline followed by header or bullet item start)
+    blocks = re.split(
+        r"(?:\r?\n|^)(?=\s*#{2,4}\s+|\s*[-*]?\s*\*{0,2}Statement\*{0,2}\s*:)",
+        text,
+    )
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        first_line = block.splitlines()[0].strip()
+        stmt_match = re.search(
+            r"^(?:\s*#{2,4}\s+(?:\*{0,2}Statement\*{0,2}\s*:\s*)?|\s*[-*]?\s*\*{0,2}Statement\*{0,2}\s*:\s*)\*{0,2}(.+?)\*{0,2}\s*$",
+            first_line,
+            re.IGNORECASE,
+        )
+        if not stmt_match:
+            stmt_match = re.search(r"\*{0,2}Statement\*{0,2}:\s*(.+?)(?:\n|$)", block, re.IGNORECASE)
+
+        if not stmt_match:
+            continue
+
+        statement = stmt_match.group(1).strip()
 
         epistemic = ""
-        ep_match = re.search(r"\*{0,2}Epistemic status\*{0,2}:\s*(\w+)", block)
+        ep_match = re.search(r"\*{0,2}Epistemic status\*{0,2}:\s*(\w+)", block, re.IGNORECASE)
         if ep_match:
             epistemic = ep_match.group(1).strip()
 
         evidence = ""
-        ev_match = re.search(r"\*{0,2}Evidence\*{0,2}:\s*(.+?)(?=\n-\s|\Z)", block, re.DOTALL)
+        ev_match = re.search(r"\*{0,2}Evidence\*{0,2}:\s*(.+?)(?=\n\s*[-*]\s+|\n\s*#{2,4}\s+|\Z)", block, re.DOTALL | re.IGNORECASE)
         if ev_match:
             evidence = ev_match.group(1).strip()
 
@@ -474,19 +509,37 @@ def _parse_principles(text: str) -> list[dict]:
 
 def _parse_concepts(text: str) -> list[dict]:
     concepts = []
-    # Match both "- **Term**:" and "* **Term**:" formats
-    blocks = re.split(r"\n[-*]\s+\*{0,2}Term\*{0,2}:", text)
-    for block in blocks[1:]:
-        term = re.match(r"\s*(.+?)(?:\n|$)", block)
-        term = term.group(1).strip() if term else ""
+    # Match boundaries (start of string or newline followed by header or bullet item start)
+    blocks = re.split(
+        r"(?:\r?\n|^)(?=\s*#{2,4}\s+|\s*[-*]?\s*\*{0,2}Term\*{0,2}\s*:)",
+        text,
+    )
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        first_line = block.splitlines()[0].strip()
+        term_match = re.search(
+            r"^(?:\s*#{2,4}\s+(?:\*{0,2}Term\*{0,2}\s*:\s*)?|\s*[-*]?\s*\*{0,2}Term\*{0,2}\s*:\s*)\*{0,2}(.+?)\*{0,2}\s*$",
+            first_line,
+            re.IGNORECASE,
+        )
+        if not term_match:
+            term_match = re.search(r"\*{0,2}Term\*{0,2}:\s*(.+?)(?:\n|$)", block, re.IGNORECASE)
+
+        if not term_match:
+            continue
+
+        term = term_match.group(1).strip()
 
         definition = ""
-        def_match = re.search(r"\*{0,2}Definition\*{0,2}:\s*(.+?)(?:\n|$)", block)
+        def_match = re.search(r"\*{0,2}Definition\*{0,2}:\s*(.+?)(?:\n|$)", block, re.IGNORECASE)
         if def_match:
             definition = def_match.group(1).strip()
 
         used_in = ""
-        ui_match = re.search(r"\*{0,2}Used in\*{0,2}:\s*(.+?)(?:\n|$)", block)
+        ui_match = re.search(r"\*{0,2}Used in\*{0,2}:\s*(.+?)(?:\n|$)", block, re.IGNORECASE)
         if ui_match:
             used_in = ui_match.group(1).strip()
 

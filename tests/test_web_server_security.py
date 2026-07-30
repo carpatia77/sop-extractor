@@ -1,7 +1,4 @@
-import os
-import json
-from pathlib import Path
-from scripts.web_server import _save_settings, SETTINGS_PATH, _md_to_html
+from scripts.web_server import _save_settings, _md_to_html
 
 def test_settings_chmod(tmp_path, monkeypatch):
     test_settings_file = tmp_path / "_settings.json"

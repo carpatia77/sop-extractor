@@ -6,7 +6,6 @@ agent subprocess (mocked), SRT stripping, chunking, cache.
 """
 import json
 import os
-import re
 import sys
 import textwrap
 from unittest import mock
@@ -242,6 +241,64 @@ class TestParseCompilation:
         assert len(sections["principles"]) == 1
         assert len(sections["concepts"]) == 1
         assert len(sections["references"]) == 2
+
+    def test_parse_multiple_bullet_items(self):
+        """Verify parser correctly extracts ALL bullet items (- **Name**: ..., - **Statement**: ..., - **Term**: ...)
+        without silently dropping the first item or masking failures.
+        """
+        text = textwrap.dedent("""\
+            ## SOPs (Standard Operating Procedures)
+            - **Name**: Entry Sizing
+            - **Steps**:
+            1. Calculate risk per trade
+            2. Adjust position size
+            - **When to use**: Market open
+
+            - **Name**: Exit Sizing
+            - **Steps**:
+            1. Monitor stop loss
+            - **When to use**: End of day
+
+            ## Fundamental Principles
+            - **Statement**: Never risk more than 1% per trade.
+            - **Epistemic status**: certain
+            - **Evidence**: Source page 12
+
+            - **Statement**: Cut losses quickly.
+            - **Epistemic status**: probable
+            - **Evidence**: Source page 15
+
+            ## Key Concepts
+            - **Term**: Drawdown
+            - **Definition**: Peak to trough decline.
+            - **Used in**: Entry Sizing
+
+            ## Named References
+            - Book A
+        """)
+        sections = parse_compilation(text)
+        assert len(sections["sops"]) == 2
+        assert sections["sops"][0]["name"] == "Entry Sizing"
+        assert len(sections["sops"][0]["steps"]) == 2
+        assert sections["sops"][0]["when_to_use"] == "Market open"
+        assert sections["sops"][1]["name"] == "Exit Sizing"
+        assert len(sections["sops"][1]["steps"]) == 1
+        assert sections["sops"][1]["when_to_use"] == "End of day"
+
+        assert len(sections["principles"]) == 2
+        assert sections["principles"][0]["statement"] == "Never risk more than 1% per trade."
+        assert sections["principles"][0]["epistemic_status"] == "certain"
+        assert sections["principles"][0]["evidence"] == "Source page 12"
+        assert sections["principles"][1]["statement"] == "Cut losses quickly."
+        assert sections["principles"][1]["epistemic_status"] == "probable"
+
+        assert len(sections["concepts"]) == 1
+        assert sections["concepts"][0]["term"] == "Drawdown"
+        assert sections["concepts"][0]["definition"] == "Peak to trough decline."
+        assert sections["concepts"][0]["used_in"] == "Entry Sizing"
+
+        assert len(sections["references"]) == 1
+        assert sections["references"][0] == "Book A"
 
 
 # ---------------------------------------------------------------------------
