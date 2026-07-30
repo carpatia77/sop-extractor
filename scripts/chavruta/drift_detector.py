@@ -22,6 +22,8 @@ Used by:
 """
 from __future__ import annotations
 
+import re
+
 try:
     from scripts.verify_concept_presence import salient_terms
 except ImportError:
@@ -97,11 +99,32 @@ def _contradicts_principle(response: str, sf: dict) -> bool:
 # Coverage calculation
 # ---------------------------------------------------------------------------
 
-def _calculate_coverage(response_terms: set, sf: dict) -> float:
-    """Calculate fraction of response terms that exist in the SF.
+PT_EN_STEM_MAP = {
+    "consistencia": "consist", "consistência": "consist", "consistente": "consist",
+    "plano": "plan", "planos": "plan",
+    "erro": "err", "erros": "err", "errar": "err",
+    "risco": "risk", "riscos": "risk",
+    "trade": "trade", "trader": "trader", "trading": "trad",
+    "mente": "mind", "mental": "mind", "psicologia": "mind",
+    "disciplina": "disciplin", "disciplinado": "disciplin",
+    "regra": "rule", "regras": "rule",
+    "ego": "ego", "emocao": "emot", "emoção": "emot", "emocoes": "emot", "emoções": "emot",
+    "processo": "process", "execucao": "execut", "execução": "execut",
+    "autor": "author", "metodo": "method", "método": "method",
+}
 
-    Returns 0.0-1.0 where 1.0 means all response terms are in the SF.
-    """
+
+def _stem_term(term: str) -> str:
+    t = term.lower()
+    if t in PT_EN_STEM_MAP:
+        return PT_EN_STEM_MAP[t]
+    if len(t) > 4:
+        t = re.sub(r'(ção|cao|mente|s|es)$', '', t)
+    return t[:5]
+
+
+def _calculate_coverage(response_terms: set, sf: dict) -> float:
+    """Calculate fraction of response terms that exist in the SF with multilingual stem matching."""
     all_sf_text = " ".join([
         " ".join([
             n.get("statement", ""),
@@ -114,7 +137,18 @@ def _calculate_coverage(response_terms: set, sf: dict) -> float:
     sf_terms = set(salient_terms(all_sf_text))
     if not sf_terms:
         return 0.0
-    mapped = response_terms & sf_terms
+
+    mapped = set()
+    sf_stems = {_stem_term(st) for st in sf_terms}
+
+    for rt in response_terms:
+        if rt in sf_terms:
+            mapped.add(rt)
+        else:
+            r_stem = _stem_term(rt)
+            if r_stem in sf_stems:
+                mapped.add(rt)
+
     return len(mapped) / len(response_terms) if response_terms else 0.0
 
 
@@ -126,30 +160,24 @@ def detect_drift(
     user_response: str,
     sf: dict,
     task_contract: dict | None = None,
-    match_threshold: float = 0.25,
+    match_threshold: float = 0.20,
     evidence_ledger: dict | None = None,
 ) -> dict:
-    """Detect if user response drifts from the knowledge scope.
+    """Detect if user response drifts from the knowledge scope."""
+    # Check meta-questions / clarification
+    meta_phrases = ["fora do tema", "como assim", "nao entendi", "não entendi", "por que", "porque", "qual e o tema", "qual é o tema"]
+    if any(p in user_response.lower() for p in meta_phrases):
+        return {
+            "is_drift": True,
+            "is_meta_question": True,
+            "is_contradiction": False,
+            "confidence": 0.9,
+            "reason": "User asking meta question / clarification",
+            "matched_nodes": [],
+            "anchor_used": "none",
+            "semantic_issues": [],
+        }
 
-    Args:
-        user_response: the user's text
-        sf: semantic field dict with nodes
-        task_contract: optional task contract with user_goal
-        match_threshold: minimum fraction of response terms that must
-            map to SF nodes (default 0.25 = 25%)
-
-    Returns:
-        dict with keys:
-            - is_drift: bool — True if response is outside knowledge scope
-            - confidence: float (0-1) — when is_drift=True: how sure we are
-              it's genuine drift (higher = more likely drift). When
-              is_drift=False: how strongly the response is anchored to SF
-              (higher = more grounded).
-            - reason: str (human-readable explanation)
-            - matched_nodes: list of node IDs that matched (annotation only)
-            - anchor_used: str (which anchor detected non-drift, or "none")
-            - is_contradiction: bool — True if response contradicts SF content
-    """
     response_terms = set(salient_terms(user_response))
     if not response_terms:
         return {

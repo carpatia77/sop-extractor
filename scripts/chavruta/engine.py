@@ -229,7 +229,15 @@ class ChavrutaEngine:
         return "Pode elaborar mais? Cite a fonte ou o trecho que sustenta sua afirmação."
 
     def _build_drift_response(self, drift_result: dict) -> dict:
-        """Build response for drift (outside scope)."""
+        """Build response for drift (outside scope) or meta questions."""
+        if drift_result.get("is_meta_question"):
+            challenge = ("Sua pergunta pede esclarecimento sobre o escopo do debate. "
+                         "Para aprofundarmos no tema do autor, explique como seu argumento se relaciona "
+                         "com conceitos como consistência, disciplina, ego ou execução de plano.")
+        else:
+            challenge = ("Isso parece estar fora do tema. "
+                         "Vamos voltar ao que o autor ensina?")
+
         self.history.append({
             "response": "(drift)",
             "depth": 0,
@@ -246,8 +254,7 @@ class ChavrutaEngine:
             "depth": 0,
             "depth_label": "Fora de escopo",
             "depth_bar": "░░░░░░░░░░░░░░░░░░░░ 0/7",
-            "challenge": ("Isso parece estar fora do tema. "
-                          "Vamos voltar ao que o autor ensina?"),
+            "challenge": challenge,
             "matched_node": None,
             "match_layer": "none",
             "anchor_used": "none",

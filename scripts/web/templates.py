@@ -55,7 +55,11 @@ def html_page() -> str:
 <div class="banner">
   <h1>xHAL2049</h1>
   <div class="sub">SOP EXTRACTOR — KNOWLEDGE COMPILATION CONSOLE</div>
-  <a href="/settings" style="position:absolute;top:16px;right:24px;color:#555;text-decoration:none;font-size:13px" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#555'">⚙ Config</a>
+  <div style="position:absolute;top:16px;right:24px;display:flex;gap:16px;align-items:center">
+    <a href="/teach" target="_blank" style="color:#00d4ff;text-decoration:none;font-size:12px;letter-spacing:1px" onmouseover="this.style.color='#7b2ff7'" onmouseout="this.style.color='#00d4ff'">⚔️ TEACH MODE</a>
+    <a href="#historySection" onclick="document.getElementById('historySection').scrollIntoView({behavior:'smooth'})" style="color:#888;text-decoration:none;font-size:12px;letter-spacing:1px" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#888'">📜 HISTÓRICO</a>
+    <a href="/settings" style="color:#555;text-decoration:none;font-size:12px" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#555'">⚙ CONFIG</a>
+  </div>
 </div>
 
 <div class="main">
@@ -78,12 +82,24 @@ def html_page() -> str:
   </div>
 
   <div class="results" id="results" style="display:none">
-    <div style="font-size:11px;color:#888;letter-spacing:1px;margin-bottom:10px">RESULTADOS DISPONÍVEIS:</div>
+    <div style="font-size:11px;color:#888;letter-spacing:1px;margin-bottom:10px">RESULTADOS DA EXTRAÇÃO ATUAL:</div>
     <div class="results-btns">
       <a class="btn-result" id="btnSkill" target="_blank">📄 Skill Markdown</a>
       <a class="btn-result" id="btnGraph" target="_blank">🕸 Grafo Hie</a>
       <a class="btn-result" id="btnSummary" target="_blank">📊 Execution Report</a>
       <a class="btn-result" id="btnSF" target="_blank">🌌 Semantic Field (JSON)</a>
+      <a class="btn-result" id="btnZip" target="_blank" style="border-color:#00ff88;color:#00ff88">📦 Baixar Tudo (.ZIP)</a>
+      <a class="btn-result" id="btnTeach" target="_blank" style="border-color:#7b2ff7;color:#00d4ff">⚔️ Teach Mode (Debate Socrático)</a>
+    </div>
+  </div>
+
+  <div class="results" id="historySection" style="margin-top:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:12px;color:#888;letter-spacing:1px;font-weight:bold">📜 HISTÓRICO DE EXTRAÇÕES</div>
+      <button onclick="loadHistory()" style="background:transparent;border:1px solid #333;color:#888;padding:4px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px">↺ Atualizar</button>
+    </div>
+    <div id="historyList" style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:11px;color:#555">Carregando histórico...</div>
     </div>
   </div>
 </div>
@@ -158,7 +174,7 @@ function startSSE(sid) {
   btnCancel.style.display = 'inline-block';
   log('info', `Iniciando sessão [${sid}]...`);
 
-  evtSource = new EventSource(`/events/${sid}`);
+  evtSource = new EventSource(`/progress/${sid}`);
   evtSource.onmessage = e => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'line') {
@@ -169,6 +185,12 @@ function startSSE(sid) {
       btnCancel.style.display = 'none';
       btnStart.disabled = false;
       showResults(sid);
+    } else if (msg.type === 'error') {
+      evtSource.close();
+      log('err', 'Erro no processamento: ' + msg.message);
+      setStatus('error', 'Falha no processamento');
+      btnCancel.style.display = 'none';
+      btnStart.disabled = false;
     }
   };
   evtSource.onerror = () => {
@@ -197,7 +219,45 @@ function showResults(sid) {
   document.getElementById('btnGraph').href = `/results/${sid}/graph`;
   document.getElementById('btnSummary').href = `/results/${sid}/summary`;
   document.getElementById('btnSF').href = `/results/${sid}/sf`;
+  document.getElementById('btnZip').href = `/results/${sid}/zip`;
+  document.getElementById('btnTeach').href = `/teach?session=${sid}`;
+  loadHistory();
 }
+
+async function loadHistory() {
+  const historyList = document.getElementById('historyList');
+  if (!historyList) return;
+  try {
+    const res = await fetch('/api/history');
+    const items = await res.json();
+    if (!items || items.length === 0) {
+      historyList.innerHTML = '<div style="font-size:11px;color:#555">Nenhuma extração anterior encontrada.</div>';
+      return;
+    }
+    historyList.innerHTML = items.map(item => `
+      <div style="background:#080810;border:1px solid #1a1a2e;border-radius:8px;padding:12px 16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px">
+        <div>
+          <div style="font-size:13px;font-weight:bold;color:#e0e0e0">${escapeHtml(item.filename)}</div>
+          <div style="font-size:11px;color:#666;margin-top:4px">
+            📅 ${item.created_at} &nbsp;|&nbsp; 📋 ${item.sops} SOPs &nbsp;•&nbsp; 💡 ${item.principles} Princípios &nbsp;•&nbsp; 🧠 ${item.concepts} Conceitos
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <a class="btn-result" style="padding:4px 10px;font-size:11px" href="/results/${item.sid}/skill" target="_blank">📄 Skill</a>
+          <a class="btn-result" style="padding:4px 10px;font-size:11px" href="/results/${item.sid}/graph" target="_blank">🕸 Grafo</a>
+          <a class="btn-result" style="padding:4px 10px;font-size:11px" href="/results/${item.sid}/summary" target="_blank">📊 Report</a>
+          <a class="btn-result" style="padding:4px 10px;font-size:11px" href="/results/${item.sid}/sf" target="_blank">🌌 JSON</a>
+          <a class="btn-result" style="padding:4px 10px;font-size:11px;border-color:#00ff88;color:#00ff88" href="/results/${item.sid}/zip" target="_blank">📦 .ZIP</a>
+          <a class="btn-result" style="padding:4px 10px;font-size:11px;border-color:#7b2ff7;color:#00d4ff" href="/teach?session=${item.sid}" target="_blank">⚔️ Teach</a>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    historyList.innerHTML = '<div style="font-size:11px;color:#ff4444">Erro ao carregar histórico.</div>';
+  }
+}
+document.addEventListener('DOMContentLoaded', loadHistory);
+loadHistory();
 
 function log(level, text) {
   const ts = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});

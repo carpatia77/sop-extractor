@@ -23,6 +23,13 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
 from pathlib import Path
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,13 +115,15 @@ def _run_file(path: str, model: str | None = None) -> int:
 
     ext = p.suffix.lower()
 
+    eff_model = model or os.environ.get("LLM_MODEL")
+
     # Compilable: books, transcripts, docs → compile directly
     if ext in COMPILABLE_EXTS:
         print(f"  📄 Arquivo compilável detectado: {_c(p.name, GREEN)}")
         print("  → Compilando diretamente\n")
         cmd = [sys.executable, os.path.join(SCRIPTS_DIR, "compile.py"), str(p)]
-        if model:
-            cmd.extend(["--model", model])
+        if eff_model:
+            cmd.extend(["--model", eff_model])
         return _run_cmd(cmd)
 
     # Audio: needs transcription → ingest (whisper) + compile
@@ -122,8 +131,8 @@ def _run_file(path: str, model: str | None = None) -> int:
         print(f"  🔊 Áudio detectado: {_c(p.name, GREEN)}")
         print("  → Transcrevendo + compilando\n")
         cmd = [sys.executable, os.path.join(SCRIPTS_DIR, "ingest.py"), str(p), "--compile"]
-        if model:
-            cmd.extend(["--model", model])
+        if eff_model:
+            cmd.extend(["--model", eff_model])
         return _run_cmd(cmd)
 
     # Video: needs download+transcription → ingest + compile

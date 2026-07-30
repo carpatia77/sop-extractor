@@ -142,7 +142,8 @@ def build_manifest(
                 # (e.g. output/ vs skills/) — relative_to raises unless one
                 # is an ancestor of the other; relpath handles it via "..".
                 base = Path(set_dir) if set_dir else output_dir.parent
-                member["skill_path"] = os.path.relpath(skill_dir, start=base)
+                rel = os.path.relpath(skill_dir, start=base)
+                member["skill_path"] = rel.replace("\\", "/")
             else:
                 member["skill_path"] = f"../skills/{sid}"
         else:

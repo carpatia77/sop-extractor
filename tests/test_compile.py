@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import textwrap
+import subprocess
 from unittest import mock
 
 import pytest
@@ -822,29 +823,26 @@ class TestGroundingCheck:
 
 class TestCLI:
     def test_help(self):
-        result = os.popen(f'"{sys.executable}" scripts/compile.py --help').read()
+        result = subprocess.run([sys.executable, "scripts/compile.py", "--help"], capture_output=True, text=True, check=False).stdout
         assert "Knowledge compilation" in result
         assert "--batch" in result
         assert "--agent" in result
 
     def test_dry_run(self, sample_source):
-        result = os.popen(f'"{sys.executable}" scripts/compile.py {sample_source} --dry-run').read()
+        result = subprocess.run([sys.executable, "scripts/compile.py", str(sample_source), "--dry-run"], capture_output=True, text=True, check=False).stdout
         assert "DRY RUN" in result
 
     def test_missing_path(self):
-        result = os.popen(
-            f'"{sys.executable}" scripts/compile.py /nonexistent/path.txt 2>&1'
-        ).read()
+        res = subprocess.run([sys.executable, "scripts/compile.py", "/nonexistent/path.txt"], capture_output=True, text=True, check=False)
+        result = res.stdout + res.stderr
         assert "not found" in result.lower() or "error" in result.lower()
 
     def test_grounding_check_in_help(self):
-        result = os.popen(f'"{sys.executable}" scripts/compile.py --help').read()
+        result = subprocess.run([sys.executable, "scripts/compile.py", "--help"], capture_output=True, text=True, check=False).stdout
         assert "--grounding-check" in result
         assert "--grounding-floor" in result
         assert "--domain" in result
 
     def test_no_grounding_check_flag(self, sample_source):
-        result = os.popen(
-            f'"{sys.executable}" scripts/compile.py {sample_source} --dry-run --no-grounding-check 2>&1'
-        ).read()
+        result = subprocess.run([sys.executable, "scripts/compile.py", str(sample_source), "--dry-run", "--no-grounding-check"], capture_output=True, text=True, check=False).stdout
         assert "DRY RUN" in result

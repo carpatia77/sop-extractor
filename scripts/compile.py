@@ -90,7 +90,7 @@ def sha256_file(path: Path) -> str:
 
 
 def _extract_pdf(path: Path) -> str:
-    """Extract text from PDF via pdfplumber (if available) or fallback."""
+    """Extract text from PDF via pdfplumber (if available) or pypdf fallback."""
     try:
         import pdfplumber
         texts = []
@@ -101,10 +101,26 @@ def _extract_pdf(path: Path) -> str:
                     texts.append(text)
         return "\n\n".join(texts)
     except ImportError:
-        raise RuntimeError(
-            "pdfplumber is required for PDF extraction. "
-            "Install with: pip install pdfplumber"
-        )
+        pass
+
+    # Try pypdf / PyPDF2 / pypdf3 fallback
+    for mod_name in ("pypdf", "PyPDF2", "pypdf3"):
+        try:
+            mod = __import__(mod_name)
+            reader = mod.PdfReader(str(path))
+            texts = []
+            for page in reader.pages:
+                t = page.extract_text()
+                if t:
+                    texts.append(t)
+            return "\n\n".join(texts)
+        except (ImportError, Exception):
+            continue
+
+    raise RuntimeError(
+        "pdfplumber or pypdf is required for PDF extraction. "
+        "Install with: pip install pdfplumber  OR  pip install pypdf"
+    )
 
 
 def _extract_docx(path: Path) -> str:
@@ -232,6 +248,14 @@ DIRECT_API_MODELS = {
 }
 
 
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
+
+
 def _call_api_direct(
     prompt: str,
     api_key: str,
@@ -246,15 +270,35 @@ def _call_api_direct(
     import urllib.request
     import urllib.error
 
-    # Determine API format from base_url
-    is_anthropic = "anthropic" in (base_url or "").lower() or model.startswith("claude")
+    # Auto-detect base_url from API key format if not explicitly provided
+    if not base_url:
+        if api_key.startswith("nvapi-"):
+            base_url = "https://integrate.api.nvidia.com/v1"
+        elif api_key.startswith("gsk_"):
+            base_url = "https://api.groq.com/openai/v1"
+        elif api_key.startswith("sk-or-"):
+            base_url = "https://openrouter.ai/api/v1"
+
+    # Only route to Anthropic API if base_url specifies anthropic or key is sk-ant-
+    is_anthropic = "anthropic" in (base_url or "").lower() or api_key.startswith("sk-ant-")
 
     if is_anthropic:
         return _call_anthropic_api(prompt, api_key, model, timeout)
 
+    # For OpenAI-compatible providers (Nvidia NIM, Groq, OpenRouter, OpenAI, etc.),
+    # default model if unsupplied or if set to a Claude model
+    if not model or model.startswith("claude"):
+        if "nvidia" in (base_url or "").lower() or api_key.startswith("nvapi-"):
+            model = "meta/llama-3.1-70b-instruct"
+        elif "groq" in (base_url or "").lower() or api_key.startswith("gsk_"):
+            model = "llama-3.3-70b-versatile"
+        elif "openrouter" in (base_url or "").lower() or api_key.startswith("sk-or-"):
+            model = "meta-llama/llama-3.3-70b-instruct"
+        else:
+            model = "gpt-4o"
+
     # OpenAI-compatible format (default for most providers)
     base = (base_url or "https://api.openai.com").rstrip("/")
-    # If base URL already ends with a path (e.g. /v1), don't append /v1 again
     if base.endswith("/v1"):
         url = f"{base}/chat/completions"
     else:
@@ -715,6 +759,49 @@ def read_source_metadata(filepath: Path) -> dict:
 # Output writing with provenance (§2.2) — atomic writes
 # ---------------------------------------------------------------------------
 
+def get_effective_agent_and_model(agent: str | None, model: str | None) -> tuple[str, str]:
+    """Get the effective agent and model names, taking API keys and env vars into account."""
+    api_key = os.environ.get("LLM_API_KEY", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    base_url = os.environ.get("LLM_BASE_URL", "")
+    env_model = os.environ.get("LLM_MODEL", "")
+
+    effective_model = model or env_model or "default"
+
+    if api_key:
+        if not base_url:
+            if api_key.startswith("nvapi-"):
+                base_url = "https://integrate.api.nvidia.com/v1"
+            elif api_key.startswith("gsk_"):
+                base_url = "https://api.groq.com/openai/v1"
+            elif api_key.startswith("sk-or-"):
+                base_url = "https://openrouter.ai/api/v1"
+
+        if "nvidia" in (base_url or "").lower() or api_key.startswith("nvapi-"):
+            effective_agent = "nvidia-nim"
+            if not effective_model or effective_model.startswith("claude") or effective_model == "default":
+                effective_model = "meta/llama-3.1-70b-instruct"
+        elif "groq" in (base_url or "").lower() or api_key.startswith("gsk_"):
+            effective_agent = "groq"
+            if not effective_model or effective_model.startswith("claude") or effective_model == "default":
+                effective_model = "llama-3.3-70b-versatile"
+        elif "openrouter" in (base_url or "").lower() or api_key.startswith("sk-or-"):
+            effective_agent = "openrouter"
+            if not effective_model or effective_model.startswith("claude") or effective_model == "default":
+                effective_model = "meta-llama/llama-3.3-70b-instruct"
+        elif "anthropic" in (base_url or "").lower() or api_key.startswith("sk-ant-"):
+            effective_agent = "anthropic-api"
+            if not effective_model or effective_model == "default":
+                effective_model = "claude-sonnet-4-20250514"
+        else:
+            effective_agent = "direct-api"
+            if not effective_model or effective_model.startswith("claude") or effective_model == "default":
+                effective_model = "gpt-4o"
+    else:
+        effective_agent = agent or "claude"
+
+    return effective_agent, effective_model
+
+
 def write_compilation(
     filepath: Path,
     prompt: str,
@@ -1144,9 +1231,10 @@ def main():
                 print(f"  WARN: Evidence ledger failed: {e}")
 
         # Write output (§2.1 + §2.2) with collision-safe key
+        effective_agent, effective_model = get_effective_agent_and_model(args.agent, args.model)
         write_compilation(
             filepath, prompt, combined_response, all_sections,
-            output_dir, args.agent, args.model, source_hash, key,
+            output_dir, effective_agent, effective_model, source_hash, key,
             source_metadata=source_metadata,
         )
 

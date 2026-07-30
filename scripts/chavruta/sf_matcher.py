@@ -86,20 +86,20 @@ def match_by_substring(query: str, nodes: list[dict]) -> list[dict]:
 def match_by_salient(
     query: str,
     nodes: list[dict],
-    threshold: float = 0.4,
+    threshold: float = 0.3,
 ) -> list[tuple[dict, float]]:
-    """Match query against nodes using overlap coefficient.
+    """Match query against nodes using overlap coefficient and multilingual stem matching."""
+    try:
+        from chavruta.drift_detector import _stem_term
+    except ImportError:
+        def _stem_term(t: str) -> str:
+            return t.lower()[:5]
 
-    Uses overlap coefficient (|A∩B| / min(|A|,|B|)) instead of Jaccard
-    to avoid dilution from connector words in natural language.
-    Frases naturais não diluem mais o denominator.
-
-    Returns list of (node, overlap_score) tuples, sorted by score descending.
-    Only includes nodes with overlap > threshold.
-    """
     query_terms = set(salient_terms(query))
     if not query_terms:
         return []
+
+    q_stems = {_stem_term(qt) for qt in query_terms}
 
     matches = []
     for node in nodes:
@@ -112,9 +112,16 @@ def match_by_salient(
         node_terms = set(salient_terms(text))
         if not node_terms:
             continue
-        overlap = len(query_terms & node_terms) / min(len(query_terms), len(node_terms))
-        if overlap > threshold:
-            matches.append((node, round(overlap, 3)))
+        n_stems = {_stem_term(nt) for nt in node_terms}
+        
+        # Calculate overlap on terms or stems
+        direct_overlap = len(query_terms & node_terms)
+        stem_overlap = len(q_stems & n_stems)
+        best_overlap = max(direct_overlap, stem_overlap)
+
+        score = best_overlap / min(len(query_terms), len(node_terms))
+        if score > threshold:
+            matches.append((node, round(score, 3)))
 
     matches.sort(key=lambda x: x[1], reverse=True)
     return matches

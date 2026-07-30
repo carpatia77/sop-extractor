@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import io
 import json
 import os
 import queue
@@ -20,12 +21,19 @@ import subprocess
 import sys
 import threading
 import uuid
+import zipfile
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPTS_DIR)
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 UPLOAD_DIR = os.path.join(PROJECT_ROOT, "_web_uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -91,6 +99,9 @@ class Session:
         self.done = True
         self.error = message
 
+    def cancel(self):
+        self.fail("Processo cancelado pelo usuário")
+
 
 def _run_pipeline(session: Session):
     """Run sopx run on each uploaded file in a thread."""
@@ -98,8 +109,13 @@ def _run_pipeline(session: Session):
         # Load API settings
         settings = _load_settings()
         env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         if settings.get("api_key"):
             env["LLM_API_KEY"] = settings["api_key"]
+            # Auto-detect base_url if Nvidia API key is provided and base_url is empty
+            if settings.get("api_key", "").startswith("nvapi-") and not settings.get("base_url"):
+                env["LLM_BASE_URL"] = "https://integrate.api.nvidia.com/v1"
         if settings.get("base_url"):
             env["LLM_BASE_URL"] = settings["base_url"]
         if settings.get("model"):
@@ -111,9 +127,11 @@ def _run_pipeline(session: Session):
                 sys.executable, os.path.join(SCRIPTS_DIR, "run.py"),
                 str(f),
             ]
+            if settings.get("model"):
+                cmd.extend(["--model", settings["model"]])
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, cwd=PROJECT_ROOT, env=env,
+                text=True, encoding="utf-8", errors="replace", cwd=PROJECT_ROOT, env=env,
             )
             for line in proc.stdout:
                 text = line.rstrip()
@@ -314,6 +332,17 @@ fetch('/api/teach/sessions').then(r=>r.json()).then(list => {
   });
   if (list.length > 0) {
     startBtn.disabled = false;
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramSid = urlParams.get('session');
+    if (paramSid) {
+      for (let opt of sfSelect.options) {
+        if (opt.value === paramSid) {
+          sfSelect.value = paramSid;
+          startBtn.click();
+          break;
+        }
+      }
+    }
   } else {
     sfSelect.innerHTML = '<option value="">Nenhuma skill compilada encontrada</option>';
   }
@@ -703,7 +732,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(_TEACH_HTML.encode())
 
-        elif path.startswith("/progress/"):
+        elif path.startswith("/progress/") or path.startswith("/events/"):
             sid = path.split("/")[-1]
             session = _sessions.get(sid)
             if not session:
@@ -751,6 +780,112 @@ class Handler(BaseHTTPRequestHandler):
             sid = path.split("/")[2]
             self._serve_sf(sid)
 
+        elif path.startswith("/results/") and path.endswith("/zip"):
+            sid = path.split("/")[2]
+            compilation = self._get_compilation_dir(sid)
+            if not compilation:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write("<h3>Compilação não encontrada</h3>".encode())
+                return
+
+            mem = io.BytesIO()
+            with zipfile.ZipFile(mem, "w", zipfile.ZIP_DEFLATED) as z:
+                for f in compilation.rglob("*"):
+                    if f.is_file():
+                        arcname = f.relative_to(compilation)
+                        z.write(f, arcname)
+            zip_bytes = mem.getvalue()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="sopx_{sid}_compilation.zip"')
+            self.send_header("Content-Length", str(len(zip_bytes)))
+            self.end_headers()
+            self.wfile.write(zip_bytes)
+
+        elif path == "/api/history":
+            history = []
+            seen_filenames = set()
+            upload_dir = Path(UPLOAD_DIR)
+            if upload_dir.exists():
+                for d in sorted(upload_dir.iterdir(), key=lambda p: p.stat().st_mtime if p.is_dir() else 0, reverse=True):
+                    if not d.is_dir() or d.name.startswith("_"):
+                        continue
+                    compilation = d / "compilation"
+                    if not compilation.exists():
+                        continue
+
+                    md_files = [f for f in compilation.glob("*.md")
+                                if "semantic_field" not in f.name and "batch_summary" not in f.name]
+                    sf_files = list(compilation.glob("*semantic_field*.json"))
+                    filename = md_files[0].stem if md_files else d.name
+
+                    # Deduplicate by filename (keeping the most recent extraction)
+                    if filename in seen_filenames:
+                        continue
+                    seen_filenames.add(filename)
+
+                    sops_count = 0
+                    principles_count = 0
+                    concepts_count = 0
+                    if sf_files:
+                        try:
+                            sf_data = json.loads(sf_files[0].read_text(encoding="utf-8"))
+                            nodes = sf_data.get("nodes", [])
+                            sops_count = sum(1 for n in nodes if n.get("type") == "sop")
+                            principles_count = sum(1 for n in nodes if n.get("type") == "principle")
+                            concepts_count = sum(1 for n in nodes if n.get("type") == "concept")
+                        except Exception:
+                            pass
+
+                    history.append({
+                        "sid": d.name,
+                        "filename": filename,
+                        "created_at": datetime.fromtimestamp(d.stat().st_mtime, timezone.utc).strftime("%d/%m/%Y %H:%M"),
+                        "sops": sops_count,
+                        "principles": principles_count,
+                        "concepts": concepts_count,
+                    })
+
+            resp = json.dumps(history)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp.encode())
+
+        elif path == "/api/teach/sessions":
+            sessions = []
+            seen_labels = set()
+            upload_dir = Path(UPLOAD_DIR)
+            if upload_dir.exists():
+                for d in sorted(upload_dir.iterdir(), key=lambda p: p.stat().st_mtime if p.is_dir() else 0, reverse=True):
+                    if not d.is_dir() or d.name.startswith("_"):
+                        continue
+                    compilation = d / "compilation"
+                    sf_files = list(compilation.glob("*semantic_field*.json")) if compilation.exists() else []
+                    if sf_files:
+                        md_files = [f for f in compilation.glob("*.md")
+                                    if "semantic_field" not in f.name and "batch_summary" not in f.name]
+                        label = md_files[0].stem if md_files else d.name
+
+                        # Deduplicate by label (keeping the most recent compilation)
+                        if label in seen_labels:
+                            continue
+                        seen_labels.add(label)
+
+                        sessions.append({
+                            "id": d.name,
+                            "label": label,
+                            "sf_path": str(sf_files[0]),
+                        })
+            resp = json.dumps(sessions)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp.encode())
+
         else:
             self.send_response(404)
             self.end_headers()
@@ -767,16 +902,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(file_path.read_bytes())
 
-    def _serve_skill(self, sid: str):
+    def _get_compilation_dir(self, sid: str) -> Path | None:
+        """Get compilation directory for session ID (from active memory session or disk fallback)."""
         session = _sessions.get(sid)
-        if not session or not session.output_dir:
+        if session and session.output_dir:
+            compilation = session.output_dir / "compilation"
+            if compilation.exists():
+                return compilation
+
+        upload_dir = Path(UPLOAD_DIR) / sid
+        compilation = upload_dir / "compilation"
+        if compilation.exists():
+            return compilation
+
+        return None
+
+    def _serve_skill(self, sid: str):
+        compilation = self._get_compilation_dir(sid)
+        if not compilation:
             self.send_response(404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            return
-        compilation = session.output_dir / "compilation"
-        if not compilation.exists():
-            self.send_response(404)
-            self.end_headers()
+            self.wfile.write(f"<h3>Sessão ou compilação não encontrada: {sid}</h3>".encode())
             return
         md_files = [f for f in compilation.glob("*.md")
                     if "semantic_field" not in f.name
@@ -793,15 +940,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(html.encode())
 
     def _serve_graph(self, sid: str):
-        session = _sessions.get(sid)
-        if not session or not session.output_dir:
+        compilation = self._get_compilation_dir(sid)
+        if not compilation:
             self.send_response(404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            return
-        compilation = session.output_dir / "compilation"
-        if not compilation.exists():
-            self.send_response(404)
-            self.end_headers()
+            self.wfile.write(f"<h3>Sessão ou compilação não encontrada: {sid}</h3>".encode())
             return
         sf_files = list(compilation.glob("*semantic_field*.html"))
         if sf_files:
@@ -813,15 +957,12 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write("<h3>Grafo não disponível</h3>".encode())
 
     def _serve_summary(self, sid: str):
-        session = _sessions.get(sid)
-        if not session or not session.output_dir:
+        compilation = self._get_compilation_dir(sid)
+        if not compilation:
             self.send_response(404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            return
-        compilation = session.output_dir / "compilation"
-        if not compilation.exists():
-            self.send_response(404)
-            self.end_headers()
+            self.wfile.write(f"<h3>Sessão ou compilação não encontrada: {sid}</h3>".encode())
             return
         summary_files = list(compilation.glob("*batch_summary*.md"))
         run_files = list(compilation.glob("*run*.json"))
@@ -834,7 +975,6 @@ class Handler(BaseHTTPRequestHandler):
                     run_data = json.loads(run_files[0].read_text(encoding="utf-8"))
                 except Exception:
                     pass
-            # Override run_data counts with SF counts (run.json may be stale)
             sf_data = None
             if sf_files:
                 try:
@@ -851,19 +991,12 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def _serve_sf(self, sid: str):
-        session = _sessions.get(sid)
-        if not session or not session.output_dir:
+        compilation = self._get_compilation_dir(sid)
+        if not compilation:
             self.send_response(404)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(f"<h3>Sessão não encontrada: {sid}</h3><p>Sessões ativas: {list(_sessions.keys())}</p>".encode())
-            return
-        compilation = session.output_dir / "compilation"
-        if not compilation.exists():
-            self.send_response(404)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(f"<h3>Compilação não encontrada</h3><p>Dir: {session.output_dir}</p>".encode())
+            self.wfile.write(f"<h3>Sessão ou compilação não encontrada: {sid}</h3>".encode())
             return
         sf_files = list(compilation.glob("*semantic_field*.json"))
         if sf_files:
@@ -886,15 +1019,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write("<h3>Semantic Field não encontrado nesta compilação</h3>".encode())
-        # Find semantic_field.json by pattern
-        sf_files = list(compilation.glob("*semantic_field*.json"))
-        if sf_files:
-            self._serve_file(sf_files[0], "application/json")
-        else:
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write("<h3>Semantic Field não disponível</h3><p>Sem dados de semantic field nesta sessão.</p>".encode())
 
     def do_POST(self):
         # Anti-CSRF / Origin Validation
@@ -913,6 +1037,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b"Forbidden Origin (CSRF Protection)")
                 return
+
+        if self.path.startswith("/cancel/"):
+            sid = self.path.split("/")[-1]
+            session = _sessions.get(sid)
+            if session:
+                session.cancel()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok": true}')
+            return
 
         if self.path == "/api/settings":
             content_length = int(self.headers.get("Content-Length", 0))
@@ -975,7 +1110,10 @@ class Handler(BaseHTTPRequestHandler):
                     resp = json.dumps({"ok": False, "error": "Session not found"})
                 else:
                     if ts["engine"] is None:
-                        from chavruta.engine import ChavrutaEngine
+                        try:
+                            from chavruta.engine import ChavrutaEngine
+                        except ImportError:
+                            from scripts.chavruta.engine import ChavrutaEngine
                         ts["engine"] = ChavrutaEngine(ts["sf"])
                     result = ts["engine"].process(user_input)
                     ts["history"].append({
@@ -1049,6 +1187,9 @@ class Handler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length)
 
             # Parse multipart manually (stdlib only)
+            session_id = uuid.uuid4().hex[:8]
+            save_dir = os.path.join(UPLOAD_DIR, session_id)
+            os.makedirs(save_dir, exist_ok=True)
             files = []
             parts = body.split(b"--" + boundary)
             for part in parts:
@@ -1084,9 +1225,6 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
                 # Save to upload dir
-                sid = uuid.uuid4().hex[:8]
-                save_dir = os.path.join(UPLOAD_DIR, sid)
-                os.makedirs(save_dir, exist_ok=True)
                 save_path = os.path.join(save_dir, filename)
                 
                 # Double check containment (Absolute path verification)
@@ -1110,7 +1248,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             # Create session and start pipeline
-            session_id = uuid.uuid4().hex[:8]
             session = Session(session_id, files)
             _sessions[session_id] = session
 
