@@ -180,8 +180,15 @@ def _run_pipeline_url(session: Session, url: str, save_dir: str):
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", cwd=PROJECT_ROOT, env=env,
         )
+        actual_output_dir = save_dir
         for line in proc.stdout:
-            session.emit("info", line.rstrip())
+            text = line.rstrip()
+            session.emit("info", text)
+            if "output:" in text:
+                try:
+                    actual_output_dir = text.split("output:")[1].strip()
+                except:
+                    pass
         proc.wait()
         
         if proc.returncode != 0:
@@ -190,7 +197,7 @@ def _run_pipeline_url(session: Session, url: str, save_dir: str):
             return
             
         files = []
-        for p in Path(save_dir).rglob("*"):
+        for p in Path(actual_output_dir).rglob("*"):
             if p.is_file() and p.suffix in [".srt", ".txt", ".md"]:
                 files.append(p)
         
