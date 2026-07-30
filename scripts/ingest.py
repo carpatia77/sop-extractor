@@ -328,6 +328,10 @@ def main(argv=None):
     print(f"    texto:     {result.text}")
 
     # Post-ingestion prompt
+    if os.environ.get("SOPX_NO_INTERACTIVE"):
+        print(f"\n  Transcrições salvas em: {result.output_dir}\n")
+        return 0
+
     print("\n  O que deseja fazer agora?\n")
     print("    [1] Extrair SOPs e Princípios Fundamentais")
     print("    [2] Gerar Mapa Semântico")

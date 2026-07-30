@@ -169,6 +169,7 @@ def _run_pipeline_url(session: Session, url: str, save_dir: str):
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+        env["SOPX_NO_INTERACTIVE"] = "1"
 
         cmd = [
             sys.executable, os.path.join(SCRIPTS_DIR, "ingest.py"),
@@ -189,9 +190,9 @@ def _run_pipeline_url(session: Session, url: str, save_dir: str):
             return
             
         files = []
-        for f in os.listdir(save_dir):
-            if f.endswith(".srt") or f.endswith(".txt") or f.endswith(".md"):
-                files.append(Path(os.path.join(save_dir, f)))
+        for p in Path(save_dir).rglob("*"):
+            if p.is_file() and p.suffix in [".srt", ".txt", ".md"]:
+                files.append(p)
         
         if not files:
             session.fail("Nenhum arquivo gerado pela ingestão")
