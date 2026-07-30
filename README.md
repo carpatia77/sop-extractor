@@ -172,6 +172,21 @@ sopx determinism path/to/your-skill
 python scripts/extract_frames_at_timestamps.py path/to/transcript.srt --dry-run
 ```
 
+### v3.1.0 features
+
+```bash
+# Web Console UI — Visual extraction pipeline, history, and ZIP export
+# Start the web server and open http://127.0.0.1:8080
+sopx web
+
+# Start web console on custom port
+sopx web --port 9000
+```
+
+- **Web Console UI**: Drag-and-drop file ingestion, visual configuration, extraction history, and 1-click `.ZIP` archive export.
+- **Direct API Integrations**: Configure API keys for **Nvidia NIM**, **Groq**, **OpenRouter**, or **Anthropic** directly in the Web UI, bypassing CLI agent wrappers.
+- **Enhanced Chavruta Engine**: Multilingual Portuguese-to-English stem matching (`consistência` <-> `consist`) and intelligent Socratic meta-question handling.
+
 ### v3.0.0 features
 
 ```bash
