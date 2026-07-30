@@ -300,6 +300,20 @@ class TestParseCompilation:
         assert len(sections["references"]) == 1
         assert sections["references"][0] == "Book A"
 
+    def test_parse_single_line_steps(self):
+        """Verify single-line numbered steps are separated cleanly without leaking into when_to_use."""
+        text = textwrap.dedent("""\
+            ## SOPs
+            - **Name**: Rapid Trade Entry
+            - **Steps**: 1. Compute risk 2. Size position
+            - **When to use**: Market open
+        """)
+        sections = parse_compilation(text)
+        assert len(sections["sops"]) == 1
+        assert sections["sops"][0]["name"] == "Rapid Trade Entry"
+        assert sections["sops"][0]["steps"] == ["Compute risk", "Size position"]
+        assert sections["sops"][0]["when_to_use"] == "Market open"
+
 
 # ---------------------------------------------------------------------------
 # Source discovery — recursive

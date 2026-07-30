@@ -445,7 +445,7 @@ def _parse_sops(text: str) -> list[dict]:
         name = name.rstrip("*").strip()
 
         steps = []
-        for m in re.finditer(r"\d+\.\s+(.+?)(?=\n\d+\.|\n\s*\*{0,2}When|\Z)", block, re.DOTALL):
+        for m in re.finditer(r"\d+\.\s+(.+?)(?=(?:\n|\s+)\d+\.|\n?\s*[-*]?\s*\*{0,2}When|\Z)", block, re.DOTALL | re.IGNORECASE):
             steps.append(m.group(1).strip())
 
         when = ""
