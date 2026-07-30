@@ -699,8 +699,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if "/results/" in path or "/api/" in path:
-            print(f"[REQ] GET {path}", flush=True)
 
         if path == "/" or path == "/index.html":
             self.send_response(200)
@@ -910,8 +908,18 @@ class Handler(BaseHTTPRequestHandler):
             if compilation.exists():
                 return compilation
 
-        upload_dir = Path(UPLOAD_DIR) / sid
-        compilation = upload_dir / "compilation"
+        import urllib.parse
+        sid = urllib.parse.unquote(sid).strip().replace("/", "").replace("\\", "")
+        if not sid or sid == "." or sid == "..":
+            return None
+
+        upload_dir = Path(UPLOAD_DIR).resolve()
+        target_dir = (upload_dir / sid).resolve()
+        
+        if not target_dir.is_relative_to(upload_dir) or target_dir == upload_dir:
+            return None
+
+        compilation = target_dir / "compilation"
         if compilation.exists():
             return compilation
 

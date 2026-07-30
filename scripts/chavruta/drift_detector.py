@@ -165,8 +165,14 @@ def detect_drift(
 ) -> dict:
     """Detect if user response drifts from the knowledge scope."""
     # Check meta-questions / clarification
-    meta_phrases = ["fora do tema", "como assim", "nao entendi", "não entendi", "por que", "porque", "qual e o tema", "qual é o tema"]
-    if any(p in user_response.lower() for p in meta_phrases):
+    meta_phrases = ["fora do tema", "como assim", "nao entendi", "não entendi", "qual e o tema", "qual é o tema"]
+    is_meta = any(p in user_response.lower() for p in meta_phrases)
+    if not is_meta and "?" in user_response:
+        resp_lower = user_response.lower().strip()
+        if resp_lower.startswith("por que ") or resp_lower.startswith("porque "):
+            is_meta = True
+
+    if is_meta:
         return {
             "is_drift": True,
             "is_meta_question": True,
