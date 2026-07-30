@@ -161,6 +161,51 @@ def _run_pipeline(session: Session):
         session.fail(str(e))
 
 
+def _run_pipeline_url(session: Session, url: str, save_dir: str):
+    """Run ingest.py on a URL, then pass the downloaded file to _run_pipeline."""
+    try:
+        session.emit("info", f"▸ Baixando/Transcrevendo URL: {url}")
+        
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+
+        cmd = [
+            sys.executable, os.path.join(SCRIPTS_DIR, "ingest.py"),
+            url, "--output-dir", save_dir, "--local"
+        ]
+        
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", cwd=PROJECT_ROOT, env=env,
+        )
+        for line in proc.stdout:
+            session.emit("info", line.rstrip())
+        proc.wait()
+        
+        if proc.returncode != 0:
+            session.emit("warn", f"⚠ Falha ao ingerir URL. Exit code {proc.returncode}")
+            session.fail("Erro na ingestão do YouTube")
+            return
+            
+        files = []
+        for f in os.listdir(save_dir):
+            if f.endswith(".srt") or f.endswith(".txt") or f.endswith(".md"):
+                files.append(Path(os.path.join(save_dir, f)))
+        
+        if not files:
+            session.fail("Nenhum arquivo gerado pela ingestão")
+            return
+            
+        session.files = files
+        session.emit("ok", f"✓ Download concluído: {files[0].name}")
+        
+        _run_pipeline(session)
+        
+    except Exception as e:
+        session.fail(str(e))
+
+
 # ---------------------------------------------------------------------------
 # Teach Mode briefing generator
 # ---------------------------------------------------------------------------
@@ -1175,6 +1220,39 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(resp.encode())
+            return
+
+        if self.path == "/upload_url":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body)
+                url = data.get("url", "")
+                if not url:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Missing url"}')
+                    return
+
+                session_id = uuid.uuid4().hex[:8]
+                save_dir = os.path.join(UPLOAD_DIR, session_id)
+                os.makedirs(save_dir, exist_ok=True)
+                
+                session = Session(session_id, [])
+                _sessions[session_id] = session
+
+                thread = threading.Thread(target=_run_pipeline_url, args=(session, url, save_dir), daemon=True)
+                thread.start()
+
+                response = json.dumps({"session_id": session_id})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(response.encode())
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
             return
 
         if self.path == "/upload":

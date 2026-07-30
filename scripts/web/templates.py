@@ -66,15 +66,23 @@ def html_page() -> str:
   <div class="upload-zone" id="dropZone">
     <div class="icon">📁</div>
     <div class="label">Arraste arquivos aqui ou <b>clique para selecionar</b></div>
-    <div class="label" style="margin-top:6px;font-size:11px;color:#444">PDF, EPUB, DOCX, TXT, SRT, MD, MP3, WAV, MP4 — ou URL do YouTube</div>
+    <div class="label" style="margin-top:6px;font-size:11px;color:#444">PDF, EPUB, DOCX, TXT, SRT, MD, MP3, WAV, MP4</div>
     <input type="file" id="fileInput" multiple accept=".pdf,.epub,.docx,.txt,.srt,.vtt,.md,.mp3,.wav,.mp4">
   </div>
+  
+  <div style="display:flex;gap:10px;margin-bottom:16px;">
+    <input type="text" id="urlInput" placeholder="🔗 Ou cole o link do YouTube aqui..." style="flex:1;background:#0d0d14;border:1px solid #1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:8px;font-family:inherit;font-size:12px;outline:none;transition:border-color 0.2s;">
+    <button class="btn btn-primary" id="btnStartUrl" style="padding:10px 20px;display:flex;align-items:center;gap:8px" disabled>
+      <span>EXTRAIR</span>
+    </button>
+  </div>
+  
   <div class="files-list" id="filesList"></div>
 
   <div class="actions">
-    <button class="btn btn-primary" id="btnStart" disabled>EXTRACT KNOWLEDGE</button>
+    <button class="btn btn-primary" id="btnStart" disabled>EXTRACT LOCAL KNOWLEDGE</button>
     <button class="btn btn-danger" id="btnCancel" style="display:none">CANCEL</button>
-    <div class="status" id="status"><span class="dot dot-idle"></span>Aguardando arquivos</div>
+    <div class="status" id="status"><span class="dot dot-idle"></span>Aguardando entrada</div>
   </div>
 
   <div class="console" id="console">
@@ -122,6 +130,13 @@ const consoleEl = document.getElementById('console');
 const statusEl = document.getElementById('status');
 const resultsEl = document.getElementById('results');
 
+const urlInput = document.getElementById('urlInput');
+const btnStartUrl = document.getElementById('btnStartUrl');
+
+urlInput.addEventListener('input', () => {
+  btnStartUrl.disabled = urlInput.value.trim().length === 0;
+});
+
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop', e => {
@@ -147,6 +162,32 @@ function removeFile(i) {
   selectedFiles.splice(i, 1);
   renderFiles();
 }
+
+btnStartUrl.addEventListener('click', async () => {
+  const url = urlInput.value.trim();
+  if (!url) return;
+  btnStartUrl.disabled = true;
+  urlInput.disabled = true;
+  setStatus('running', 'Enviando URL...');
+  resultsEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/upload_url', { 
+      method: 'POST', 
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url}) 
+    });
+    const data = await res.json();
+    if (!data.session_id) throw new Error(data.error || "Erro desconhecido");
+    currentSid = data.session_id;
+    startSSE(currentSid);
+  } catch(e) {
+    log('err', 'Erro na URL: ' + e.message);
+    setStatus('error', 'Falha no processamento da URL');
+    btnStartUrl.disabled = false;
+    urlInput.disabled = false;
+  }
+});
 
 btnStart.addEventListener('click', async () => {
   if (selectedFiles.length === 0) return;
